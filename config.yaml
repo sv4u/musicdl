@@ -1,0 +1,38 @@
+# musicdl configuration
+version: 1.0
+threads: 1
+retries: 3
+artists:
+  - brackence: https://open.spotify.com/artist/4kqFrZkeqDfOIEqTWqbOOV?si=7a7f3e934606434c
+  - ericdoa: https://open.spotify.com/artist/4hR6Bm9YYtktXzjmKhb1Cn?si=7b2183f60b5d4cda
+  - glaive: https://open.spotify.com/artist/4cJKDGSv4Dz9QycXYmo565?si=c96ba5de5cc2481b
+  - Aries: https://open.spotify.com/artist/3hOdow4ZPmrby7Q1wfPLEy?si=2c7868c514c1413b
+  - heylog: https://open.spotify.com/artist/5Jf6pl4SGgueZHZ4pC313c?si=b59d90b7e34c4ee4
+  - logan: https://open.spotify.com/artist/3GiFHWh1DzCfLmiKrnDgSK?si=f37844191d8b47ec
+  - xona: https://open.spotify.com/artist/0pn2qAOiJ6u8E9gY7vO6WZ?si=b24a1c8d4dc74247
+  - Endie: https://open.spotify.com/artist/3B7lDutNv1vGrqkujRx78O?si=f83cc198ef854e7b
+  - rourie404: https://open.spotify.com/artist/6lQsMKSDG7XdirlE6YImHa?si=28c475b0df504d80
+  - Vaeo: https://open.spotify.com/artist/2ahbiJn3gxyByrDXIMaACV?si=367883cc99e543b9
+  - kurtains: https://open.spotify.com/artist/7b2FbxYmnpGMPqDe04QmyP?si=2ef54a6c838a438b
+  - kmoe: https://open.spotify.com/artist/48wt14F9gzlkNDRdXyJTQz?si=061c47f81b4041f6
+  - Quadeca: https://open.spotify.com/artist/3zz52ViyCBcplK0ftEVPSS?si=f7b6b769099a4271
+  - Breaking Benjamin: https://open.spotify.com/artist/5BtHciL0e0zOP7prIHn3pP?si=79863f4f39e04ab4
+  - gabby start: https://open.spotify.com/artist/33L1klom7IXmoAP8fjrGm9?si=229041c612534c53
+  - 8485: https://open.spotify.com/artist/3LwiPwIJNshV4ItekGcIMo?si=ed2f9deaf1b34b9c
+  - Kendrick Lamar: https://open.spotify.com/artist/2YZyLoL8N0Wb9xBt1NhZWg?si=dcdfaabe24ee4e59
+  - Baby Keem: https://open.spotify.com/artist/5SXuuuRpukkTvsLuUknva1?si=955009cbc0b949ce
+  - login: https://open.spotify.com/artist/5JZPSVFMUk4HGDdx68lN77?si=209efeaafa5f4e1b
+  - 347aidan: https://open.spotify.com/artist/0bBz5bRBkExaej2HxtVfCw?si=4520eec9d0de4905
+  - 50landing: https://open.spotify.com/artist/5aTRa02UP1y6PW5klZiTt0?si=07a29089106d4b70
+  - aldn: https://open.spotify.com/artist/2GUw9Wzha61PkZoRVv1PDD?si=4b05567cd0034a97
+  - Verzache: https://open.spotify.com/artist/59KX7XUUgAOOo5IyDjca0T?si=e5b85701527c4fc3
+  - underscores: https://open.spotify.com/artist/7HfUJxeVTgrvhk0eWHFzV7?si=b18f6eb3a94945b8
+  - juno: https://open.spotify.com/artist/5YfZjShz51htJsfQP0YceU?si=0747d2f0450b4bc7
+
+playlists:
+  - moty 2024: https://open.spotify.com/playlist/79tKtSUPbC7HqFpK4PNkLL?si=f6961eef96b44c50
+  - moty 2025: https://open.spotify.com/playlist/7sMsJSgasD57wPI7nQosed?si=f37d1b3a5c25422c
+  - snake way: https://open.spotify.com/playlist/5kVo9wOPw09SbOEWAeinGq?si=37a1bb55dd804786
+  - time chamber: https://open.spotify.com/playlist/6rfabQ6PtbkVHvzhIwcaPH?si=8dcd5b68471f469d
+  - other world: https://open.spotify.com/playlist/586NpaAjfWCW5axWJEUd3h?si=12ed6bbd1ae040d8
+  - mount pouzu: https://open.spotify.com/playlist/6GVC03MKIAePUeXAvXiJ7B?si=9dafbfac9d834842
