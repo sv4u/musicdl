@@ -136,12 +136,18 @@ def create_spotdl(url, name, make_m3u):
     try:
         if make_m3u:
             # toggle on m3u flag on and use m3u_filename
-            subprocess.run(
-                ["spotdl", "save", f"{url}", "--config", "--max-retries", f"{MAX_RETRIES}", "--threads", "f{THREADS}", "--format", "mp3", "--save-file", f"{spotdl_filename}", "--m3u", f"{m3u_filename}"], capture_output=True)
+            result = subprocess.run(
+                ["spotdl", "save", url, "--config", "--max-retries", str(MAX_RETRIES), "--threads", str(THREADS), "--format", "mp3", "--save-file", spotdl_filename, "--m3u", m3u_filename], capture_output=True)
         else:
             # normal spotdl usage
-            subprocess.run(
-                ["spotdl", "save", f"{url}", "--config", "--max-retries", f"{MAX_RETRIES}", "--threads", "f{THREADS}", "--format", "mp3", "--save-file", f"{spotdl_filename}"], capture_output=True)
+            result = subprocess.run(
+                ["spotdl", "save", url, "--config", "--max-retries", str(MAX_RETRIES), "--threads", str(THREADS), "--format", "mp3", "--save-file", spotdl_filename], capture_output=True)
+
+        print(f"return code: {str(result.returncode)}")
+        print(f"stdout: {result.stdout.decode()}")
+        print(f"stderr: {result.stderr.decode()}")
+
+        result.check_returncode()
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
             f"Error executing 'spotdl save {spotdl_filename} ...' command: {e}")
@@ -235,8 +241,14 @@ def download(spotdl_file):
         RuntimeError: If the shell subprocess encounters an error.
     """
     try:
-        subprocess.run(["spotdl", "download", f"{spotdl_file}", "--config", "--bitrate", "128k", "--format", "mp3", "--max-retries",
-                       f"{MAX_RETRIES}", "--threads", f"{THREADS}", "--overwrite", "metadata", "--restrict", "ascii", "--scan-for-songs", "--preload"], capture_output=True)
+        result = subprocess.run(["spotdl", "download", spotdl_file, "--config", "--bitrate", "128k", "--format", "mp3", "--max-retries", str(
+            MAX_RETRIES), "--threads", str(THREADS), "--overwrite", "metadata", "--restrict", "ascii", "--scan-for-songs", "--preload"], capture_output=True)
+
+        print(f"return code: {str(result.returncode)}")
+        print(f"stdout: {result.stdout.decode()}")
+        print(f"stderr: {result.stderr.decode()}")
+
+        result.check_returncode()
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
             f"Error executing 'spotdl download {spotdl_file} ...': {e}")
