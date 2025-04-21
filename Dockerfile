@@ -19,16 +19,16 @@ RUN pip install --upgrade pip pyyaml spotdl
 # Add custom config
 COPY config.json ~/.spotdl/config.json
 
-RUN mkdir -p /download
+RUN mkdir -p /scripts
 
 # Copy script and configuration
-COPY download.py /download/download.py
-COPY config.yaml /download/config.yaml
+COPY download.py /scripts/download.py
+COPY config.yaml /scripts/config.yaml
 
 # Move into /download
 WORKDIR /download
 
 # Run download.py on container start
 ENTRYPOINT ["python3"]
-CMD ["download.py", "config.yaml"]
+CMD ["/scripts/download.py", "/scripts/config.yaml"]
 
