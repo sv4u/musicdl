@@ -31,7 +31,7 @@ publish:
   before_script:
     - docker info
   script:
-    - echo "$DH_PASSWORD" | docker login docker.io --user ${DH_USER} --password-stdin
+    - echo "$DH_PASSWORD" | docker login docker.io --username ${DH_USER} --password-stdin
     - docker pull registry.gitlab.com/sv4u/musicdl:${CI_COMMIT_TAG}
     - docker tag registry.gitlab.com/sv4u/musicdl:${CI_COMMIT_TAG} docker.io/sv4u/musicdl:${CI_COMMIT_TAG}
     - docker tag registry.gitlab.com/sv4u/musicdl:${CI_COMMIT_TAG} docker.io/sv4u/musicdl:latest
