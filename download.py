@@ -146,11 +146,9 @@ def create_spotdl(url, name, make_m3u):
         print(f"return code: {str(result.returncode)}")
         print(f"stdout: {result.stdout.decode()}")
         print(f"stderr: {result.stderr.decode()}")
-
-        result.check_returncode()
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
-            f"Error executing 'spotdl save {spotdl_filename} ...' command: {e}")
+            f"Error executing 'spotdl save {url} {spotdl_filename} ...' command: {e}")
 
     # done so return
     return
@@ -247,8 +245,6 @@ def download(spotdl_file):
         print(f"return code: {str(result.returncode)}")
         print(f"stdout: {result.stdout.decode()}")
         print(f"stderr: {result.stderr.decode()}")
-
-        result.check_returncode()
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
             f"Error executing 'spotdl download {spotdl_file} ...': {e}")
