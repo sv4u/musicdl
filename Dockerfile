@@ -21,12 +21,12 @@ COPY config.json ~/.spotdl/config.json
 
 RUN mkdir -p /download
 
+# Copy script and configuration
+COPY download.py /download/download.py
+COPY config.yaml /download/config.yaml
+
 # Move into /download
 WORKDIR /download
-
-# Copy script and configuration
-COPY download.py download.py
-COPY config.yaml config.yaml
 
 # Run download.py on container start
 ENTRYPOINT ["python3"]
