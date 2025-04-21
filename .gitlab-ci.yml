@@ -28,6 +28,8 @@ publish:
     - docker:28.1.1-dind
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
+    DH_USER: ${DH_USER}
+    DH_PASSWORD: ${DH_PASSWORD}
   before_script:
     - docker info
   script:
