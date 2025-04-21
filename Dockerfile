@@ -20,7 +20,6 @@ RUN pip install --upgrade pip pyyaml spotdl
 COPY config.json ~/.spotdl/config.json
 
 RUN mkdir -p /download
-VOLUME ["/download"]
 
 # Move into /download
 WORKDIR /download
