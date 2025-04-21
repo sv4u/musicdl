@@ -34,8 +34,6 @@ publish:
   before_script:
     - docker info
   script:
-    - echo ${USER}
-    - echo ${PASSWORD}
     - docker login docker.io --username ${USER} --password ${PASSWORD}
     - docker login registry.gitlab.com --username ${CI_REGISTRY_USER} --password ${CI_REGISTRY_PASSWORD}
     - docker pull registry.gitlab.com/sv4u/musicdl:${CI_COMMIT_TAG}
