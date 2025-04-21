@@ -7,7 +7,7 @@ Personal music downloader using `spotdl`.
 1. Clone repository:
 
     ``` bash
-    git clone <repo here>
+    git clone git@gitlab.com/sv4u/musicdl.git
     ```
 
 2. Build image:
@@ -19,5 +19,5 @@ Personal music downloader using `spotdl`.
 3. Start container with music library mapped to `/download`:
 
     ``` bash
-    docker run musicdl:latest -v /path/to/music/library:/download
+    docker run -t musicdl:latest -v /path/to/music/library:/download
     ```
