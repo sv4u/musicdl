@@ -95,7 +95,7 @@ def read_config(config_path):
     if 'artists' not in config or not isinstance(config['artists'], list):
         raise ValueError("Invalid or missing 'artists'.")
 
-    if 'playlists' not in config or not isinstance(config['playlist'], list):
+    if 'playlists' not in config or not isinstance(config['playlists'], list):
         raise ValueError("Invalid or missing 'artists'.")
 
     # validate optional fields
@@ -262,7 +262,7 @@ def main():
     print("parsed arguments")
 
     # read and validate configuration file
-    config_path = args['config']
+    config_path = args.config
     try:
         config = read_config(config_path)
     except (FileNotFoundError, ValueError) as e:
@@ -273,12 +273,20 @@ def main():
     print("read and validated config file")
 
     # iterate through artists and create spotdl
-    for (artist, url) in config['artists']:
+    for dict in config['artists']:
+        for item in dict:
+            artist = item
+            url = dict[item]
+
         print(f"create_spotdl(url={url}, name={artist}, make_m3u=False)")
         create_spotdl(url=url, name=artist, make_m3u=False)
 
     # iterate through playlists and create spotdl
-    for (playlist, url) in config['playlists']:
+    for dict in config['playlists']:
+        for item in dict:
+            playlist = item
+            url = dict[item]
+
         print(f"create_spotdl(url={url}, name={playlist}, make_m3u=True)")
         create_spotdl(url=url, name=playlist, make_m3u=True)
 

@@ -14,7 +14,7 @@ RUN apt-get update && \
 	ffmpeg openssl aria2 g++ git python3-cffi \
 	libffi-dev zlib1g-dev
 
-RUN pip install --upgrade pip spotdl
+RUN pip install --upgrade pip pyyaml spotdl
 
 # Add custom config
 COPY config.json ~/.spotdl/config.json
