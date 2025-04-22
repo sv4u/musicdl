@@ -55,6 +55,7 @@ import os
 import subprocess
 import yaml
 
+
 # global variables
 MAX_RETRIES = 5
 THREADS = 4
@@ -171,6 +172,9 @@ def main():
         return
 
     print("read and validated config file")
+
+    print(f"retries: {MAX_RETRIES}")
+    print(f"threads: {THREADS}")
 
     # iterate through artists and create spotdl
     for dict in config['artists']:
