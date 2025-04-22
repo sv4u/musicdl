@@ -103,6 +103,9 @@ def download(url, make_m3u=False, name="", threads=THREADS, retries=MAX_RETRIES)
     if retries is None:
         retries = MAX_RETRIES
 
+    print("=" * 100)
+    print(
+        f"download(url={url}, make_m3u={make_m3u}, name={name}, threads={threads}, retries={retries})")
     try:
         if make_m3u:
             command = f"spotdl --no-cache --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --m3u \"{name}\" --overwrite metadata --restrict ascii --print-errors --create-skip-file --respect-skip-file --log-level DEBUG --simple-tui download {url}"
@@ -115,6 +118,12 @@ def download(url, make_m3u=False, name="", threads=THREADS, retries=MAX_RETRIES)
             print(f"return code: {result.returncode}")
             print(f"stdout: {result.stdout.decode()}")
             print(f"stderr: {result.stderr.decode()}")
+        else:
+            print("successful exit of spotdl")
+            print(f"stdout: {result.stdout.decode()}")
+            print(f"stderr: {result.stderr.decode()}")
+
+        print("=" * 100)
 
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
@@ -160,7 +169,6 @@ def main():
             artist = item
             url = dict[item]
 
-        print(f"download(url={url}, make_m3u=False, name={artist})")
         download(url, False, name=artist,
                  threads=config['threads'], retries=config['retries'])
 
@@ -170,7 +178,6 @@ def main():
             playlist = item
             url = dict[item]
 
-        print(f"download(url={url}, make_m3u=True, playlist={playlist})")
         download(url, True, name=playlist,
                  threads=config['threads'], retries=config['retries'])
 
