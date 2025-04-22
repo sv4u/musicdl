@@ -26,28 +26,6 @@
 #
 # NOTES
 #
-# - generating spotdl file for artist:
-#
-#   ``` bash
-#   spotdl save $url --config --max-retires $retires --threads $threads \
-#       --format mp3 --save-file "$artist.spotdl"
-#   ```
-#
-# - generating spotdl file for playlist:
-#
-#   ``` bash
-#   spotdl save $url --config --max-retires $retries --threads $threads \
-#       --format mp3 --save-file "$playlist.spotdl" --m3u "$playlist.m3u"
-#   ```
-#
-# - downloading from spotdl file
-#
-#   ``` bash
-#   spotdl download $spotdl_file --config --bitrate 128k --format mp3 \
-#       --max-retires $retries --threads $threads --overwrite metadata \
-#       --restrict ascii --scan-for-songs --preload
-#   ```
-#
 # - using `--bitrate 128k` is required for mp3 files
 
 import argparse
