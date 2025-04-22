@@ -126,13 +126,14 @@ def download(url, make_m3u=False, name=""):
     """
     try:
         if make_m3u:
-            result = subprocess.run(["spotdl", "--log-level", "INFO", "--config", "--bitrate", "128k", "--format", "mp3",  "--m3u", name, "--max-retries", str(
-                MAX_RETRIES), "--threads", str(THREADS), "--overwrite", "metadata", "--restrict", "ascii", "--scan-for-songs", "--preload", "download", url], capture_output=True)
+            result = subprocess.run(["spotdl", "--simple-tui", "--log-level", "INFO", "--config", "--bitrate", "128k", "--format", "mp3",  "--m3u", name, "--max-retries", str(
+                MAX_RETRIES), "--threads", str(THREADS), "--overwrite", "metadata", "--restrict", "ascii", "--scan-for-songs", "--preload", "--create-skip-file", "--respect-skip-file", "download", url], capture_output=True)
         else:
-            result = subprocess.run(["spotdl", "--log-level", "INFO", "--config", "--bitrate", "128k", "--format", "mp3", "--max-retries", str(
-                MAX_RETRIES), "--threads", str(THREADS), "--overwrite", "metadata", "--restrict", "ascii", "--scan-for-songs", "--preload", "download", url], capture_output=True)
+            result = subprocess.run(["spotdl", "--simple-tui", "--log-level", "INFO", "--config", "--bitrate", "128k", "--format", "mp3", "--max-retries", str(
+                MAX_RETRIES), "--threads", str(THREADS), "--overwrite", "metadata", "--restrict", "ascii", "--scan-for-songs", "--preload", "--create-skip-file", "--respect-skip-file", "download", url], capture_output=True)
 
         if result.returncode != 0:
+            print(f"return code: {result.returncode}")
             print(f"stdout: {result.stdout.decode()}")
             print(f"stderr: {result.stderr.decode()}")
 
