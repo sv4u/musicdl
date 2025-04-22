@@ -16,9 +16,6 @@ RUN apt-get update && \
 
 RUN pip install --upgrade pip pyyaml spotdl
 
-# Add custom config
-COPY config.json ~/.spotdl/config.json
-
 RUN mkdir -p /scripts
 
 # Copy script and configuration
