@@ -14,13 +14,10 @@
 #
 # The `artist` and `playlists` objects are sequences of maps. Each map within
 # the sequence maps spotdl file name to Spotify link. So, the Spotify link is
-# passed to spotdl which creates the spotdl file. Then, the spotdl file is used
-# to download the music accordingly. For the `playlist` object, the spotdl file
-# name also is used as the file name for the m3u playlist file created. So, the
-# mapping is `{filename}: {spotify-link}` wth a `{filename}.spotdl` file always
-# being created and a `{filename}.m3u` file being created for maps in the
-# `playlist` object. The `threads` and `retires` items are optional and must be
-# integers. The `version` object is required and must be `1.0` currently.
+# passed to spotdl which downloads the music.
+#
+# The `threads` and `retires` items are optional and must be integers. The
+# `version` object is required and must be `1.0` currently.
 #
 # COMMAND LINE ARGUMENT
 #
@@ -115,139 +112,33 @@ def read_config(config_path):
     return config
 
 
-def create_spotdl(url, name, make_m3u):
-    """
-    Create spotdl file with filename 'name' from 'url'.
-
-    Args:
-        url (string): Spotify url
-        name (string): Filename to use. File written will be "name.spotdl"
-        make_m3u (bool): Toggle if spotdl should make an m3u file. File
-            written will be "name.m3u"
-
-    Raises:
-        RuntimeError: If the shell subprocess encounters an error.
-    """
-    # create output filenames
-    spotdl_filename = f"{name}.spotdl"
-    m3u_filename = f"{name}.m3u"
-
-    # case on if we need to make an m3u
-    try:
-        if make_m3u:
-            # toggle on m3u flag on and use m3u_filename
-            result = subprocess.run(
-                ["spotdl", "save", url, "--config", "--max-retries", str(MAX_RETRIES), "--threads", str(THREADS), "--format", "mp3", "--save-file", spotdl_filename, "--m3u", m3u_filename], capture_output=True)
-        else:
-            # normal spotdl usage
-            result = subprocess.run(
-                ["spotdl", "save", url, "--config", "--max-retries", str(MAX_RETRIES), "--threads", str(THREADS), "--format", "mp3", "--save-file", spotdl_filename], capture_output=True)
-
-        print(f"return code: {str(result.returncode)}")
-        print(f"stdout: {result.stdout.decode()}")
-        print(f"stderr: {result.stderr.decode()}")
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(
-            f"Error executing 'spotdl save {url} {spotdl_filename} ...' command: {e}")
-
-    # done so return
-    return
-
-
-def scan_for_spotdl(path):
-    """
-    Scan for all .spotdl files in specified directory.
-
-    Args:
-        path (str): Path to scan.
-
-    Returns:
-        list: A list of paths to all .spotdl files.
-
-    Raises:
-        FileNotFoundError: If the specified directory does not exist.
-    """
-    if not os.path.exists(path):
-        raise FileNotFoundError(f"Directory '{path}' does not exist.")
-
-    # storage
-    matched = []
-
-    # os walk on path
-    for root, _, files in os.walk(path):
-        for file in files:
-            if file.endswith(".spotdl"):
-                matched.append(os.path.join(root, file))
-
-    return matched
-
-
-def mapper(spotdl_files, config):
-    """
-    Map scanned spotdl files to the configuration file.
-
-    Args:
-        spotdl_files (list): List of paths to .spotdl files.
-        config (dict): Parsed configuration data.
-
-    Returns:
-        dict: A mapping of .spotdl file paths to their corresponding type:
-            ('artist' or 'playlist').
-
-    Raises:
-        ValueError: If a spotdl file does not match any configuration entry.
-    """
-    _mapping = {}
-    mapping = {"artists": [], "playlists": []}
-
-    # create lookup tables
-    artist_table = {f"{artist}.spotdl": "artist" for artist,
-                    _ in config["artists"]}
-    playlist_table = {
-        f"{playlist}.spotdl": "playlist" for playlist, _ in config["playlists"]}
-
-    # combine tables
-    valid_files = {**artist_table, **playlist_table}
-
-    # map each spotdl file to its type
-    for file_path in spotdl_files:
-        file_name = os.path.basename(file_path)
-
-        if file_name in valid_files:
-            _mapping[file_path] = valid_files[file_name]
-        else:
-            raise ValueError(f"Unrecognized .spotdl file: {file_path}")
-
-    for (file_path, key) in _mapping:
-        if key == "artist":
-            mapping["artists"].append(file_path)
-
-        if key == "playlist":
-            mapping["playlists"].append(file_name)
-
-    return mapping
-
-
-def download(spotdl_file):
+def download(url, make_m3u=False, name=""):
     """
     Download using spotdl
 
     Args:
-        spotdl_file (str): Path to spotdl file
+        url (str): Spotify url
+        make_m3u (bool): Toggle for creating playlist [default: False]
+        name (str): Name of playlist [default: ""]
 
     Raises:
         RuntimeError: If the shell subprocess encounters an error.
     """
     try:
-        result = subprocess.run(["spotdl", "download", spotdl_file, "--config", "--bitrate", "128k", "--format", "mp3", "--max-retries", str(
-            MAX_RETRIES), "--threads", str(THREADS), "--overwrite", "metadata", "--restrict", "ascii", "--scan-for-songs", "--preload"], capture_output=True)
+        if make_m3u:
+            result = subprocess.run(["spotdl", "download", url, "--config", "--bitrate", "128k", "--format", "mp3",  "--m3u", name, "--max-retries", str(
+                MAX_RETRIES), "--threads", str(THREADS), "--overwrite", "metadata", "--restrict", "ascii", "--scan-for-songs", "--preload"], capture_output=True)
+        else:
+            result = subprocess.run(["spotdl", "download", url, "--config", "--bitrate", "128k", "--format", "mp3", "--max-retries", str(
+                MAX_RETRIES), "--threads", str(THREADS), "--overwrite", "metadata", "--restrict", "ascii", "--scan-for-songs", "--preload"], capture_output=True)
 
-        print(f"return code: {str(result.returncode)}")
-        print(f"stdout: {result.stdout.decode()}")
-        print(f"stderr: {result.stderr.decode()}")
+        if result.returncode != 0:
+            print(f"stdout: {result.stdout.decode()}")
+            print(f"stderr: {result.stderr.decode()}")
+
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
-            f"Error executing 'spotdl download {spotdl_file} ...': {e}")
+            f"Error executing 'spotdl download {url} {make_m3u} {name} ...': {e}")
 
     return
 
@@ -286,8 +177,8 @@ def main():
             artist = item
             url = dict[item]
 
-        print(f"create_spotdl(url={url}, name={artist}, make_m3u=False)")
-        create_spotdl(url=url, name=artist, make_m3u=False)
+        print(f"download(url={url}, make_m3u=False, name={artist})")
+        download(url, False, name=artist)
 
     # iterate through playlists and create spotdl
     for dict in config['playlists']:
@@ -295,30 +186,10 @@ def main():
             playlist = item
             url = dict[item]
 
-        print(f"create_spotdl(url={url}, name={playlist}, make_m3u=True)")
-        create_spotdl(url=url, name=playlist, make_m3u=True)
+        print(f"download(url={url}, make_m3u=True, playlist={playlist})")
+        download(url, True, name=playlist)
 
-    print("made all spotdl files from configuration")
-
-    # scan current working directory for spotdl files
-    cwd = os.getcwd()
-    spotdl_files = scan_for_spotdl(path=cwd)
-
-    print(f"scanned {cwd} for spotdl files")
-
-    # run mapper to run download on found spotdl files
-    spotdl_mapping = mapper(spotdl_files, config)
-
-    print("mapped spotdl files to configuration")
-
-    # download
-    for file_path in spotdl_mapping["artists"]:
-        print(f"download(spotdl_file={file_path})")
-        download(spotdl_file=file_path)
-
-    for file_path in spotdl_mapping["playlists"]:
-        print(f"download(spotdl_file={file_path})")
-        download(spotdl_file=file_path)
+    print("downloaded all items from configuration file")
 
     print(":)")
 
