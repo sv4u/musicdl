@@ -106,10 +106,10 @@ def download(url, make_m3u=False, name="", threads=THREADS, retries=MAX_RETRIES)
     try:
         if make_m3u:
             result = subprocess.run(["spotdl", "--simple-tui", "--log-level", "INFO", "--config", "--bitrate", "128k", "--format", "mp3",  "--m3u", name, "--max-retries", str(retries), "--threads", str(
-                threads), "--overwrite", "metadata", "--restrict", "ascii", "--scan-for-songs", "--preload", "--create-skip-file", "--respect-skip-file", "download", url], capture_output=True)
+                threads), "--overwrite", "metadata", "--restrict", "ascii", "--scan-for-songs", "--create-skip-file", "--respect-skip-file", "download", url], capture_output=True)
         else:
             result = subprocess.run(["spotdl", "--simple-tui", "--log-level", "INFO", "--config", "--bitrate", "128k", "--format", "mp3", "--max-retries", str(retries), "--threads", str(
-                threads), "--overwrite", "metadata", "--restrict", "ascii", "--scan-for-songs", "--preload", "--create-skip-file", "--respect-skip-file", "download", url], capture_output=True)
+                threads), "--overwrite", "metadata", "--restrict", "ascii", "--scan-for-songs", "--create-skip-file", "--respect-skip-file", "download", url], capture_output=True)
 
         if result.returncode != 0:
             print(f"return code: {result.returncode}")
