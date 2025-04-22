@@ -1,7 +1,7 @@
 # musicdl configuration
 version: 1.0
 threads: 1
-retries: 3
+retries: 5
 artists:
   - brackence: https://open.spotify.com/artist/4kqFrZkeqDfOIEqTWqbOOV?si=7a7f3e934606434c
   - ericdoa: https://open.spotify.com/artist/4hR6Bm9YYtktXzjmKhb1Cn?si=7b2183f60b5d4cda
