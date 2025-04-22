@@ -108,10 +108,10 @@ def download(url, make_m3u=False, name="", threads=THREADS, retries=MAX_RETRIES)
         f"download(url={url}, make_m3u={make_m3u}, name={name}, threads={threads}, retries={retries})")
     try:
         if make_m3u:
-            command = f"spotdl --no-cache --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --m3u \"{name}\" --overwrite metadata --restrict ascii --print-errors --create-skip-file --respect-skip-file --log-level DEBUG --simple-tui download {url}"
+            command = f"spotdl --config --no-cache --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --m3u \"{name}\" --overwrite metadata --restrict ascii --print-errors --create-skip-file --respect-skip-file --log-level DEBUG --simple-tui download {url}"
             result = subprocess.run(command.split(" "), capture_output=True)
         else:
-            command = f"spotdl --no-cache --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --overwrite metadata --restrict ascii --print-errors --create-skip-file --respect-skip-file --log-level DEBUG --simple-tui download {url}"
+            command = f"spotdl --config --no-cache --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --overwrite metadata --restrict ascii --print-errors --create-skip-file --respect-skip-file --log-level DEBUG --simple-tui download {url}"
             result = subprocess.run(command.split(" "), capture_output=True)
 
         if result.returncode != 0:
