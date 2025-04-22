@@ -100,20 +100,14 @@ def read_config(config_path):
     if 'threads' in config and not isinstance(config['threads'], int):
         raise ValueError("'threads' must be an integer.")
 
-    if 'threads' in config:
-        THREADS = config['threads']
-
     if 'retries' in config and not isinstance(config['retries'], int):
         raise ValueError("'retries' must be an integer.")
-
-    if 'retries' in config:
-        MAX_RETRIES = config['retries']
 
     # return config now that validation is done
     return config
 
 
-def download(url, make_m3u=False, name=""):
+def download(url, make_m3u=False, name="", threads=THREADS, retries=MAX_RETRIES):
     """
     Download using spotdl
 
@@ -125,13 +119,19 @@ def download(url, make_m3u=False, name=""):
     Raises:
         RuntimeError: If the shell subprocess encounters an error.
     """
+    if threads is None:
+        threads = THREADS
+
+    if retries is None:
+        retries = MAX_RETRIES
+
     try:
         if make_m3u:
-            result = subprocess.run(["spotdl", "--simple-tui", "--log-level", "INFO", "--config", "--bitrate", "128k", "--format", "mp3",  "--m3u", name, "--max-retries", str(
-                MAX_RETRIES), "--threads", str(THREADS), "--overwrite", "metadata", "--restrict", "ascii", "--scan-for-songs", "--preload", "--create-skip-file", "--respect-skip-file", "download", url], capture_output=True)
+            result = subprocess.run(["spotdl", "--simple-tui", "--log-level", "INFO", "--config", "--bitrate", "128k", "--format", "mp3",  "--m3u", name, "--max-retries", str(retries), "--threads", str(
+                threads), "--overwrite", "metadata", "--restrict", "ascii", "--scan-for-songs", "--preload", "--create-skip-file", "--respect-skip-file", "download", url], capture_output=True)
         else:
-            result = subprocess.run(["spotdl", "--simple-tui", "--log-level", "INFO", "--config", "--bitrate", "128k", "--format", "mp3", "--max-retries", str(
-                MAX_RETRIES), "--threads", str(THREADS), "--overwrite", "metadata", "--restrict", "ascii", "--scan-for-songs", "--preload", "--create-skip-file", "--respect-skip-file", "download", url], capture_output=True)
+            result = subprocess.run(["spotdl", "--simple-tui", "--log-level", "INFO", "--config", "--bitrate", "128k", "--format", "mp3", "--max-retries", str(retries), "--threads", str(
+                threads), "--overwrite", "metadata", "--restrict", "ascii", "--scan-for-songs", "--preload", "--create-skip-file", "--respect-skip-file", "download", url], capture_output=True)
 
         if result.returncode != 0:
             print(f"return code: {result.returncode}")
@@ -173,8 +173,8 @@ def main():
 
     print("read and validated config file")
 
-    print(f"retries: {MAX_RETRIES}")
-    print(f"threads: {THREADS}")
+    print(f"threads: {config['threads']}")
+    print(f"retries: {config['retries']}")
 
     # iterate through artists and create spotdl
     for dict in config['artists']:
@@ -183,7 +183,8 @@ def main():
             url = dict[item]
 
         print(f"download(url={url}, make_m3u=False, name={artist})")
-        download(url, False, name=artist)
+        download(url, False, name=artist,
+                 threads=config['threads'], retries=config['retries'])
 
     # iterate through playlists and create spotdl
     for dict in config['playlists']:
@@ -192,7 +193,8 @@ def main():
             url = dict[item]
 
         print(f"download(url={url}, make_m3u=True, playlist={playlist})")
-        download(url, True, name=playlist)
+        download(url, True, name=playlist,
+                 threads=config['threads'], retries=config['retries'])
 
     print("downloaded all items from configuration file")
 
