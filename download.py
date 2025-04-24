@@ -108,8 +108,9 @@ def download(url, make_m3u=False, name="", threads=THREADS, retries=MAX_RETRIES)
     print(
         f"download(url={url}, make_m3u={make_m3u}, name={name}, threads={threads}, retries={retries})")
     try:
+        # TODO refactor command to be shared between both cases
         if make_m3u:
-            command = f"spotdl --audio youtube-music soundcloud --no-cache --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --output OUTPUT --m3u PLAYLIST_NAME --overwrite metadata --restrict ascii --print-errors --create-skip-file --respect-skip-file --log-level DEBUG --simple-tui download {url}"
+            command = f"spotdl --audio youtube-music soundcloud --no-cache --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --output OUTPUT --m3u PLAYLIST_NAME --overwrite metadata --restrict ascii --print-errors --scan-for-songs --create-skip-file --respect-skip-file --log-level DEBUG --simple-tui --profile download {url}"
 
             command = command.split(" ")
 
@@ -120,11 +121,11 @@ def download(url, make_m3u=False, name="", threads=THREADS, retries=MAX_RETRIES)
                 if command[i] == "PLAYLIST_NAME":
                     command[i] = name
 
-            print(command)
+            print(f"command: {" ".join(command)}")
 
             result = subprocess.run(command, capture_output=True)
         else:
-            command = f"spotdl --audio youtube-music soundcloud --no-cache --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --output OUTPUT --overwrite metadata --restrict ascii --print-errors --create-skip-file --respect-skip-file --log-level DEBUG --simple-tui download {url}"
+            command = f"spotdl --audio youtube-music soundcloud --no-cache --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --output OUTPUT --overwrite metadata --restrict ascii --print-errors --scan-for-songs --create-skip-file --respect-skip-file --log-level DEBUG --simple-tui --profile download {url}"
 
             command = command.split(" ")
 
