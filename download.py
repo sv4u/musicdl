@@ -16,7 +16,7 @@
 # the sequence maps spotdl file name to Spotify link. So, the Spotify link is
 # passed to spotdl which downloads the music.
 #
-# The `threads` and `retires` items are optional and must be integers. The
+# The `threads` and `retries` items are optional and must be integers. The
 # `version` object is required and must be `1.0` currently.
 #
 # COMMAND LINE ARGUMENT
@@ -110,7 +110,7 @@ def download(url, make_m3u=False, name="", threads=THREADS, retries=MAX_RETRIES)
     try:
         # TODO refactor command to be shared between both cases
         if make_m3u:
-            command = f"spotdl --audio youtube-music soundcloud --no-cache --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --output OUTPUT --m3u PLAYLIST_NAME --overwrite metadata --restrict ascii --print-errors --preload --create-skip-file --respect-skip-file --log-level DEBUG --simple-tui --profile download {url}"
+            command = f"spotdl --audio youtube-music soundcloud --no-cache --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --output OUTPUT --m3u PLAYLIST_NAME --overwrite metadata --restrict ascii --print-errors --scan-for-songs --preload --create-skip-file --respect-skip-file --log-level DEBUG --simple-tui --profile download {url}"
 
             command = command.split(" ")
 
@@ -119,13 +119,13 @@ def download(url, make_m3u=False, name="", threads=THREADS, retries=MAX_RETRIES)
                     command[i] = output
 
                 if command[i] == "PLAYLIST_NAME":
-                    command[i] = name
+                    command[i] = f"\"{name}\""
 
             print(f"command: {" ".join(command)}")
 
             result = subprocess.run(command, capture_output=True)
         else:
-            command = f"spotdl --audio youtube-music soundcloud --no-cache --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --output OUTPUT --overwrite metadata --restrict ascii --print-errors --preload --create-skip-file --respect-skip-file --log-level DEBUG --simple-tui --profile download {url}"
+            command = f"spotdl --audio youtube-music soundcloud --no-cache --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --output OUTPUT --overwrite metadata --restrict ascii --print-errors --create-skip-file --respect-skip-file --log-level DEBUG --simple-tui --profile download {url}"
 
             command = command.split(" ")
 
