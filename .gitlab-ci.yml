@@ -4,7 +4,7 @@ stages:
 
 variables:
   DOCKER_TLS_CERTDIR: "/certs"
-  USER: ${DH_USER}
+  USER: ${DH_USERNAME}
   PASSWORD: ${DH_PASSWORD}
 
 build:
