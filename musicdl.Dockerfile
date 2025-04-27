@@ -1,4 +1,3 @@
-# SECURITY find a safter image
 FROM python:3-alpine
 
 # Add author/maintainer labels
