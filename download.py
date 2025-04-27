@@ -119,7 +119,7 @@ def download(url, make_m3u=False, name="", threads=THREADS, retries=MAX_RETRIES)
                     command[i] = output
 
                 if command[i] == "PLAYLIST_NAME":
-                    command[i] = f"\"{name}\""
+                    command[i] = name
 
             print(f"command: {" ".join(command)}")
 
