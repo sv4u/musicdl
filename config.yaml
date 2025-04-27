@@ -3,8 +3,7 @@ version: 1.1
 threads: 2
 retries: 1
 
-songs:
-  - coconut mall: https://open.spotify.com/track/1SOTqkhpIWoLX1AS9Y2RpU?si=fb98541d56f143a8
+songs: []
 
 artists:
   - brackence: https://open.spotify.com/artist/4kqFrZkeqDfOIEqTWqbOOV?si=7a7f3e934606434c
