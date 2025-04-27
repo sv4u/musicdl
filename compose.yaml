@@ -1,0 +1,6 @@
+services:
+  musicdl:
+    image: musicdl:latest
+    build:
+      context: .
+      dockerfile: ./musicdl.Dockerfile
