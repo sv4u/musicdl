@@ -64,9 +64,13 @@ def read_config(config_path):
             raise ValueError(f"Error parsing YAML file: {e}")
 
     # validate required fields
-    if 'version' not in config or config['version'] not in [1.0, "1.0"]:
+    versions = [1.0, 1.1, "1.0", "1.1"]
+    if 'version' not in config or config['version'] not in versions:
         raise ValueError(
-            "Invalid or missing 'version'. Expected 1.0 or \"1.0\".")
+            f"Invalid or missing 'version'. Expected one in {versions}.")
+
+    if 'songs' not in config or not isinstance(config['songs'], list):
+        raise ValueError("Invalid or missing 'songs'.")
 
     if 'artists' not in config or not isinstance(config['artists'], list):
         raise ValueError("Invalid or missing 'artists'.")
@@ -190,7 +194,16 @@ def main():
     print(f"threads: {config['threads']}")
     print(f"retries: {config['retries']}")
 
-    # iterate through artists and create spotdl
+    # iterate through songs and download
+    for dict in config['songs']:
+        for item in dict:
+            song = item
+            url = dict[item]
+
+        download(url, False, name=song,
+                 threads=config['threads'], retries=config['retries'])
+
+    # iterate through artists and download
     for dict in config['artists']:
         for item in dict:
             artist = item
@@ -199,7 +212,7 @@ def main():
         download(url, False, name=artist,
                  threads=config['threads'], retries=config['retries'])
 
-    # iterate through playlists and create spotdl
+    # iterate through playlists and download
     for dict in config['playlists']:
         for item in dict:
             playlist = item
