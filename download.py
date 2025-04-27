@@ -112,11 +112,14 @@ def download(url, make_m3u=False, name="", threads=THREADS, retries=MAX_RETRIES)
     print(
         f"download(url={url}, make_m3u={make_m3u}, name={name}, threads={threads}, retries={retries})")
     try:
-        # TODO refactor command to be shared between both cases
+        # command shared between both cases
+        command_name = ["spotdl"]
+        base_options = f"--audio youtube-music soundcloud --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --output OUTPUT --overwrite metadata --restrict ascii --print-errors --create-skip-file --respect-skip-file --log-level INFO --simple-tui"
+        command_args = f"download {url}"
         if make_m3u:
-            command = f"spotdl --audio youtube-music soundcloud --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --output OUTPUT --m3u PLAYLIST_NAME --overwrite metadata --restrict ascii --print-errors --create-skip-file --respect-skip-file --log-level DEBUG --simple-tui download {url}"
-
-            command = command.split(" ")
+            command_opts = base_options + " --m3u PLAYLIST_NAME"
+            command = command_name + \
+                command_opts.split(" ") + command_args.split(" ")
 
             for i in range(len(command)):
                 if command[i] == "OUTPUT":
@@ -129,15 +132,14 @@ def download(url, make_m3u=False, name="", threads=THREADS, retries=MAX_RETRIES)
 
             result = subprocess.run(command, capture_output=True)
         else:
-            command = f"spotdl --audio youtube-music soundcloud --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --output OUTPUT --overwrite metadata --restrict ascii --print-errors --create-skip-file --respect-skip-file --log-level DEBUG --simple-tui download {url}"
-
-            command = command.split(" ")
+            command = command_name + \
+                base_options.split(" ") + command_args.split(" ")
 
             for i in range(len(command)):
                 if command[i] == "OUTPUT":
                     command[i] = output
 
-            print(command)
+            print(f"command: {" ".join(command)}")
 
             result = subprocess.run(command, capture_output=True)
 
