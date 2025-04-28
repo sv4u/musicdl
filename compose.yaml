@@ -1,6 +1,32 @@
+name: musicdl
+
 services:
   musicdl:
     image: musicdl:latest
     build:
       context: .
       dockerfile: ./musicdl.Dockerfile
+    volumes:
+      - /mnt/Storage/Storage/Music:/download:rw
+    cpus: 2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://192.168.50.167:32400/"]
+      interval: 1m30s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+
+  plex-playlist-push:
+    image: plex-playlist-push:latest
+    build:
+      context: .
+      dockerfile: ./plex-playlist-push.Dockerfile
+    volumes:
+      - /mnt/Storage/Storage/Music:/download:rw
+    cpus: 2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://192.168.50.167:32400/"]
+      interval: 1m30s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
