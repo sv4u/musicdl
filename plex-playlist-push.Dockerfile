@@ -14,10 +14,12 @@ ENV PLEX_PASSWORD=""
 ENV PLEX_SERVER=""
 
 RUN apk add --no-cache \
-	ca-certificates ffmpeg openssl aria2 g++ \
+	ca-certificates curl ffmpeg openssl aria2 g++ \
 	git py3-cffi libffi-dev zlib-dev
 
-RUN pip install --upgrade pip && pip install plexapi
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3
+RUN pip install --upgrade pip
+RUN pip install plexapi
 
 RUN mkdir -p /scripts
 

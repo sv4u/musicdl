@@ -9,10 +9,12 @@ LABEL description="This image allows for quick execution of musicdl"
 # i.e. docker run -v <path-to-music-library>:/download musicdl:latest
 
 RUN apk add --no-cache \
-	ca-certificates ffmpeg openssl aria2 g++ \
+	ca-certificates curl ffmpeg openssl aria2 g++ \
 	git py3-cffi libffi-dev zlib-dev
 
-RUN pip install --upgrade pip && pip install pyyaml spotdl
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3
+RUN pip install --upgrade pip
+RUN pip install pyyaml spotdl
 
 RUN mkdir -p /scripts
 
