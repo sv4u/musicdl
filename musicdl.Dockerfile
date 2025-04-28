@@ -1,4 +1,4 @@
-FROM python:3-alpine
+FROM python:3.12-alpine
 
 # Add author/maintainer labels
 LABEL org.opencontainers.image.authors="sasank@vishnubhatlas.net"
