@@ -19,6 +19,14 @@ build:
       --dockerfile ${CI_PROJECT_DIR}/musicdl.Dockerfile
       --destination musicdl:${CI_COMMIT_TAG}
       --destination musicdl:latest
+    - /kaniko/executor
+      --context ${CI_PROJECT_DIR}
+      --build-arg PLEX_USERNAME=${PLEX_USERNAME}
+      --build-arg PLEX_PASSWORD=${PLEX_PASSWORD}
+      --build-arg PLEX_SERVER=${PLEX_SERVER}
+      --dockerfile ${CI_PROJECT_DIR}/plex-playlist-push.Dockerfile
+      --destination plex-playlist-push:${CI_COMMIT_TAG}
+      --destination plex-playlist-push:latest
   rules:
     - if: $CI_COMMIT_TAG
 
@@ -37,9 +45,14 @@ publish:
     - docker login docker.io --username ${USER} --password ${PASSWORD}
     - docker login registry.gitlab.com --username ${CI_REGISTRY_USER} --password ${CI_REGISTRY_PASSWORD}
     - docker pull registry.gitlab.com/sv4u/musicdl:${CI_COMMIT_TAG}
+    - docker pull registry.gitlab.com/sv4u/plex-playlist-push:${CI_COMMIT_TAG}
     - docker tag registry.gitlab.com/sv4u/musicdl:${CI_COMMIT_TAG} docker.io/sv4u/musicdl:${CI_COMMIT_TAG}
+    - docker tag registry.gitlab.com/sv4u/plex-playlist-push:${CI_COMMIT_TAG} docker.io/sv4u/plex-playlist-push:${CI_COMMIT_TAG}
     - docker tag registry.gitlab.com/sv4u/musicdl:${CI_COMMIT_TAG} docker.io/sv4u/musicdl:latest
+    - docker tag registry.gitlab.com/sv4u/plex-playlist-push:${CI_COMMIT_TAG} docker.io/sv4u/plex-playlist-push:latest
     - docker push docker.io/sv4u/musicdl:${CI_COMMIT_TAG}
     - docker push docker.io/sv4u/musicdl:latest
+    - docker push docker.io/sv4u/plex-playlist-push:${CI_COMMIT_TAG}
+    - docker push docker.io/sv4u/plex-playlist-push:latest
   rules:
     - if: $CI_COMMIT_TAG
