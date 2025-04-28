@@ -64,9 +64,13 @@ def read_config(config_path):
             raise ValueError(f"Error parsing YAML file: {e}")
 
     # validate required fields
-    if 'version' not in config or config['version'] not in [1.0, "1.0"]:
+    versions = [1.0, 1.1, "1.0", "1.1"]
+    if 'version' not in config or config['version'] not in versions:
         raise ValueError(
-            "Invalid or missing 'version'. Expected 1.0 or \"1.0\".")
+            f"Invalid or missing 'version'. Expected one in {versions}.")
+
+    if 'songs' not in config or not isinstance(config['songs'], list):
+        raise ValueError("Invalid or missing 'songs'.")
 
     if 'artists' not in config or not isinstance(config['artists'], list):
         raise ValueError("Invalid or missing 'artists'.")
@@ -108,32 +112,34 @@ def download(url, make_m3u=False, name="", threads=THREADS, retries=MAX_RETRIES)
     print(
         f"download(url={url}, make_m3u={make_m3u}, name={name}, threads={threads}, retries={retries})")
     try:
-        # TODO refactor command to be shared between both cases
+        # command shared between both cases
+        command_name = ["spotdl"]
+        base_options = f"--audio youtube-music soundcloud --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --output OUTPUT --overwrite metadata --restrict ascii --print-errors --create-skip-file --respect-skip-file --log-level INFO --simple-tui"
+        command_args = f"download {url}"
         if make_m3u:
-            command = f"spotdl --audio youtube-music soundcloud --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --output OUTPUT --m3u PLAYLIST_NAME --overwrite metadata --restrict ascii --print-errors --create-skip-file --respect-skip-file --log-level DEBUG --simple-tui download {url}"
-
-            command = command.split(" ")
+            command_opts = base_options + " --m3u PLAYLIST_NAME"
+            command = command_name + \
+                command_opts.split(" ") + command_args.split(" ")
 
             for i in range(len(command)):
                 if command[i] == "OUTPUT":
                     command[i] = output
 
                 if command[i] == "PLAYLIST_NAME":
-                    command[i] = f"\"{name}\""
+                    command[i] = name
 
             print(f"command: {" ".join(command)}")
 
             result = subprocess.run(command, capture_output=True)
         else:
-            command = f"spotdl --audio youtube-music soundcloud --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --output OUTPUT --overwrite metadata --restrict ascii --print-errors --create-skip-file --respect-skip-file --log-level DEBUG --simple-tui download {url}"
-
-            command = command.split(" ")
+            command = command_name + \
+                base_options.split(" ") + command_args.split(" ")
 
             for i in range(len(command)):
                 if command[i] == "OUTPUT":
                     command[i] = output
 
-            print(command)
+            print(f"command: {" ".join(command)}")
 
             result = subprocess.run(command, capture_output=True)
 
@@ -190,7 +196,16 @@ def main():
     print(f"threads: {config['threads']}")
     print(f"retries: {config['retries']}")
 
-    # iterate through artists and create spotdl
+    # iterate through songs and download
+    for dict in config['songs']:
+        for item in dict:
+            song = item
+            url = dict[item]
+
+        download(url, False, name=song,
+                 threads=config['threads'], retries=config['retries'])
+
+    # iterate through artists and download
     for dict in config['artists']:
         for item in dict:
             artist = item
@@ -199,7 +214,7 @@ def main():
         download(url, False, name=artist,
                  threads=config['threads'], retries=config['retries'])
 
-    # iterate through playlists and create spotdl
+    # iterate through playlists and download
     for dict in config['playlists']:
         for item in dict:
             playlist = item

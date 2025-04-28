@@ -1,7 +1,10 @@
 # musicdl configuration
-version: 1.0
+version: 1.1
 threads: 2
 retries: 1
+
+songs: []
+
 artists:
   - brackence: https://open.spotify.com/artist/4kqFrZkeqDfOIEqTWqbOOV?si=7a7f3e934606434c
   - ericdoa: https://open.spotify.com/artist/4hR6Bm9YYtktXzjmKhb1Cn?si=7b2183f60b5d4cda
@@ -40,6 +43,5 @@ playlists:
   - time chamber: https://open.spotify.com/playlist/6rfabQ6PtbkVHvzhIwcaPH?si=8dcd5b68471f469d
   - other world: https://open.spotify.com/playlist/586NpaAjfWCW5axWJEUd3h?si=12ed6bbd1ae040d8
   - mount pouzu: https://open.spotify.com/playlist/6GVC03MKIAePUeXAvXiJ7B?si=9dafbfac9d834842
+  - maalu and jaalu: https://open.spotify.com/playlist/0W9VUFhvEDOapfG83au9al?si=76954d522ea74e3e
   - dog relaxation and anxiety relief: https://open.spotify.com/playlist/3300BQPneawOkHUGOOUhMK?si=d358d247ed944830
-  - engagementaloo: https://open.spotify.com/playlist/7Jb3pp6Mp5hXC4tiBJsETG?si=4394a9f9d90d4c7e
-  - engagementaloo partyaloo with friendaloos: https://open.spotify.com/playlist/7GayA62SlLpX5uvAyxsBtZ?si=97559a78f32c4a9b
