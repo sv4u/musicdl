@@ -12,7 +12,7 @@ RUN apk add --no-cache \
 	ca-certificates ffmpeg openssl aria2 g++ \
 	git py3-cffi libffi-dev zlib-dev
 
-RUN pip install --upgrade pip pyyaml spotdl
+RUN pip install --upgrade pip && pip install pyyaml spotdl
 
 RUN mkdir -p /scripts
 
