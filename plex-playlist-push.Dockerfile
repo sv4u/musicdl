@@ -18,7 +18,6 @@ RUN apk add --no-cache \
 	git py3-cffi libffi-dev zlib-dev
 
 COPY ./requirements.txt /tmp/requirements.txt
-RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3
 RUN pip install --upgrade pip
 RUN pip install -r /tmp/requirements.txt
 
