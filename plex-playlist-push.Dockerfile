@@ -1,4 +1,4 @@
-FROM python:3.12-alpine
+FROM python:3.12-bookworm
 
 # Add author/maintainer labels
 LABEL org.opencontainers.image.authors="sasank@vishnubhatlas.net"
@@ -13,9 +13,9 @@ ENV PLEX_USERNAME=""
 ENV PLEX_PASSWORD=""
 ENV PLEX_SERVER=""
 
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
 	ca-certificates curl ffmpeg openssl aria2 g++ \
-	git py3-pip py3-cffi libffi-dev zlib-dev
+	git python3-cffi libffi-dev zlib1g-dev
 
 COPY ./requirements.txt /tmp/requirements.txt
 RUN python3 -m pip install --upgrade pip
