@@ -13,8 +13,8 @@ RUN apk add --no-cache \
 	git py3-cffi libffi-dev zlib-dev
 
 COPY ./requirements.txt /tmp/requirements.txt
-RUN pip install --upgrade pip
-RUN pip install -r /tmp/requirements.txt
+RUN python3 -m pip install --upgrade pip
+RUN python3 -m pip install -r /tmp/requirements.txt
 
 RUN mkdir -p /scripts
 
