@@ -15,7 +15,7 @@ ENV PLEX_SERVER=""
 
 RUN apk add --no-cache \
 	ca-certificates curl ffmpeg openssl aria2 g++ \
-	git py3-cffi libffi-dev zlib-dev
+	git py3-pip py3-cffi libffi-dev zlib-dev
 
 COPY ./requirements.txt /tmp/requirements.txt
 RUN python3 -m pip install --upgrade pip
