@@ -101,7 +101,7 @@ def download(url, make_m3u=False, name="", threads=THREADS, retries=MAX_RETRIES)
     Raises:
         RuntimeError: If the shell subprocess encounters an error.
     """
-    output = "{artist}/{album}/{disc-number}{track-number} - {title}.{output-ext}"
+    output = "\"{artist}/{album}/{disc-number}{track-number} - {title}.{output-ext}\""
     if threads is None:
         threads = THREADS
 
@@ -114,7 +114,7 @@ def download(url, make_m3u=False, name="", threads=THREADS, retries=MAX_RETRIES)
     try:
         # command shared between both cases
         command_name = ["spotdl"]
-        base_options = f"--audio youtube-music soundcloud --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --output OUTPUT --overwrite metadata --restrict ascii --print-errors --create-skip-file --respect-skip-file --log-level INFO --simple-tui"
+        base_options = f"--audio youtube soundcloud --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --output OUTPUT --overwrite metadata --restrict ascii --print-errors --create-skip-file --respect-skip-file --log-level INFO --simple-tui"
         command_args = f"download {url}"
         if make_m3u:
             command_opts = base_options + " --m3u PLAYLIST_NAME"
