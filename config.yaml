@@ -1,7 +1,7 @@
 # musicdl configuration
 version: 1.1
-threads: 2
-retries: 1
+threads: 1
+retries: 5
 
 songs: []
 
@@ -37,7 +37,6 @@ artists:
   - Red Hot Chili Peppers: https://open.spotify.com/artist/0L8ExT028jH3ddEcZwqJJ5?si=862413ed3a2a4234
 
 playlists:
-  - moty 2024: https://open.spotify.com/playlist/79tKtSUPbC7HqFpK4PNkLL?si=f6961eef96b44c50
   - moty 2025: https://open.spotify.com/playlist/7sMsJSgasD57wPI7nQosed?si=f37d1b3a5c25422c
   - snake way: https://open.spotify.com/playlist/5kVo9wOPw09SbOEWAeinGq?si=37a1bb55dd804786
   - kamis house: https://open.spotify.com/playlist/6rfabQ6PtbkVHvzhIwcaPH?si=8dcd5b68471f469d
@@ -48,6 +47,7 @@ playlists:
   - maalu and jaalu: https://open.spotify.com/playlist/0W9VUFhvEDOapfG83au9al?si=76954d522ea74e3e
   - nul realm: https://open.spotify.com/playlist/078l7UfKSHID00KwlCq5Nc?si=7432b88ac3f44038
   - planet namek: https://open.spotify.com/playlist/5Xrt7Y1mwD4q107Ty56xnn?si=06fe6383b03a4985
-  - fortune teller baba's house: https://open.spotify.com/playlist/0Ek9VeT8XFa9jsqvVEM1PG?si=380509c3731f4fbf
+  - fortune teller babas house: https://open.spotify.com/playlist/0Ek9VeT8XFa9jsqvVEM1PG?si=380509c3731f4fbf
   - demon realm: https://open.spotify.com/playlist/2LwNTu0aHmoKqiLorCMyOf?si=c0980a5cd7fe4c8e
+  - king kais planet: https://open.spotify.com/playlist/408Y8iVwaB05C3R5t3088m?si=8326b7928f1a4e53
   - dog relaxation and anxiety relief: https://open.spotify.com/playlist/3300BQPneawOkHUGOOUhMK?si=d358d247ed944830
