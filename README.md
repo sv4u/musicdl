@@ -127,17 +127,102 @@ The script will:
 
 ## Docker
 
-1. Build image:
+### Building the Image
 
-    ```bash
-    docker build -f musicdl.Dockerfile -t musicdl:latest .
-    ```
+Build the Docker image using the provided Dockerfile:
 
-2. Start container with music library mapped to `/download`:
+```bash
+docker build -f musicdl.Dockerfile -t musicdl:latest .
+```
 
-    ```bash
-    docker run -v /path/to/music/library:/download musicdl:latest python3 download.py config.yaml
-    ```
+### Basic Usage
+
+Run the container with a volume mount for your music library:
+
+```bash
+docker run --rm -v /path/to/music/library:/download musicdl:latest
+```
+
+The container will automatically execute `download.py` with the built-in configuration file. Downloaded music will be saved to the mounted volume at `/download`.
+
+### Custom Volume Mount
+
+You can mount any directory as the download location:
+
+```bash
+docker run --rm \
+  -v /mnt/storage/music:/download \
+  musicdl:latest
+```
+
+### Configuration Override
+
+The image includes a default `config.yaml` file, but you can override it by mounting your own configuration file:
+
+```bash
+docker run --rm \
+  -v /path/to/music/library:/download \
+  -v /path/to/your/config.yaml:/scripts/config.yaml:ro \
+  musicdl:latest
+```
+
+Alternatively, you can override the config path using the `CONFIG_PATH` environment variable:
+
+```bash
+docker run --rm \
+  -v /path/to/music/library:/download \
+  -v /path/to/your/config.yaml:/custom/config.yaml:ro \
+  -e CONFIG_PATH=/custom/config.yaml \
+  musicdl:latest
+```
+
+### Docker Compose
+
+You can also use Docker Compose. Create a `docker-compose.yml` file:
+
+```yaml
+services:
+  musicdl:
+    image: musicdl:latest
+    build:
+      context: .
+      dockerfile: ./musicdl.Dockerfile
+    volumes:
+      - /path/to/music/library:/download:rw
+      # Optional: override config
+      # - /path/to/config.yaml:/scripts/config.yaml:ro
+    restart: unless-stopped
+```
+
+Then run:
+
+```bash
+docker compose up -d
+```
+
+## TrueNAS Scale Deployment
+
+musicdl can be deployed on TrueNAS Scale as a custom application. Multiple deployment methods are available:
+
+- **Helm Chart**: Production-ready Kubernetes deployment (recommended)
+- **Docker Compose**: Simple compose-based deployment
+- **Manual Setup**: Step-by-step guide for TrueNAS Scale UI
+
+For detailed instructions, see the [TrueNAS Scale Deployment Guide](truenas-scale/README.md).
+
+### Quick Start (Helm Chart)
+
+```bash
+# Install using Helm
+helm install musicdl ./truenas-scale/helm/musicdl \
+  --set downloadVolume.path=/mnt/pool/datasets/music
+```
+
+### Quick Start (Docker Compose)
+
+1. Copy `truenas-scale/docker-compose.yml` to your TrueNAS Scale system
+2. Update the volume paths in the compose file
+3. Deploy via TrueNAS Scale Apps interface or using `docker compose`
 
 ## Dependencies
 

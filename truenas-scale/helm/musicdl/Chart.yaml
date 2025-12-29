@@ -1,0 +1,16 @@
+apiVersion: v2
+name: musicdl
+description: A Helm chart for musicdl - Spotify music downloader
+type: application
+version: 1.2.0
+appVersion: "1.2"
+keywords:
+  - music
+  - spotify
+  - downloader
+  - audio
+maintainers:
+  - name: Sasank Vishnubhatla
+    email: sasank@vishnubhatlas.net
+home: https://github.com/sv4u/musicdl
+
