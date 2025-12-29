@@ -1,233 +1,189 @@
-#! /usr/bin/env python3
-# download.py
-#
-# USAGE
-#
-# python3 download.py [CONFIG]
-#
-# SYNOPSIS
-#
-# The goal of this script is to read a YAML configuration file for information
-# on Spotify links and corresponding spotdl file names, create spotdl files,
-# and download from the spotdl files. All downloads are done in the directory
-# where this script is invoked.
-#
-# The `artist` and `playlists` objects are sequences of maps. Each map within
-# the sequence maps spotdl file name to Spotify link. So, the Spotify link is
-# passed to spotdl which downloads the music.
-#
-# The `threads` and `retries` items are optional and must be integers. The
-# `version` object is required and must be `1.0` currently.
-#
-# COMMAND LINE ARGUMENT
-#
-# [CONFIG]      musicdl YAML configuration file containing information on
-#               artists and playlists to download
-#
-# NOTES
-#
-# - using `--bitrate 128k` is required for mp3 files
+#!/usr/bin/env python3
+"""
+Download music from Spotify using configuration file.
+
+USAGE:
+    python3 download.py [CONFIG]
+
+SYNOPSIS:
+    Reads a YAML configuration file for information on Spotify links
+    and downloads music using the configured settings.
+
+COMMAND LINE ARGUMENT:
+    [CONFIG]      musicdl YAML configuration file containing information on
+                  artists and playlists to download
+"""
 
 import argparse
-import os
-import subprocess
-import yaml
+import logging
+import sys
+from pathlib import Path
+from typing import Dict
+
+from core.config import ConfigError, load_config
+from core.downloader import Downloader
+from core.exceptions import DownloadError, SpotifyError
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 
-# global variables
-MAX_RETRIES = 5
-THREADS = 4
+def setup_logging(log_level: str) -> None:
+    """Configure structured logging based on config."""
+    level = getattr(logging, log_level.upper(), logging.INFO)
+    logging.getLogger().setLevel(level)
+    logger.setLevel(level)
 
 
-def read_config(config_path):
+def process_downloads(config) -> Dict[str, Dict[str, int]]:
     """
-    Parse and validate the YAML configuration file
+    Orchestrate all downloads.
 
     Args:
-        config_path (str): Path to the YAML configuration file
+        config: MusicDLConfig instance
 
     Returns:
-        dict: Parsed and validated configuration data
-
-    Raises:
-        FileNotFoundError: If the configuration file does not exist.
-        ValueError: If the configuration is invalid or missing required fields.
+        Dictionary with download statistics
     """
-    if not os.path.exists(config_path):
-        raise FileNotFoundError(
-            f"Configuration file '{config_path}' not found.")
+    downloader = Downloader(config.download)
+    results = {
+        "songs": {"success": 0, "failed": 0},
+        "artists": {"success": 0, "failed": 0},
+        "playlists": {"success": 0, "failed": 0},
+    }
 
-    with open(config_path, 'r') as file:
+    # Process songs
+    logger.info(f"Processing {len(config.songs)} songs...")
+    for song in config.songs:
+        logger.info(f"Downloading song: {song.name}")
         try:
-            config = yaml.safe_load(file)
-        except yaml.YAMLError as e:
-            raise ValueError(f"Error parsing YAML file: {e}")
+            success, path = downloader.download_track(song.url)
+            if success:
+                results["songs"]["success"] += 1
+                logger.info(f"Successfully downloaded: {song.name}")
+            else:
+                results["songs"]["failed"] += 1
+                logger.error(f"Failed to download: {song.name}")
+        except Exception as e:
+            results["songs"]["failed"] += 1
+            logger.error(f"Error downloading {song.name}: {e}")
 
-    # validate required fields
-    versions = [1.0, 1.1, "1.0", "1.1"]
-    if 'version' not in config or config['version'] not in versions:
-        raise ValueError(
-            f"Invalid or missing 'version'. Expected one in {versions}.")
+    # Process artists
+    logger.info(f"Processing {len(config.artists)} artists...")
+    for artist in config.artists:
+        logger.info(f"Downloading artist: {artist.name}")
+        try:
+            tracks = downloader.download_artist(artist.url)
+            success_count = sum(1 for success, _ in tracks if success)
+            failed_count = len(tracks) - success_count
+            results["artists"]["success"] += success_count
+            results["artists"]["failed"] += failed_count
+            logger.info(
+                f"Artist {artist.name}: {success_count} successful, {failed_count} failed"
+            )
+        except Exception as e:
+            logger.error(f"Error downloading artist {artist.name}: {e}")
 
-    if 'songs' not in config or not isinstance(config['songs'], list):
-        raise ValueError("Invalid or missing 'songs'.")
+    # Process playlists
+    logger.info(f"Processing {len(config.playlists)} playlists...")
+    for playlist in config.playlists:
+        logger.info(f"Downloading playlist: {playlist.name}")
+        try:
+            tracks = downloader.download_playlist(playlist.url, create_m3u=True)
+            success_count = sum(1 for success, _ in tracks if success)
+            failed_count = len(tracks) - success_count
+            results["playlists"]["success"] += success_count
+            results["playlists"]["failed"] += failed_count
+            logger.info(
+                f"Playlist {playlist.name}: {success_count} successful, {failed_count} failed"
+            )
+        except Exception as e:
+            logger.error(f"Error downloading playlist {playlist.name}: {e}")
 
-    if 'artists' not in config or not isinstance(config['artists'], list):
-        raise ValueError("Invalid or missing 'artists'.")
-
-    if 'playlists' not in config or not isinstance(config['playlists'], list):
-        raise ValueError("Invalid or missing 'artists'.")
-
-    # validate optional fields
-    if 'threads' in config and not isinstance(config['threads'], int):
-        raise ValueError("'threads' must be an integer.")
-
-    if 'retries' in config and not isinstance(config['retries'], int):
-        raise ValueError("'retries' must be an integer.")
-
-    # return config now that validation is done
-    return config
-
-
-def download(url, make_m3u=False, name="", threads=THREADS, retries=MAX_RETRIES):
-    """
-    Download using spotdl
-
-    Args:
-        url (str): Spotify url
-        make_m3u (bool): Toggle for creating playlist [default: False]
-        name (str): Name of playlist [default: ""]
-
-    Raises:
-        RuntimeError: If the shell subprocess encounters an error.
-    """
-    output = "\"{artist}/{album}/{disc-number}{track-number} - {title}.{output-ext}\""
-    if threads is None:
-        threads = THREADS
-
-    if retries is None:
-        retries = MAX_RETRIES
-
-    print("=" * 100)
-    print(
-        f"download(url={url}, make_m3u={make_m3u}, name={name}, threads={threads}, retries={retries})")
-    try:
-        # command shared between both cases
-        command_name = ["spotdl"]
-        base_options = f"--audio youtube soundcloud --max-retries {retries} --threads {threads} --bitrate 128k --format mp3 --output OUTPUT --overwrite metadata --restrict ascii --print-errors --create-skip-file --respect-skip-file --log-level INFO --simple-tui"
-        command_args = f"download {url}"
-        if make_m3u:
-            command_opts = base_options + " --m3u PLAYLIST_NAME"
-            command = command_name + \
-                command_opts.split(" ") + command_args.split(" ")
-
-            for i in range(len(command)):
-                if command[i] == "OUTPUT":
-                    command[i] = output
-
-                if command[i] == "PLAYLIST_NAME":
-                    command[i] = name
-
-            print(f"command: {" ".join(command)}")
-
-            result = subprocess.run(command, capture_output=True)
-        else:
-            command = command_name + \
-                base_options.split(" ") + command_args.split(" ")
-
-            for i in range(len(command)):
-                if command[i] == "OUTPUT":
-                    command[i] = output
-
-            print(f"command: {" ".join(command)}")
-
-            result = subprocess.run(command, capture_output=True)
-
-        if result.returncode != 0:
-            print(f"stdout:")
-            print(result.stdout.decode())
-            print(f"stderr:")
-            print(result.stderr.decode())
-            print(f"return code: {result.returncode}")
-        else:
-            print(f"stdout:")
-            print(result.stdout.decode())
-            print(f"stderr:")
-            print(result.stderr.decode())
-            print("successful exit of spotdl")
-
-        print("=" * 100)
-
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(
-            f"Error executing 'spotdl download {url} {make_m3u} {name} ...': {e}")
-
-    return
+    return results
 
 
-def main():
-    """
-    Main function to orchestrate the music download process.
-    """
-    # create argument parser
+def print_summary(results: Dict[str, Dict[str, int]]) -> None:
+    """Print download summary."""
+    print("\n" + "=" * 80)
+    print("DOWNLOAD SUMMARY")
+    print("=" * 80)
+
+    total_success = 0
+    total_failed = 0
+
+    for category, stats in results.items():
+        success = stats["success"]
+        failed = stats["failed"]
+        total_success += success
+        total_failed += failed
+        print(f"{category.capitalize()}: {success} successful, {failed} failed")
+
+    print("-" * 80)
+    print(f"Total: {total_success} successful, {total_failed} failed")
+    print("=" * 80)
+
+
+def main() -> None:
+    """Main entry point."""
+    # Create argument parser
     parser = argparse.ArgumentParser(
-        prog="download.py", description="Download music using a YAML configuration file.")
+        prog="download.py",
+        description="Download music using a YAML configuration file.",
+    )
 
-    # add config argument
-    parser.add_argument("config", type=str,
-                        help="Path to the YAML configuration file.")
+    # Add config argument
+    parser.add_argument(
+        "config",
+        type=str,
+        help="Path to the YAML configuration file.",
+    )
 
-    # parse arguments
+    # Parse arguments
     args = parser.parse_args()
 
-    print("parsed arguments")
-
-    # read and validate configuration file
-    config_path = args.config
+    # Load configuration
     try:
-        config = read_config(config_path)
-    except (FileNotFoundError, ValueError) as e:
-        print(f"Error: {e}")
+        config = load_config(args.config)
+        logger.info(f"Loaded configuration version {config.version}")
+    except ConfigError as e:
+        logger.error(f"Configuration error: {e}")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"Unexpected error loading config: {e}")
+        sys.exit(1)
 
-        return
+    # Setup logging based on config (if log_level is available)
+    if hasattr(config.download, "log_level"):
+        setup_logging(config.download.log_level)
 
-    print("read and validated config file")
+    logger.info("Starting download process...")
+    logger.info(f"Threads: {config.download.threads}")
+    logger.info(f"Max retries: {config.download.max_retries}")
+    logger.info(f"Format: {config.download.format}")
+    logger.info(f"Bitrate: {config.download.bitrate}")
 
-    print(f"threads: {config['threads']}")
-    print(f"retries: {config['retries']}")
+    # Process downloads
+    try:
+        results = process_downloads(config)
+        print_summary(results)
 
-    # iterate through songs and download
-    for dict in config['songs']:
-        for item in dict:
-            song = item
-            url = dict[item]
+        # Exit with error code if any downloads failed
+        total_failed = sum(stats["failed"] for stats in results.values())
+        if total_failed > 0:
+            sys.exit(1)
 
-        download(url, False, name=song,
-                 threads=config['threads'], retries=config['retries'])
-
-    # iterate through artists and download
-    for dict in config['artists']:
-        for item in dict:
-            artist = item
-            url = dict[item]
-
-        download(url, False, name=artist,
-                 threads=config['threads'], retries=config['retries'])
-
-    # iterate through playlists and download
-    for dict in config['playlists']:
-        for item in dict:
-            playlist = item
-            url = dict[item]
-
-        download(url, True, name=playlist,
-                 threads=config['threads'], retries=config['retries'])
-
-    print("downloaded all items from configuration file")
-
-    print(":)")
-
-    return
+    except KeyboardInterrupt:
+        logger.warning("Download interrupted by user")
+        sys.exit(130)
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}", exc_info=True)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

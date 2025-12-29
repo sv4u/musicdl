@@ -1,7 +1,27 @@
 # musicdl configuration
-version: 1.1
-threads: 1
-retries: 5
+version: "1.2"
+
+download:
+  # Spotify credentials
+  client_id: "5f573c9620494bae87890c0f08a60293"
+  client_secret: "212476d9b0f3472eaa762d90b19b0ba8"
+  
+  # Download settings
+  threads: 1
+  max_retries: 5
+  format: "mp3"
+  bitrate: "128k"
+  output: "{artist}/{album}/{disc-number}{track-number} - {title}.{output-ext}"
+  
+  # Provider settings
+  audio_providers: ["youtube-music", "youtube"]
+  
+  # Cache settings
+  cache_max_size: 1000  # Maximum cached entries (LRU eviction)
+  cache_ttl: 3600  # Cache TTL in seconds (1 hour)
+  
+  # File management
+  overwrite: "skip"  # skip, overwrite, metadata
 
 songs: []
 
