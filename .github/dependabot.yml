@@ -28,9 +28,6 @@ updates:
     commit-message:
       prefix: "deps"
       include: "scope"
-    labels:
-      - "dependencies"
-      - "python"
     ignore:
       # Ignore major version updates that may introduce breaking changes
       # Minor and patch updates will still be processed automatically
@@ -52,9 +49,6 @@ updates:
     commit-message:
       prefix: "deps"
       include: "scope"
-    labels:
-      - "dependencies"
-      - "docker"
     # Monitor both Dockerfiles in root directory
     # Dependabot will automatically detect all Dockerfiles in the specified directory
     # Supported patterns: Dockerfile, *.Dockerfile, docker-compose*.yml
@@ -72,9 +66,6 @@ updates:
     commit-message:
       prefix: "ci"
       include: "scope"
-    labels:
-      - "dependencies"
-      - "github-actions"
     ignore:
       # Ignore major version updates for critical actions to prevent breaking changes
       - dependency-name: "actions/checkout"
