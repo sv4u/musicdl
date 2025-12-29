@@ -1,0 +1,493 @@
+name: Docker Publish
+
+on:
+    workflow_dispatch:
+        inputs:
+            release_type:
+                description: "Type of release"
+                required: true
+                type: choice
+                options:
+                    - major
+                    - minor
+                    - hotfix
+            dry_run:
+                description: "Run in dry-run mode (no releases or commits)"
+                required: false
+                type: boolean
+                default: false
+
+permissions:
+    contents: write
+    packages: write
+
+jobs:
+    publish:
+        name: Publish Docker Image
+        runs-on: ubuntu-latest
+        timeout-minutes: 60
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+              with:
+                  ref: main
+                  fetch-depth: 0
+                  token: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Verify branch and working directory
+              run: |
+                  # Check if we're on main branch
+                  CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+                  if [ "$CURRENT_BRANCH" != "main" ]; then
+                    echo "[X] Error: This workflow must be run from the 'main' branch"
+                    echo "Current branch: $CURRENT_BRANCH"
+                    exit 1
+                  fi
+
+                  # Check if working directory is clean
+                  if ! git diff-index --quiet HEAD --; then
+                    echo "[X] Error: Working directory is not clean. Please commit or stash changes."
+                    git status
+                    exit 1
+                  fi
+
+                  # Check if branch is up-to-date with remote
+                  git fetch origin main
+                  LOCAL=$(git rev-parse HEAD)
+                  REMOTE=$(git rev-parse origin/main)
+                  if [ "$LOCAL" != "$REMOTE" ]; then
+                    echo "[X] Error: Local branch is not up-to-date with remote. Please pull latest changes."
+                    echo "Local: $LOCAL"
+                    echo "Remote: $REMOTE"
+                    exit 1
+                  fi
+
+                  echo "[OK] Branch verification passed"
+
+            - name: Get current version
+              id: current-version
+              run: |
+                  # Fetch all tags to ensure we have latest
+                  git fetch --tags
+
+                  # Get latest tag, preferring v-prefixed tags
+                  LATEST_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || \
+                               git describe --tags --abbrev=0 2>/dev/null || \
+                               echo "v0.0.0")
+
+                  # Remove 'v' prefix if present
+                  VERSION=${LATEST_TAG#v}
+
+                  echo "Current version tag: $LATEST_TAG"
+                  echo "Current version: $VERSION"
+                  echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+                  echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+            - name: Calculate next version
+              id: next-version
+              run: |
+                  LATEST_TAG="${{ steps.current-version.outputs.tag }}"
+                  CURRENT_VERSION="${{ steps.current-version.outputs.version }}"
+                  RELEASE_TYPE="${{ inputs.release_type }}"
+
+                  # For first release (no tags exist), always default to v0.1.0 regardless of release type
+                  if [ "$LATEST_TAG" = "v0.0.0" ]; then
+                    NEXT_VERSION="0.1.0"
+                    NEXT_TAG="v0.1.0"
+                    echo "First release detected. Defaulting to v0.1.0 (release type '$RELEASE_TYPE' is ignored for first release)."
+                    echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT
+                    echo "tag=$NEXT_TAG" >> $GITHUB_OUTPUT
+                    exit 0
+                  fi
+
+                  # Validate current version format (must be X.Y.Z, no pre-release suffixes)
+                  if ! echo "$CURRENT_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+                    echo "[X] Error: Invalid version format: $CURRENT_VERSION"
+                    echo "   Expected format: X.Y.Z (e.g., 1.2.3)"
+                    echo "   Latest tag: $LATEST_TAG"
+                    exit 1
+                  fi
+
+                  # Parse version components
+                  IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+
+                  # Validate all components are non-empty
+                  if [ -z "$MAJOR" ] || [ -z "$MINOR" ] || [ -z "$PATCH" ]; then
+                    echo "[X] Error: Invalid version format: $CURRENT_VERSION"
+                    echo "   Version must have three components: MAJOR.MINOR.PATCH"
+                    echo "   Parsed components: MAJOR='$MAJOR' MINOR='$MINOR' PATCH='$PATCH'"
+                    exit 1
+                  fi
+
+                  # Calculate next version based on release type
+                  # Use 10# prefix to force decimal interpretation and prevent octal issues with leading zeros
+                  case "$RELEASE_TYPE" in
+                    major)
+                      MAJOR=$((10#$MAJOR + 1))
+                      MINOR=0
+                      PATCH=0
+                      ;;
+                    minor)
+                      MINOR=$((10#$MINOR + 1))
+                      PATCH=0
+                      ;;
+                    hotfix)
+                      PATCH=$((10#$PATCH + 1))
+                      ;;
+                    *)
+                      echo "[X] Error: Invalid release type: $RELEASE_TYPE"
+                      exit 1
+                      ;;
+                  esac
+
+                  NEXT_VERSION="$MAJOR.$MINOR.$PATCH"
+                  NEXT_TAG="v$NEXT_VERSION"
+
+                  # Validate calculated version format
+                  if ! echo "$NEXT_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+                    echo "[X] Error: Calculated version format is invalid: $NEXT_VERSION"
+                    exit 1
+                  fi
+
+                  # Validate tag name format (Git restrictions: no spaces, no special chars except - and .)
+                  if ! echo "$NEXT_TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+                    echo "[X] Error: Invalid tag name format: $NEXT_TAG"
+                    echo "   Tag names must match pattern: vX.Y.Z (e.g., v1.2.3)"
+                    exit 1
+                  fi
+
+                  # Validate tag name length (Git limit is 255 characters for ref names)
+                  TAG_NAME_LENGTH=$(printf '%s' "$NEXT_TAG" | wc -c)
+                  MAX_TAG_NAME_LENGTH=255
+                  if [ "$TAG_NAME_LENGTH" -gt "$MAX_TAG_NAME_LENGTH" ]; then
+                    echo "[X] Error: Tag name exceeds maximum length ($TAG_NAME_LENGTH > $MAX_TAG_NAME_LENGTH characters)"
+                    exit 1
+                  fi
+
+                  echo "Release type: $RELEASE_TYPE"
+                  echo "Current version: $CURRENT_VERSION"
+                  echo "Next version: $NEXT_VERSION"
+                  echo "Next tag: $NEXT_TAG"
+                  echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT
+                  echo "tag=$NEXT_TAG" >> $GITHUB_OUTPUT
+
+            - name: Check commit range
+              id: commit-range
+              run: |
+                  LATEST_TAG="${{ steps.current-version.outputs.tag }}"
+
+                  # If no tags exist (LATEST_TAG is v0.0.0), count all commits
+                  # Otherwise, count commits since the latest tag
+                  if [ "$LATEST_TAG" = "v0.0.0" ]; then
+                    COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo "0")
+                    echo "No existing tags found. Counting all commits for first release."
+                  else
+                    COMMIT_COUNT=$(git rev-list --count ${LATEST_TAG}..HEAD 2>/dev/null || echo "0")
+                  fi
+
+                  if [ "$COMMIT_COUNT" -eq 0 ]; then
+                    echo "[X] Error: No commits to release"
+                    if [ "$LATEST_TAG" != "v0.0.0" ]; then
+                      echo "   No commits since $LATEST_TAG"
+                    else
+                      echo "   Repository has no commits"
+                    fi
+                    echo "   This prevents duplicate releases. Please ensure there are new commits."
+                    exit 1
+                  fi
+
+                  if [ "$LATEST_TAG" = "v0.0.0" ]; then
+                    echo "Commit count (all commits): $COMMIT_COUNT"
+                  else
+                    echo "Commit count since $LATEST_TAG: $COMMIT_COUNT"
+                  fi
+                  echo "count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
+
+            - name: Preview version and confirm
+              if: ${{ inputs.dry_run != 'true' }}
+              run: |
+                  LATEST_TAG="${{ steps.current-version.outputs.tag }}"
+                  IS_FIRST_RELEASE=false
+                  if [ "$LATEST_TAG" = "v0.0.0" ]; then
+                    IS_FIRST_RELEASE=true
+                  fi
+
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo "[PKG] RELEASE PREVIEW"
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo ""
+                  echo "Release Type:    ${{ inputs.release_type }}"
+                  if [ "$IS_FIRST_RELEASE" = "true" ]; then
+                    echo "Current Version: (none - first release)"
+                  else
+                    echo "Current Version: $LATEST_TAG"
+                  fi
+                  echo "Next Version:    ${{ steps.next-version.outputs.tag }}"
+                  if [ "$IS_FIRST_RELEASE" = "true" ]; then
+                    echo "Commits:         ${{ steps.commit-range.outputs.count }} commits (all commits)"
+                  else
+                    echo "Commits:         ${{ steps.commit-range.outputs.count }} commits since last release"
+                  fi
+                  echo ""
+                  if [ "$IS_FIRST_RELEASE" = "true" ]; then
+                    echo "Compare View:    (Initial release - no previous version to compare)"
+                  else
+                    echo "Compare View:    https://github.com/${{ github.repository }}/compare/$LATEST_TAG...HEAD"
+                  fi
+                  echo ""
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo ""
+                  echo "[!] This will:"
+                  echo "   1. Create and push tag: ${{ steps.next-version.outputs.tag }}"
+                  echo "   2. Build Docker image"
+                  echo "   3. Publish Docker image to GHCR"
+                  echo ""
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo ""
+                  echo "[||] Waiting 10 seconds before proceeding..."
+                  echo "   (This workflow will continue automatically)"
+                  sleep 10
+
+            - name: Display dry-run preview
+              if: ${{ inputs.dry_run == 'true' }}
+              run: |
+                  LATEST_TAG="${{ steps.current-version.outputs.tag }}"
+                  IS_FIRST_RELEASE=false
+                  if [ "$LATEST_TAG" = "v0.0.0" ]; then
+                    IS_FIRST_RELEASE=true
+                  fi
+
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo "[?] DRY-RUN MODE - PREVIEW ONLY"
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo ""
+                  echo "Release Type:    ${{ inputs.release_type }}"
+                  if [ "$IS_FIRST_RELEASE" = "true" ]; then
+                    echo "Current Version: (none - first release)"
+                  else
+                    echo "Current Version: $LATEST_TAG"
+                  fi
+                  echo "Next Version:    ${{ steps.next-version.outputs.tag }}"
+                  if [ "$IS_FIRST_RELEASE" = "true" ]; then
+                    echo "Commits:         ${{ steps.commit-range.outputs.count }} commits (all commits)"
+                  else
+                    echo "Commits:         ${{ steps.commit-range.outputs.count }} commits since last release"
+                  fi
+                  echo ""
+                  if [ "$IS_FIRST_RELEASE" = "true" ]; then
+                    echo "Compare View:    (Initial release - no previous version to compare)"
+                  else
+                    echo "Compare View:    https://github.com/${{ github.repository }}/compare/$LATEST_TAG...HEAD"
+                  fi
+                  echo ""
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo ""
+                  echo "[i] In dry-run mode, no tags or images will be created."
+
+            - name: Check if tag already exists
+              id: tag-check
+              run: |
+                  NEXT_TAG="${{ steps.next-version.outputs.tag }}"
+                  DRY_RUN="${{ inputs.dry_run }}"
+
+                  # Check local tag
+                  if git rev-parse --verify "$NEXT_TAG" >/dev/null 2>&1; then
+                    if [ "$DRY_RUN" = "true" ]; then
+                      echo "[!] Warning: Tag $NEXT_TAG already exists locally (dry-run mode, continuing)"
+                    else
+                      echo "[X] Error: Tag $NEXT_TAG already exists locally!"
+                      exit 1
+                    fi
+                  fi
+
+                  # Check remote tag
+                  if git ls-remote --tags origin "$NEXT_TAG" | grep -q "$NEXT_TAG"; then
+                    if [ "$DRY_RUN" = "true" ]; then
+                      echo "[!] Warning: Tag $NEXT_TAG already exists on remote (dry-run mode, continuing)"
+                    else
+                      echo "[X] Error: Tag $NEXT_TAG already exists on remote!"
+                      exit 1
+                    fi
+                  fi
+
+                  if [ "$DRY_RUN" != "true" ]; then
+                    echo "[OK] Tag $NEXT_TAG is available"
+                  else
+                    echo "[i] Tag $NEXT_TAG check completed (dry-run mode)"
+                  fi
+
+            - name: Create and push tag
+              if: ${{ inputs.dry_run != 'true' }}
+              id: create-tag
+              run: |
+                  NEXT_TAG="${{ steps.next-version.outputs.tag }}"
+                  RELEASE_TYPE="${{ inputs.release_type }}"
+                  COMMIT_COUNT="${{ steps.commit-range.outputs.count }}"
+                  LATEST_TAG="${{ steps.current-version.outputs.tag }}"
+                  CURRENT_DATE=$(date +%Y-%m-%d)
+
+                  # Create tag message with proper newlines using printf
+                  # Handle first release differently (no previous tag to reference)
+                  if [ "$LATEST_TAG" = "v0.0.0" ]; then
+                    # First release - no previous tag to reference
+                    TAG_MESSAGE=$(printf "Release %s (%s) - %s\n\nAutomated release via GitHub Actions workflow.\nInitial release. Includes %s commits." "$NEXT_TAG" "$RELEASE_TYPE" "$CURRENT_DATE" "$COMMIT_COUNT")
+                  else
+                    # Subsequent release - reference previous tag
+                    TAG_MESSAGE=$(printf "Release %s (%s) - %s\n\nAutomated release via GitHub Actions workflow.\nIncludes %s commits since %s." "$NEXT_TAG" "$RELEASE_TYPE" "$CURRENT_DATE" "$COMMIT_COUNT" "$LATEST_TAG")
+                  fi
+
+                  # Validate tag message length (Git limit is ~64KB, use conservative 60KB)
+                  TAG_MESSAGE_LENGTH=$(printf '%s' "$TAG_MESSAGE" | wc -c)
+                  MAX_TAG_MESSAGE_LENGTH=61440  # 60KB in bytes
+                  if [ "$TAG_MESSAGE_LENGTH" -gt "$MAX_TAG_MESSAGE_LENGTH" ]; then
+                    echo "[X] Error: Tag message exceeds maximum length ($TAG_MESSAGE_LENGTH > $MAX_TAG_MESSAGE_LENGTH bytes)"
+                    echo "   This may occur with extremely large commit counts. Consider splitting the release."
+                    exit 1
+                  fi
+
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+
+                  echo "Creating tag: $NEXT_TAG"
+                  git tag -a "$NEXT_TAG" -m "$TAG_MESSAGE"
+
+                  echo "Pushing tag to remote..."
+                  git push origin "$NEXT_TAG"
+
+                  # Verify tag push succeeded with retry logic to handle propagation delays
+                  MAX_RETRIES=5
+                  RETRY_DELAY=2
+                  RETRY_COUNT=0
+                  while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+                    if git ls-remote --tags origin "$NEXT_TAG" | grep -q "$NEXT_TAG"; then
+                      echo "[OK] Tag $NEXT_TAG verified on remote"
+                      break
+                    fi
+                    RETRY_COUNT=$((RETRY_COUNT + 1))
+                    if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                      echo "[...] Tag not yet visible, retrying in ${RETRY_DELAY}s (attempt $RETRY_COUNT/$MAX_RETRIES)..."
+                      sleep $RETRY_DELAY
+                    fi
+                  done
+
+                  if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+                    echo "[X] Error: Tag push verification failed after $MAX_RETRIES attempts. Tag may not exist on remote."
+                    exit 1
+                  fi
+
+                  echo "[OK] Tag $NEXT_TAG created and pushed successfully"
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            - name: Log in to GHCR
+              if: ${{ inputs.dry_run != 'true' }}
+              uses: docker/login-action@v3
+              with:
+                  registry: ghcr.io
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Determine Docker image tags
+              id: docker-tags
+              run: |
+                  VERSION_TAG="ghcr.io/sv4u/musicdl:${{ steps.next-version.outputs.tag }}"
+                  echo "version_tag=${VERSION_TAG}" >> $GITHUB_OUTPUT
+                  if [ "${{ inputs.dry_run }}" != "true" ]; then
+                    echo "tags_list=${VERSION_TAG},ghcr.io/sv4u/musicdl:latest" >> $GITHUB_OUTPUT
+                  else
+                    echo "tags_list=${VERSION_TAG}" >> $GITHUB_OUTPUT
+                  fi
+
+            - name: Generate build timestamp
+              id: build-timestamp
+              run: |
+                  BUILD_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+                  echo "timestamp=${BUILD_TIMESTAMP}" >> $GITHUB_OUTPUT
+
+            - name: Build and push Docker image
+              id: docker-build
+              uses: docker/build-push-action@v5
+              continue-on-error: true
+              with:
+                  context: .
+                  file: ./musicdl.Dockerfile
+                  tags: ${{ steps.docker-tags.outputs.tags_list }}
+                  push: ${{ inputs.dry_run != 'true' }}
+                  labels: |
+                      org.opencontainers.image.source=https://github.com/sv4u/musicdl
+                      org.opencontainers.image.revision=${{ github.sha }}
+                      org.opencontainers.image.created=${{ steps.build-timestamp.outputs.timestamp }}
+                      org.opencontainers.image.version=${{ steps.next-version.outputs.tag }}
+
+            - name: Handle Docker build failure in dry-run mode
+              if: ${{ inputs.dry_run == 'true' && steps.docker-build.outcome == 'failure' }}
+              run: |
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo "[X] Docker build failed in dry-run mode"
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo ""
+                  echo "The Docker build failed during dry-run. This indicates there is an issue with"
+                  echo "the Docker build process that must be fixed before attempting a real release."
+                  echo ""
+                  echo "Please review the build logs above to identify and fix the issue."
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  exit 1
+
+            - name: Rollback tag on failure
+              if: (failure() || steps.docker-build.outcome == 'failure') && inputs.dry_run != 'true' && steps.create-tag.outcome == 'success'
+              run: |
+                  NEXT_TAG="${{ steps.next-version.outputs.tag }}"
+
+                  echo "[X] Workflow failed after tag creation. Rolling back tag..."
+
+                  # Delete local tag
+                  if git rev-parse --verify "$NEXT_TAG" >/dev/null 2>&1; then
+                    git tag -d "$NEXT_TAG"
+                    echo "[OK] Deleted local tag: $NEXT_TAG"
+                  fi
+
+                  # Delete remote tag
+                  if git ls-remote --tags origin "$NEXT_TAG" | grep -q "$NEXT_TAG"; then
+                    if git push origin ":refs/tags/$NEXT_TAG" 2>&1; then
+                      echo "[OK] Deleted remote tag: $NEXT_TAG"
+                    else
+                      echo "[!] Warning: Failed to delete remote tag: $NEXT_TAG"
+                      echo "   Tag may still exist on remote. Manual cleanup may be required."
+                      echo "   To delete manually, run: git push origin :refs/tags/$NEXT_TAG"
+                    fi
+                  fi
+
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo "[<->] Tag rollback completed"
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  exit 1
+
+            - name: Verify Docker image was published
+              if: ${{ inputs.dry_run != 'true' && steps.docker-build.outcome == 'success' }}
+              run: |
+                  NEXT_TAG="${{ steps.next-version.outputs.tag }}"
+                  IMAGE_TAG="ghcr.io/sv4u/musicdl:$NEXT_TAG"
+
+                  echo "Verifying Docker image was published..."
+                  echo "Image: $IMAGE_TAG"
+                  echo "Latest: ghcr.io/sv4u/musicdl:latest"
+                  echo ""
+                  echo "[OK] Docker image published successfully"
+
+            - name: Display release summary
+              if: ${{ inputs.dry_run != 'true' && steps.docker-build.outcome == 'success' }}
+              run: |
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo "[OK] RELEASE COMPLETED SUCCESSFULLY"
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo ""
+                  echo "Tag:     ${{ steps.next-version.outputs.tag }}"
+                  echo "Version: ${{ steps.next-version.outputs.version }}"
+                  echo "Commits: ${{ steps.commit-range.outputs.count }} commits included"
+                  echo ""
+                  echo "Docker Images:"
+                  echo "  - ghcr.io/sv4u/musicdl:${{ steps.next-version.outputs.tag }}"
+                  echo "  - ghcr.io/sv4u/musicdl:latest"
+                  echo ""
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

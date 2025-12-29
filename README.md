@@ -1,5 +1,9 @@
 # `musicdl`
 
+![Tests](https://github.com/sv4u/musicdl/actions/workflows/test.yml/badge.svg)
+![Coverage](https://github.com/sv4u/musicdl/actions/workflows/coverage.yml/badge.svg)
+![Docker Build](https://github.com/sv4u/musicdl/actions/workflows/docker-build.yml/badge.svg)
+
 Personal music downloader with native Python implementation (no spotDL dependency).
 
 ## Overview
@@ -25,12 +29,34 @@ The application uses a simplified, modular architecture:
 - **Configuration**: Pydantic models for type-safe configuration validation
 - **Error Handling**: Custom exceptions with retry logic and exponential backoff
 
+### Application Architecture
+
+```mermaid
+flowchart TD
+    EntryPoint["download.py Entry Point"] --> ConfigLoader["Config Loader load_config"]
+    ConfigLoader --> Downloader["Downloader Orchestrator"]
+    
+    Downloader --> SpotifyClient["SpotifyClient API Client"]
+    Downloader --> AudioProvider["AudioProvider yt-dlp wrapper"]
+    Downloader --> MetadataEmbedder["MetadataEmbedder mutagen"]
+    Downloader --> TTLCache["TTLCache In-memory cache"]
+    
+    SpotifyClient --> SpotifyAPI["Spotify Web API External Service"]
+    AudioProvider --> YouTube["YouTube/YouTube Music External Service"]
+    AudioProvider --> SoundCloud["SoundCloud External Service"]
+    
+    MetadataEmbedder --> FileSystem["File System Output Files"]
+    
+    ConfigLoader --> ConfigModel["Config Models Pydantic validation"]
+    Downloader --> ExceptionHandler["Exception Handler Retry logic"]
+```
+
 ## Installation
 
 1. Clone repository:
 
     ```bash
-    git clone git@gitlab.com/sv4u/musicdl.git
+    git clone git@github.com:sv4u/musicdl.git
     cd musicdl
     ```
 
@@ -41,6 +67,8 @@ The application uses a simplified, modular architecture:
     ```
 
 3. Configure `config.yaml` with your Spotify API credentials (see Configuration section)
+
+**Note**: This project uses GitHub Actions for automated testing, code coverage, and Docker image building. All workflows run automatically on pull requests and pushes to the `main` branch. See the [CI/CD](#cicd) section for more details.
 
 ## Configuration
 
@@ -134,6 +162,8 @@ Build the Docker image using the provided Dockerfile:
 ```bash
 docker build -f musicdl.Dockerfile -t musicdl:latest .
 ```
+
+**Note**: Docker images are automatically built on pull requests and pushes to `main` via GitHub Actions. Published images are available at `ghcr.io/sv4u/musicdl`. See the [CI/CD](#cicd) section for details on automated builds and publishing.
 
 ### Basic Usage
 
@@ -232,6 +262,94 @@ helm install musicdl ./truenas-scale/helm/musicdl \
 - **pydantic**: Configuration validation
 - **PyYAML**: YAML file parsing
 - **requests**: HTTP requests for cover art
+
+## CI/CD
+
+This project uses GitHub Actions for automated testing, code coverage, Docker image building, and publishing.
+
+### Workflows
+
+1. **Test Suite** - Runs pytest on all pull requests and pushes to `main`
+2. **Code Coverage** - Generates and uploads coverage reports (HTML and XML) on all pull requests and pushes to `main`
+3. **Docker Build** - Builds Docker images on pull requests and pushes to `main` (images are not published in this workflow)
+4. **Docker Publish** - Manually triggered workflow that calculates semantic versions, creates git tags, and publishes Docker images to GitHub Container Registry (GHCR)
+
+### Workflow Architecture
+
+```mermaid
+flowchart TD
+    PR["Pull Request"] --> TestWorkflow["Test Suite Workflow"]
+    PR --> CoverageWorkflow["Coverage Workflow"]
+    PR --> DockerBuildWorkflow["Docker Build Workflow"]
+    
+    PushMain["Push to main"] --> TestWorkflow
+    PushMain --> CoverageWorkflow
+    PushMain --> DockerBuildWorkflow
+    
+    ManualDispatch["Manual Dispatch"] --> DockerPublishWorkflow["Docker Publish Workflow"]
+    
+    TestWorkflow --> TestResults["Test Results"]
+    CoverageWorkflow --> CoverageArtifacts["Coverage Reports HTML + XML"]
+    DockerBuildWorkflow --> DockerArtifacts["Docker Image Artifacts PRs only"]
+    
+    DockerPublishWorkflow --> VersionCalc["Version Calculation major/minor/hotfix"]
+    VersionCalc --> TagCreation["Create Git Tag"]
+    TagCreation --> DockerBuild["Docker Build"]
+    DockerBuild --> GHCRPublish["Publish to GHCR ghcr.io/sv4u/musicdl"]
+```
+
+### Docker Publishing
+
+To publish a new Docker image:
+
+1. Navigate to the [Actions](https://github.com/sv4u/musicdl/actions) tab in GitHub
+2. Select the "Docker Publish" workflow from the left sidebar
+3. Click "Run workflow" button (top right)
+4. Select the release type:
+   - **major**: Increments major version, resets minor and patch to 0 (e.g., v1.2.3 → v2.0.0)
+   - **minor**: Increments minor version, resets patch to 0 (e.g., v1.2.3 → v1.3.0)
+   - **hotfix**: Increments patch version only (e.g., v1.2.3 → v1.2.4)
+5. Optionally enable dry-run mode to test without creating tags or publishing images
+6. Click "Run workflow" to start
+
+**What the workflow does**:
+
+1. Validates branch is `main` and working directory is clean
+2. Calculates the next version based on the selected release type
+3. Validates that there are commits to include in the release
+4. Displays a preview of the release (version, commit count)
+5. Creates and pushes a git tag with the new version
+6. Builds Docker image from `musicdl.Dockerfile`
+7. Publishes Docker image to GHCR with version and latest tags
+8. Verifies the image was published successfully
+
+**Dry-Run Mode**:
+
+The workflow supports a dry-run mode that allows you to test the entire release process without creating tags or publishing images. This is useful for:
+
+- Validating version calculation logic
+- Testing workflow changes in pull requests
+- Debugging release issues without creating test releases
+
+In dry-run mode, the workflow will:
+
+- ✅ Validate branch and working directory
+- ✅ Calculate and display next version
+- ✅ Show preview with commit count
+- ✅ Build Docker image (but not push)
+
+In dry-run mode, the workflow will NOT:
+
+- ❌ Create git tags
+- ❌ Publish Docker images
+- ❌ Make any changes to the repository
+
+**Published Images**:
+
+Published Docker images are available at:
+
+- `ghcr.io/sv4u/musicdl:v{version}` (e.g., `ghcr.io/sv4u/musicdl:v1.2.3`)
+- `ghcr.io/sv4u/musicdl:latest` (always points to the latest published version)
 
 ## Key Differences from spotDL
 

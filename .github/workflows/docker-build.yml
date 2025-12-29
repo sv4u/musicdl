@@ -1,0 +1,73 @@
+name: Docker Build
+
+on:
+    pull_request:
+        types: [opened, synchronize, reopened]
+    push:
+        branches:
+            - main
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    build:
+        name: Build Docker Image
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            - name: Determine image tags
+              id: tags
+              run: |
+                  if [ "${{ github.event_name }}" == "pull_request" ]; then
+                    PR_NUMBER="${{ github.event.pull_request.number }}"
+                    echo "image_tag=ghcr.io/sv4u/musicdl:pr-${PR_NUMBER}" >> $GITHUB_OUTPUT
+                    echo "artifact_name=docker-image-pr-${PR_NUMBER}" >> $GITHUB_OUTPUT
+                    echo "tags_list=ghcr.io/sv4u/musicdl:pr-${PR_NUMBER}" >> $GITHUB_OUTPUT
+                  else
+                    SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+                    echo "image_tag=ghcr.io/sv4u/musicdl:sha-${SHORT_SHA}" >> $GITHUB_OUTPUT
+                    echo "image_tag_latest=ghcr.io/sv4u/musicdl:latest" >> $GITHUB_OUTPUT
+                    echo "artifact_name=docker-image-${SHORT_SHA}" >> $GITHUB_OUTPUT
+                    echo "tags_list=ghcr.io/sv4u/musicdl:sha-${SHORT_SHA},ghcr.io/sv4u/musicdl:latest" >> $GITHUB_OUTPUT
+                  fi
+
+            - name: Generate build timestamp
+              id: build-timestamp
+              run: |
+                  BUILD_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+                  echo "timestamp=${BUILD_TIMESTAMP}" >> $GITHUB_OUTPUT
+
+            - name: Build Docker image
+              uses: docker/build-push-action@v5
+              with:
+                  context: .
+                  file: ./musicdl.Dockerfile
+                  tags: ${{ steps.tags.outputs.tags_list }}
+                  load: true
+                  push: false
+                  labels: |
+                      org.opencontainers.image.source=https://github.com/sv4u/musicdl
+                      org.opencontainers.image.revision=${{ github.sha }}
+                      org.opencontainers.image.created=${{ steps.build-timestamp.outputs.timestamp }}
+
+            - name: Save Docker image as artifact
+              if: github.event_name == 'pull_request'
+              run: |
+                  docker save ${{ steps.tags.outputs.image_tag }} | gzip > docker-image.tar.gz
+
+            - name: Upload Docker image artifact
+              if: github.event_name == 'pull_request'
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ${{ steps.tags.outputs.artifact_name }}
+                  path: docker-image.tar.gz
+                  retention-days: 1
