@@ -11,7 +11,10 @@ Personal music downloader with native Python implementation (no spotDL dependenc
 
 ## Overview
 
-musicdl downloads music from Spotify by sourcing audio from YouTube and other providers, then embedding metadata into the downloaded files. This is a simplified, self-contained implementation that uses spotDL's dependencies (spotipy, yt-dlp, mutagen) directly without requiring the spotDL package.
+musicdl downloads music from Spotify by sourcing audio from YouTube and other
+providers, then embedding metadata into the downloaded files. This is a
+simplified, self-contained implementation that uses spotDL's dependencies
+(spotipy, yt-dlp, mutagen) directly without requiring the spotDL package.
 
 ## Features
 
@@ -71,7 +74,10 @@ flowchart TD
 
 3. Configure `config.yaml` with your Spotify API credentials (see Configuration section)
 
-**Note**: This project uses GitHub Actions for automated testing, code coverage, and Docker image building. All workflows run automatically on pull requests and pushes to the `main` branch. See the [CI/CD](#cicd) section for more details.
+**Note**: This project uses GitHub Actions for automated testing, code coverage,
+and Docker image building. All workflows run automatically on pull requests
+and pushes to the `main` branch. See the [CI/CD](#cicd) section for more
+details.
 
 ## Configuration
 
@@ -122,7 +128,8 @@ All download settings are configured under the `download` section:
 - `audio_providers`: List of audio sources to try in order (default: ["youtube-music"])
 - `cache_max_size`: Maximum cached Spotify API responses (default: 1000)
 - `cache_ttl`: Cache expiration time in seconds (default: 3600 = 1 hour)
-- `overwrite`: Behavior when file exists - "skip", "overwrite", or "metadata" (default: "skip")
+- `overwrite`: Behavior when file exists - "skip", "overwrite", or "metadata"
+  (default: "skip")
 
 ### Output Template Placeholders
 
@@ -166,7 +173,10 @@ Build the Docker image using the provided Dockerfile:
 docker build -f musicdl.Dockerfile -t musicdl:latest .
 ```
 
-**Note**: Docker images are automatically built on pull requests and pushes to `main` via GitHub Actions. Published images are available at `ghcr.io/sv4u/musicdl`. See the [CI/CD](#cicd) section for details on automated builds and publishing.
+**Note**: Docker images are automatically built on pull requests and pushes to
+`main` via GitHub Actions. Published images are available at
+`ghcr.io/sv4u/musicdl`. See the [CI/CD](#cicd) section for details on automated
+builds and publishing.
 
 ### Basic Usage
 
@@ -176,7 +186,9 @@ Run the container with a volume mount for your music library:
 docker run --rm -v /path/to/music/library:/download musicdl:latest
 ```
 
-The container will automatically execute `download.py` with the built-in configuration file. Downloaded music will be saved to the mounted volume at `/download`.
+The container will automatically execute `download.py` with the built-in
+configuration file. Downloaded music will be saved to the mounted volume at
+`/download`.
 
 ### Custom Volume Mount
 
@@ -190,7 +202,8 @@ docker run --rm \
 
 ### Configuration Override
 
-The image includes a default `config.yaml` file, but you can override it by mounting your own configuration file:
+The image includes a default `config.yaml` file, but you can override it by
+mounting your own configuration file:
 
 ```bash
 docker run --rm \
@@ -199,7 +212,8 @@ docker run --rm \
   musicdl:latest
 ```
 
-Alternatively, you can override the config path using the `CONFIG_PATH` environment variable:
+Alternatively, you can override the config path using the `CONFIG_PATH`
+environment variable:
 
 ```bash
 docker run --rm \
@@ -235,7 +249,8 @@ docker compose up -d
 
 ## TrueNAS Scale Deployment
 
-musicdl can be deployed on TrueNAS Scale as a custom application. Multiple deployment methods are available:
+musicdl can be deployed on TrueNAS Scale as a custom application. Multiple
+deployment methods are available:
 
 - **Helm Chart**: Production-ready Kubernetes deployment (recommended)
 - **Docker Compose**: Simple compose-based deployment
@@ -268,14 +283,19 @@ helm install musicdl ./truenas-scale/helm/musicdl \
 
 ## CI/CD
 
-This project uses GitHub Actions for automated testing, code coverage, Docker image building, and publishing.
+This project uses GitHub Actions for automated testing, code coverage, Docker
+image building, and publishing.
 
 ### Workflows
 
 1. **Test Suite** - Runs pytest on all pull requests and pushes to `main`
-2. **Code Coverage** - Generates and uploads coverage reports (HTML and XML) on all pull requests and pushes to `main`
-3. **Docker Build** - Builds Docker images on pull requests and pushes to `main` (images are not published in this workflow)
-4. **Docker Publish** - Manually triggered workflow that calculates semantic versions, creates git tags, and publishes Docker images to GitHub Container Registry (GHCR)
+2. **Code Coverage** - Generates and uploads coverage reports (HTML and XML) on
+   all pull requests and pushes to `main`
+3. **Docker Build** - Builds Docker images on pull requests and pushes to
+   `main` (images are not published in this workflow)
+4. **Docker Publish** - Manually triggered workflow that calculates semantic
+   versions, creates git tags, and publishes Docker images to GitHub Container
+   Registry (GHCR)
 
 ### Workflow Architecture
 
@@ -309,8 +329,10 @@ To publish a new Docker image:
 2. Select the "Docker Publish" workflow from the left sidebar
 3. Click "Run workflow" button (top right)
 4. Select the release type:
-   - **major**: Increments major version, resets minor and patch to 0 (e.g., v1.2.3 → v2.0.0)
-   - **minor**: Increments minor version, resets patch to 0 (e.g., v1.2.3 → v1.3.0)
+   - **major**: Increments major version, resets minor and patch to 0
+     (e.g., v1.2.3 → v2.0.0)
+   - **minor**: Increments minor version, resets patch to 0
+     (e.g., v1.2.3 → v1.3.0)
    - **hotfix**: Increments patch version only (e.g., v1.2.3 → v1.2.4)
 5. Optionally enable dry-run mode to test without creating tags or publishing images
 6. Click "Run workflow" to start
@@ -328,7 +350,8 @@ To publish a new Docker image:
 
 **Dry-Run Mode**:
 
-The workflow supports a dry-run mode that allows you to test the entire release process without creating tags or publishing images. This is useful for:
+The workflow supports a dry-run mode that allows you to test the entire release
+process without creating tags or publishing images. This is useful for:
 
 - Validating version calculation logic
 - Testing workflow changes in pull requests
@@ -356,12 +379,16 @@ Published Docker images are available at:
 
 ## Dependency Management
 
-This project uses [Dependabot](https://docs.github.com/en/code-security/dependabot) to automatically manage dependency updates.
+This project uses
+[Dependabot](https://docs.github.com/en/code-security/dependabot) to
+automatically manage dependency updates.
 
 ### Current Configuration
 
-- **Security Updates**: Enabled - Automatically creates PRs for security vulnerabilities
-- **Version Updates**: Disabled - Configuration ready in `.github/dependabot.yml`
+- **Security Updates**: Enabled - Automatically creates PRs for security
+  vulnerabilities
+- **Version Updates**: Disabled - Configuration ready in
+  `.github/dependabot.yml`
 - **Update Schedule**: Weekly on Mondays at 9:00 AM UTC
 - **Package Managers**: pip (Python), Docker, GitHub Actions
 
@@ -369,14 +396,16 @@ This project uses [Dependabot](https://docs.github.com/en/code-security/dependab
 
 To enable automatic version updates:
 
-1. Navigate to [Repository Settings → Security](https://github.com/sv4u/musicdl/settings/security)
+1. Navigate to
+   [Repository Settings → Security](https://github.com/sv4u/musicdl/settings/security)
 2. Under "Code security and analysis", find "Dependabot version updates"
 3. Click "Enable" to activate version updates
 4. The configuration in `.github/dependabot.yml` will automatically take effect
 
 ### Viewing Dependabot PRs
 
-View all Dependabot pull requests: [Dependabot PRs](https://github.com/sv4u/musicdl/pulls?q=is%3Apr+is%3Aopen+author%3Aapp%2Fdependabot)
+View all Dependabot pull requests:
+[Dependabot PRs](https://github.com/sv4u/musicdl/pulls?q=is%3Apr+is%3Aopen+author%3Aapp%2Fdependabot)
 
 ### Configuration Details
 
@@ -384,17 +413,21 @@ The Dependabot configuration (`.github/dependabot.yml`) includes:
 
 - **Grouping**: Related dependencies are grouped into single PRs
 - **Update Limits**: Maximum 5 PRs for pip, 3 for Docker/GitHub Actions
-- **Commit Format**: Uses conventional commits (`deps:` for dependencies, `ci:` for GitHub Actions)
+- **Commit Format**: Uses conventional commits (`deps:` for dependencies,
+  `ci:` for GitHub Actions)
 - **Labels**: Automatic labeling for easy filtering
-- **Ignore Rules**: Major version updates are ignored to prevent breaking changes
+- **Ignore Rules**: Major version updates are ignored to prevent breaking
+  changes
 
 ## Key Differences from spotDL
 
 1. **No spotDL Package**: Direct implementation using spotDL's dependencies
-2. **Simplified Architecture**: No singleton patterns, simpler provider abstraction
+2. **Simplified Architecture**: No singleton patterns, simpler provider
+   abstraction
 3. **Single Configuration**: One YAML file (version 1.2) instead of split config
 4. **In-Memory Caching**: Simple cache implementation (no file persistence)
-5. **Focused Features**: Only core download functionality (no web UI, sync, etc.)
+5. **Focused Features**: Only core download functionality (no web UI, sync,
+   etc.)
 
 ## License
 

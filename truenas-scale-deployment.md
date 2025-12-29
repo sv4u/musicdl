@@ -1,6 +1,7 @@
 # TrueNAS Scale Deployment Guide for musicdl
 
-This guide provides comprehensive instructions for deploying musicdl on TrueNAS Scale 25.10.1 as a custom application with scheduled execution.
+This guide provides comprehensive instructions for deploying musicdl on
+TrueNAS Scale 25.10.1 as a custom application with scheduled execution.
 
 ## Table of Contents
 
@@ -16,11 +17,14 @@ This guide provides comprehensive instructions for deploying musicdl on TrueNAS 
 
 ## Introduction
 
-musicdl is a personal music downloader that downloads music from Spotify by sourcing audio from YouTube and other providers, then embedding metadata into the downloaded files.
+musicdl is a personal music downloader that downloads music from Spotify by
+sourcing audio from YouTube and other providers, then embedding metadata into
+the downloaded files.
 
 This deployment configuration provides:
 
-- **Automated Downloads**: Scheduled execution using TrueNAS Scale's built-in Task Scheduler (Cron Jobs)
+- **Automated Downloads**: Scheduled execution using TrueNAS Scale's built-in
+  Task Scheduler (Cron Jobs)
 - **Configurable Music Library**: Specify your TrueNAS dataset path for downloads
 - **Custom Configuration**: Mount your own config.yaml file or use the default
 - **Resource Management**: CPU and memory limits to prevent resource exhaustion
@@ -45,6 +49,7 @@ Before deploying, ensure you have:
 ## Quick Start
 
 1. **Prepare your configuration file** (optional):
+
    ```bash
    # Create config.yaml with your Spotify credentials
    # See Configuration section for structure
@@ -58,10 +63,12 @@ Before deploying, ensure you have:
    - Review and adjust volume paths if needed
    - Click **Save** to deploy
 
-3. **Set up scheduled execution** (see "Scheduling with TrueNAS Cron Jobs" section below)
+3. **Set up scheduled execution** (see "Scheduling with TrueNAS Cron Jobs"
+   section below)
 
 4. **Verify deployment**:
-   - Check that `musicdl` container exists (will be stopped until manually triggered or scheduled)
+   - Check that `musicdl` container exists (will be stopped until manually
+     triggered or scheduled)
    - Check logs for any errors
 
 5. **Test manual execution** (optional):
@@ -72,11 +79,13 @@ Before deploying, ensure you have:
 
 ### Step 1: Prepare Configuration File (Optional)
 
-If you want to use a custom configuration file instead of the default one in the image:
+If you want to use a custom configuration file instead of the default one in
+the image:
 
 1. Create a `config.yaml` file with your Spotify credentials and download settings
 2. Place it in an accessible location on your TrueNAS system
 3. Uncomment and adjust the config volume mount in `compose.yaml`:
+
    ```yaml
    volumes:
      - /mnt/peace-house-storage-pool/peace-house-storage/Music:/download:rw
@@ -95,7 +104,9 @@ volumes:
 
 ### Step 3: Set Up Scheduled Execution
 
-Scheduled execution is configured using TrueNAS Scale's built-in Task Scheduler (Cron Jobs). See the "Scheduling with TrueNAS Cron Jobs" section below for detailed instructions.
+Scheduled execution is configured using TrueNAS Scale's built-in Task Scheduler
+(Cron Jobs). See the "Scheduling with TrueNAS Cron Jobs" section below for
+detailed instructions.
 
 ### Step 4: Deploy via TrueNAS UI
 
@@ -122,7 +133,8 @@ Scheduled execution is configured using TrueNAS Scale's built-in Task Scheduler 
 ### Step 4: Post-Deployment Verification
 
 1. **Check Container Status**:
-   - `musicdl` container should exist but be **stopped** (will run on schedule or when manually triggered)
+   - `musicdl` container should exist but be **stopped** (will run on schedule
+     or when manually triggered)
 
 2. **Verify Volume Mounts**:
    - Check that music library path is correct
@@ -139,7 +151,8 @@ Scheduled execution is configured using TrueNAS Scale's built-in Task Scheduler 
 
 ### Step 5: Set Up Scheduled Execution
 
-See the "Scheduling with TrueNAS Cron Jobs" section below for instructions on configuring automated downloads.
+See the "Scheduling with TrueNAS Cron Jobs" section below for instructions on
+configuring automated downloads.
 
 ## Configuration
 
@@ -194,7 +207,7 @@ playlists: []                   # Playlists: [{name: url}, ...]
 
 | Variable | Service | Default | Description |
 |----------|---------|---------|-------------|
-| `CONFIG_PATH` | musicdl | `/scripts/config.yaml` | Path to config file in container |
+| `CONFIG_PATH` | musicdl | `/scripts/config.yaml` | Path to config file |
 | `TZ` | musicdl | `America/Denver` | Timezone for logs |
 | `PYTHONUNBUFFERED` | musicdl | `1` | Python output buffering (real-time logs) |
 
@@ -202,7 +215,8 @@ playlists: []                   # Playlists: [{name: url}, ...]
 
 ### Scheduling with TrueNAS Cron Jobs
 
-Scheduled execution is configured using TrueNAS Scale's built-in Task Scheduler (Cron Jobs). This is the recommended approach for scheduling musicdl downloads.
+Scheduled execution is configured using TrueNAS Scale's built-in Task Scheduler
+(Cron Jobs). This is the recommended approach for scheduling musicdl downloads.
 
 #### Step 1: Create a Cron Job
 
@@ -214,13 +228,20 @@ Scheduled execution is configured using TrueNAS Scale's built-in Task Scheduler 
 2. **Configure the Cron Job**:
    - **Description**: Enter a meaningful description (e.g., "Run musicdl downloads")
    - **Command**: Enter the command to start the musicdl container:
+
      ```bash
      docker start musicdl
      ```
+
      Or use a full docker run command if you prefer:
+
      ```bash
-     docker run --rm --name musicdl-temp -v /mnt/peace-house-storage-pool/peace-house-storage/Music:/download:rw -e TZ=America/Denver ghcr.io/sv4u/musicdl:latest
+     docker run --rm --name musicdl-temp \
+       -v /mnt/peace-house-storage-pool/peace-house-storage/Music:/download:rw \
+       -e TZ=America/Denver \
+       ghcr.io/sv4u/musicdl:latest
      ```
+
    - **Schedule**: Configure using the cron schedule builder or enter manually
    - **User**: Select **root** or a user with Docker permissions
    - **Enabled**: Check this box to enable the cron job
@@ -229,6 +250,7 @@ Scheduled execution is configured using TrueNAS Scale's built-in Task Scheduler 
 #### Scheduling Examples
 
 **Daily at 2 AM**:
+
 - Minute: `0`
 - Hour: `2`
 - Day of Month: `*`
@@ -237,31 +259,39 @@ Scheduled execution is configured using TrueNAS Scale's built-in Task Scheduler 
 - Cron expression: `0 2 * * *`
 
 **Every 6 hours**:
+
 - Cron expression: `0 */6 * * *`
 
 **Weekly on Sunday at 3 AM**:
+
 - Cron expression: `0 3 * * 0`
 
 **Every 30 minutes** (for testing):
+
 - Cron expression: `*/30 * * * *`
 
 **Twice daily (2 AM and 2 PM)**:
+
 - Cron expression: `0 2,14 * * *`
 
 **Weekdays only at 1 AM**:
+
 - Cron expression: `0 1 * * 1-5`
 
 **Weekly on Monday at midnight** (current default):
+
 - Cron expression: `0 0 * * 1`
 
 ### Manual Execution
 
 **Via TrueNAS UI**:
+
 1. Navigate to Apps → musicdl
 2. Click Shell or Execute button
 3. Run: `docker start musicdl`
 
 **Via CLI**:
+
 ```bash
 # Start the container
 docker start musicdl
@@ -278,11 +308,13 @@ docker ps -a | grep musicdl
 1. Create your `config.yaml` file
 2. Place it in an accessible location (e.g., `/mnt/pool/datasets/configs/musicdl-config.yaml`)
 3. Update `compose.yaml`:
+
    ```yaml
    volumes:
      - /mnt/peace-house-storage-pool/peace-house-storage/Music:/download:rw
      - /mnt/pool/datasets/configs/musicdl-config.yaml:/scripts/config.yaml:ro
    ```
+
 4. Restart containers to apply changes
 
 ### Timezone Configuration
@@ -301,18 +333,25 @@ environment:
 **Symptoms**: Container shows as "Exited" or fails to start
 
 **Solutions**:
+
 1. Check volume paths exist and are accessible:
+
    ```bash
    ls -ld /mnt/peace-house-storage-pool/peace-house-storage/Music
    ```
+
 2. Verify Docker image is available:
+
    ```bash
    docker pull ghcr.io/sv4u/musicdl:latest
    ```
+
 3. Check logs for errors:
+
    ```bash
    docker logs musicdl
    ```
+
 4. Verify permissions on music library directory
 
 ### Downloads Not Appearing
@@ -320,19 +359,26 @@ environment:
 **Symptoms**: Container runs but no files in music library
 
 **Solutions**:
+
 1. Verify volume mount path is correct:
+
    ```bash
    docker inspect musicdl | grep Mounts
    ```
+
 2. Check file permissions on music library directory:
+
    ```bash
    ls -ld /mnt/peace-house-storage-pool/peace-house-storage/Music
    ```
+
 3. Verify config.yaml has correct Spotify credentials
 4. Check musicdl logs for errors:
+
    ```bash
    docker logs musicdl
    ```
+
 5. Test manual execution to see real-time output
 
 ### Scheduled Jobs Not Running
@@ -340,6 +386,7 @@ environment:
 **Symptoms**: TrueNAS cron job configured but musicdl never executes
 
 **Solutions**:
+
 1. Verify cron job is enabled in TrueNAS:
    - Navigate to **Tasks** → **Cron Jobs**
    - Check that the job is enabled (toggle switch is on)
@@ -352,9 +399,11 @@ environment:
 4. Check cron job user has Docker permissions:
    - User should be **root** or have access to Docker socket
 5. Test manual execution first:
+
    ```bash
    docker start musicdl
    ```
+
 6. Check TrueNAS system logs for cron execution:
    - Navigate to **System** → **Logs** → **System Logs**
    - Filter for cron-related entries
@@ -366,15 +415,21 @@ environment:
 **Symptoms**: "Permission denied" errors in logs
 
 **Solutions**:
+
 1. Check container user:
+
    ```bash
    docker exec musicdl id
    ```
+
 2. Check dataset owner:
+
    ```bash
    ls -ld /mnt/peace-house-storage-pool/peace-house-storage/Music
    ```
+
 3. Match UID/GID or adjust permissions:
+
    ```bash
    # Option 1: Adjust dataset permissions
    chmod 755 /mnt/peace-house-storage-pool/peace-house-storage/Music
@@ -389,16 +444,22 @@ environment:
 **Symptoms**: Downloads fail with network errors
 
 **Solutions**:
+
 1. Verify internet connectivity from container:
+
    ```bash
    docker exec musicdl ping -c 3 8.8.8.8
    ```
+
 2. Check DNS resolution:
+
    ```bash
    docker exec musicdl nslookup api.spotify.com
    ```
+
 3. Verify firewall rules allow outbound HTTPS (port 443)
 4. Test Spotify API access:
+
    ```bash
    docker exec musicdl curl -I https://api.spotify.com
    ```
@@ -408,17 +469,22 @@ environment:
 **Symptoms**: High CPU or memory usage
 
 **Solutions**:
+
 1. Monitor resource usage:
+
    ```bash
    docker stats musicdl
    ```
+
 2. Adjust resource limits in `compose.yaml`:
+
    ```yaml
    # v2.x syntax for standalone Docker Compose
    mem_limit: 1g          # Reduce memory limit
    mem_reservation: 256m  # Reduce memory reservation
    cpus: 0.5              # Reduce CPU limit
    ```
+
 3. Reduce `threads` in config.yaml (fewer parallel downloads)
 4. Adjust cache settings in config.yaml
 
@@ -426,9 +492,11 @@ environment:
 
 ### Scheduling Method
 
-This deployment uses TrueNAS Scale's built-in Task Scheduler (Cron Jobs) for scheduled execution. This approach:
+This deployment uses TrueNAS Scale's built-in Task Scheduler (Cron Jobs) for
+scheduled execution. This approach:
 
 **Advantages**:
+
 - No additional container needed
 - Native TrueNAS integration
 - Simpler architecture
@@ -436,6 +504,7 @@ This deployment uses TrueNAS Scale's built-in Task Scheduler (Cron Jobs) for sch
 - Easier to manage via TrueNAS UI
 
 **How it works**:
+
 - TrueNAS cron job executes `docker start musicdl` at scheduled times
 - Container runs, downloads music, then exits
 - Next scheduled run starts the container again
@@ -443,11 +512,13 @@ This deployment uses TrueNAS Scale's built-in Task Scheduler (Cron Jobs) for sch
 ### Security Hardening
 
 1. **Non-root Execution** (if image supports):
+
    ```yaml
    user: "1000:1000"  # Match your dataset owner UID/GID
    ```
 
 2. **Read-only Root Filesystem**:
+
    ```yaml
    read_only: true
    tmpfs:
@@ -455,6 +526,7 @@ This deployment uses TrueNAS Scale's built-in Task Scheduler (Cron Jobs) for sch
    ```
 
 3. **Config File Permissions**:
+
    ```bash
    chmod 600 /path/to/config.yaml
    ```
@@ -484,17 +556,20 @@ This deployment uses TrueNAS Scale's built-in Task Scheduler (Cron Jobs) for sch
 To run multiple instances with different configurations:
 
 1. Use different container names:
+
    ```yaml
    container_name: musicdl-instance2
    ```
 
 2. Use different volume paths:
+
    ```yaml
    volumes:
      - /mnt/pool/dataset2/Music:/download:rw
    ```
 
 3. Use different config files:
+
    ```yaml
    volumes:
      - /path/to/config2.yaml:/scripts/config.yaml:ro
@@ -503,11 +578,13 @@ To run multiple instances with different configurations:
 ### Backup and Recovery
 
 **What to Backup**:
+
 - Config file: `/path/to/config.yaml` (if using custom)
 - Compose file: Store in version control
 - Music library: Use TrueNAS backup/replication
 
 **Recovery Procedures**:
+
 1. **Container failure**: Restart via TrueNAS UI or `docker start musicdl`
 2. **Config corruption**: Restore from backup
 3. **Volume issues**: Verify paths and permissions
@@ -517,7 +594,7 @@ To run multiple instances with different configurations:
 
 ### Cron Schedule Format
 
-```
+```text
 * * * * *
 │ │ │ │ │
 │ │ │ │ └─── Day of week (0-7, 0 or 7 = Sunday)
@@ -541,12 +618,14 @@ To run multiple instances with different configurations:
 ### Volume Path Format
 
 TrueNAS datasets use the format:
-```
+
+```text
 /mnt/{pool}/{dataset}/{subdirectory}
 ```
 
 Example:
-```
+
+```text
 /mnt/peace-house-storage-pool/peace-house-storage/Music
 ```
 
@@ -555,7 +634,8 @@ Example:
 - **TrueNAS UI**: Apps → musicdl → Logs tab
 - **Docker CLI**: `docker logs musicdl`
 - **Host filesystem**: `/var/lib/docker/containers/{container-id}/{container-id}-json.log`
-- **Cron Job Logs**: Check TrueNAS system logs (System → Logs → System Logs) for cron execution
+- **Cron Job Logs**: Check TrueNAS system logs (System → Logs → System Logs)
+  for cron execution
 
 ### Useful Commands
 
@@ -596,32 +676,39 @@ docker start musicdl
 ## FAQ
 
 **Q: Can I run this without scheduled execution?**
-A: Yes, simply don't create a TrueNAS cron job. You can manually trigger the container when needed using `docker start musicdl` or via the TrueNAS UI.
+A: Yes, simply don't create a TrueNAS cron job. You can manually trigger the
+container when needed using `docker start musicdl` or via the TrueNAS UI.
 
 **Q: How do I update the Docker image?**
-A: Pull the new image: `docker pull ghcr.io/sv4u/musicdl:latest`, then restart the container if it's running.
+A: Pull the new image: `docker pull ghcr.io/sv4u/musicdl:latest`, then restart
+the container if it's running.
 
 **Q: Can I use a different music library path?**
-A: Yes, update the volume mount path in compose.yaml to match your TrueNAS dataset path, then redeploy the application.
+A: Yes, update the volume mount path in compose.yaml to match your TrueNAS
+dataset path, then redeploy the application.
 
 **Q: How do I change the download schedule?**
-A: Edit the cron job in TrueNAS (Tasks → Cron Jobs → Edit) and update the schedule. You can use the schedule builder or enter a cron expression manually.
+A: Edit the cron job in TrueNAS (Tasks → Cron Jobs → Edit) and update the
+schedule. You can use the schedule builder or enter a cron expression manually.
 
 **Q: What if downloads fail?**
-A: Check the logs (`docker logs musicdl`) for error messages. Common issues: invalid Spotify credentials, network problems, or permission errors.
+A: Check the logs (`docker logs musicdl`) for error messages. Common issues:
+invalid Spotify credentials, network problems, or permission errors.
 
 **Q: Can I run multiple instances?**
 A: Yes, use different container names and volume paths for each instance.
 
 **Q: How do I backup my configuration?**
-A: Backup your config.yaml file and compose.yaml. The music library is already on TrueNAS and can be backed up using TrueNAS backup features.
+A: Backup your config.yaml file and compose.yaml. The music library is already
+on TrueNAS and can be backed up using TrueNAS backup features.
 
 **Q: What resources does this use?**
-A: Default limits: 1 CPU core, 2GB RAM. Adjust based on your system capacity and download needs.
+A: Default limits: 1 CPU core, 2GB RAM. Adjust based on your system capacity
+and download needs.
 
 ## Support
 
 For issues, questions, or contributions:
+
 - GitHub Issues: [musicdl Issues](https://github.com/sv4u/musicdl/issues)
 - Documentation: [musicdl README](https://github.com/sv4u/musicdl/blob/main/README.md)
-
