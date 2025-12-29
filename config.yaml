@@ -3,8 +3,8 @@ version: "1.2"
 
 download:
   # Spotify credentials
-  client_id: "5f573c9620494bae87890c0f08a60293"
-  client_secret: "212476d9b0f3472eaa762d90b19b0ba8"
+  client_id: "85d6e012bea84598ac13d3ce963a04b2"
+  client_secret: "1a0c452389fd4147905d753a31d1b456"
   
   # Download settings
   threads: 1
