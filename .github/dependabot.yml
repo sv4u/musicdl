@@ -1,0 +1,86 @@
+version: 2
+updates:
+  # Python pip dependencies
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    groups:
+      production-dependencies:
+        patterns:
+          - "spotipy"
+          - "yt-dlp"
+          - "mutagen"
+          - "pydantic"
+          - "PyYAML"
+          - "requests"
+      development-dependencies:
+        patterns:
+          - "pytest"
+          - "pytest-*"
+          - "coverage"
+          - "freezegun"
+          - "responses"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "python"
+    ignore:
+      # Ignore major version updates that may introduce breaking changes
+      # Minor and patch updates will still be processed automatically
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
+    # Note: Security updates are not affected by ignore rules
+    # Security updates will always create PRs regardless of version type
+
+  # Docker base images
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+    # Monitor both Dockerfiles in root directory
+    # Dependabot will automatically detect all Dockerfiles in the specified directory
+    # Supported patterns: Dockerfile, *.Dockerfile, docker-compose*.yml
+    # Both musicdl.Dockerfile and plex-playlist-push.Dockerfile will be monitored
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    ignore:
+      # Ignore major version updates for critical actions to prevent breaking changes
+      - dependency-name: "actions/checkout"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "actions/setup-python"
+        update-types:
+          - "version-update:semver-major"
+

@@ -351,6 +351,40 @@ Published Docker images are available at:
 - `ghcr.io/sv4u/musicdl:v{version}` (e.g., `ghcr.io/sv4u/musicdl:v1.2.3`)
 - `ghcr.io/sv4u/musicdl:latest` (always points to the latest published version)
 
+## Dependency Management
+
+This project uses [Dependabot](https://docs.github.com/en/code-security/dependabot) to automatically manage dependency updates.
+
+### Current Configuration
+
+- **Security Updates**: Enabled - Automatically creates PRs for security vulnerabilities
+- **Version Updates**: Disabled - Configuration ready in `.github/dependabot.yml`
+- **Update Schedule**: Weekly on Mondays at 9:00 AM UTC
+- **Package Managers**: pip (Python), Docker, GitHub Actions
+
+### Enabling Version Updates
+
+To enable automatic version updates:
+
+1. Navigate to [Repository Settings → Security](https://github.com/sv4u/musicdl/settings/security)
+2. Under "Code security and analysis", find "Dependabot version updates"
+3. Click "Enable" to activate version updates
+4. The configuration in `.github/dependabot.yml` will automatically take effect
+
+### Viewing Dependabot PRs
+
+View all Dependabot pull requests: [Dependabot PRs](https://github.com/sv4u/musicdl/pulls?q=is%3Apr+is%3Aopen+author%3Aapp%2Fdependabot)
+
+### Configuration Details
+
+The Dependabot configuration (`.github/dependabot.yml`) includes:
+
+- **Grouping**: Related dependencies are grouped into single PRs
+- **Update Limits**: Maximum 5 PRs for pip, 3 for Docker/GitHub Actions
+- **Commit Format**: Uses conventional commits (`deps:` for dependencies, `ci:` for GitHub Actions)
+- **Labels**: Automatic labeling for easy filtering
+- **Ignore Rules**: Major version updates are ignored to prevent breaking changes
+
 ## Key Differences from spotDL
 
 1. **No spotDL Package**: Direct implementation using spotDL's dependencies
