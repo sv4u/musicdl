@@ -11,7 +11,11 @@
 
 ## Overview
 
-**spotDL** (v4.4.3) is a Python-based command-line application that downloads music from Spotify playlists, albums, and tracks by sourcing audio from YouTube and other providers. The application extracts metadata from Spotify (including album art, track information, and lyrics) and embeds it into downloaded audio files.
+**spotDL** (v4.4.3) is a Python-based command-line application that downloads
+music from Spotify playlists, albums, and tracks by sourcing audio from YouTube
+and other providers. The application extracts metadata from Spotify (including
+album art, track information, and lyrics) and embeds it into downloaded audio
+files.
 
 **Key Features:**
 
@@ -23,8 +27,10 @@
 - Supports playlist synchronization and metadata updates
 - Provides a library API (see Library API section for verified details)
 
-**Repository:** [https://github.com/spotDL/spotify-downloader](https://github.com/spotDL/spotify-downloader)  
-**Documentation:** [https://spotdl.readthedocs.io/en/latest/](https://spotdl.readthedocs.io/en/latest/)
+**Repository:**
+[https://github.com/spotDL/spotify-downloader](https://github.com/spotDL/spotify-downloader)  
+**Documentation:**
+[https://spotdl.readthedocs.io/en/latest/](https://spotdl.readthedocs.io/en/latest/)
 
 ## Architecture
 
@@ -34,7 +40,8 @@ spotDL follows a modular, layered architecture designed for maintainability and 
 
 ```mermaid
 flowchart TD
-    A[CLI Interface Layer<br/>spotdl/console/<br/>Command parsing and user interaction] --> B[Core Business Logic Layer]
+    A[CLI Interface Layer<br/>spotdl/console/<br/>Command parsing and user
+    interaction] --> B[Core Business Logic Layer]
     B --> C[Provider Abstraction Layer]
     C --> D[Utility Layer<br/>spotdl/utils/<br/>Config, Logging, File handling]
     
@@ -137,7 +144,8 @@ flowchart TD
 
 #### 1. **Provider Pattern**
 
-Audio and lyrics providers implement a common interface, allowing easy addition of new sources:
+Audio and lyrics providers implement a common interface, allowing easy addition
+of new sources:
 
 ```python
 # Conceptual structure
@@ -163,11 +171,13 @@ spotify = SpotifyClient()  # Returns same instance
 
 #### 3. **Strategy Pattern**
 
-Different download strategies for tracks, albums, and playlists, with shared core logic.
+Different download strategies for tracks, albums, and playlists, with shared
+core logic.
 
 #### 4. **Factory Pattern**
 
-Settings/Options objects created from various sources (CLI args, config file, environment variables).
+Settings/Options objects created from various sources (CLI args, config file,
+environment variables).
 
 ### Key Implementation Details
 
@@ -177,7 +187,8 @@ Settings/Options objects created from various sources (CLI args, config file, en
 2. **Metadata Retrieval**: Fetches full metadata from Spotify API
 3. **Provider Selection**: Chooses best matching audio provider based on configuration
 4. **Search & Match**: Searches provider for matching audio using track metadata
-5. **Audio Stream Download**: Downloads audio stream using `yt-dlp` or provider-specific client
+5. **Audio Stream Download**: Downloads audio stream using `yt-dlp` or
+   provider-specific client
 6. **Format Conversion**: Converts to desired format using FFmpeg (if needed)
 7. **Metadata Embedding**: Embeds Spotify metadata, album art, and lyrics
 8. **File Naming**: Applies configured naming pattern and saves file
@@ -482,7 +493,12 @@ Settings are loaded in the following priority order (highest to lowest):
 
 ## Library API Structure and Usage
 
-> **Important**: spotDL is **primarily designed as a command-line tool**. While the codebase contains a `Spotdl` class and supporting modules that can be imported, **spotDL does not officially document a public library API**. The recommended approach for programmatic usage is to use `subprocess` to call the CLI (as implemented in the current musicdl project). However, the library API does exist and is used internally by the CLI.
+> **Important**: spotDL is **primarily designed as a command-line tool**. While
+> the codebase contains a `Spotdl` class and supporting modules that can be
+> imported, **spotDL does not officially document a public library API**. The
+> recommended approach for programmatic usage is to use `subprocess` to call
+> the CLI (as implemented in the current musicdl project). However, the library
+> API does exist and is used internally by the CLI.
 
 ### Package Structure
 
@@ -518,15 +534,21 @@ spotdl/
     └── lyrics/          # Lyrics providers (Genius, MusixMatch, etc.)
 ```
 
-**Note**: While these modules exist and can be imported, they are not officially documented as a public API. The API may change between versions. Use at your own risk.
+**Note**: While these modules exist and can be imported, they are not officially
+documented as a public API. The API may change between versions. Use at your own
+risk.
 
 ### Programmatic Usage
 
-> **Note**: The following API information is **verified from the source code** (spotDL v4.4.3). However, **spotDL does not officially document this as a public library API**. Use at your own risk, as the API may change between versions.
+> **Note**: The following API information is **verified from the source code**
+> (spotDL v4.4.3). However, **spotDL does not officially document this as a
+> public library API**. Use at your own risk, as the API may change between
+> versions.
 
 #### Recommended Approach: Subprocess
 
-The recommended way to use spotDL programmatically is through subprocess calls to the CLI:
+The recommended way to use spotDL programmatically is through subprocess calls
+to the CLI:
 
 ```python
 import subprocess
@@ -545,7 +567,8 @@ This approach is stable, well-tested, and matches spotDL's design as a CLI tool.
 
 #### Library API (Verified from Source Code)
 
-The following classes and methods exist in the spotDL codebase and can be imported, though they are not officially documented as a public API:
+The following classes and methods exist in the spotDL codebase and can be
+imported, though they are not officially documented as a public API:
 
 #### 1. **Spotdl Class** (Verified - `spotdl/__init__.py`)
 
@@ -586,7 +609,8 @@ results = spotdl.download_songs(songs)
 urls = spotdl.get_download_urls(songs)
 ```
 
-**Verification Status**: ✅ **Verified** - Class exists in `spotdl/__init__.py` with documented docstrings.
+**Verification Status**: ✅ **Verified** - Class exists in `spotdl/__init__.py`
+with documented docstrings.
 
 #### 2. **Song Class** (Verified - `spotdl/types/song.py`)
 
@@ -628,11 +652,13 @@ print(song.json)          # Property: dict representation
 
 - `Song.from_url(url: str) -> Song` - Create from Spotify URL
 - `Song.from_search_term(search_term: str) -> Song` - Create from search (first result)
-- `Song.list_from_search_term(search_term: str) -> List[Song]` - Create list from search
+- `Song.list_from_search_term(search_term: str) -> List[Song]` - Create list
+  from search
 - `Song.from_dict(data: Dict[str, Any]) -> Song` - Create from dictionary
 - `Song.from_data_dump(data: str) -> Song` - Create from JSON string
 
-**Verification Status**: ✅ **Verified** - Class exists in `spotdl/types/song.py` as a dataclass with verified methods and properties.
+**Verification Status**: ✅ **Verified** - Class exists in `spotdl/types/song.py`
+as a dataclass with verified methods and properties.
 
 #### 3. **Downloader Class** (Verified - `spotdl/download/downloader.py`)
 
@@ -673,11 +699,13 @@ lyrics = downloader.search_lyrics(song)  # Returns Optional[str]
 **Key Methods** (verified from source):
 
 - `download_song(song: Song) -> Tuple[Song, Optional[Path]]` - Download single song
-- `download_multiple_songs(songs: List[Song]) -> List[Tuple[Song, Optional[Path]]]` - Download multiple songs
+- `download_multiple_songs(songs: List[Song]) -> List[Tuple[Song, Optional[Path]]]`
+  - Download multiple songs
 - `search(song: Song) -> str` - Search for download URL
 - `search_lyrics(song: Song) -> Optional[str]` - Search for lyrics
 
-**Verification Status**: ✅ **Verified** - Class exists in `spotdl/download/downloader.py` with verified methods.
+**Verification Status**: ✅ **Verified** - Class exists in
+`spotdl/download/downloader.py` with verified methods.
 
 #### 4. **SpotifyClient Class** (Verified - `spotdl/utils/spotify.py`)
 
@@ -718,7 +746,8 @@ search_results = spotify.search("query", type="track")
 - Supports caching via `use_cache_file` option
 - Supports both client credentials and user authentication
 
-**Verification Status**: ✅ **Verified** - Class exists in `spotdl/utils/spotify.py` with Singleton pattern implementation.
+**Verification Status**: ✅ **Verified** - Class exists in
+`spotdl/utils/spotify.py` with Singleton pattern implementation.
 
 #### 5. **Options TypedDict Classes** (Verified - `spotdl/types/options.py`)
 
@@ -773,11 +802,13 @@ all_opts: SpotDLOptions = {
 - `SpotDLOptions` - Combined required options
 - `*OptionalOptions` - Optional versions (all fields optional)
 
-**Verification Status**: ✅ **Verified** - TypedDict classes exist in `spotdl/types/options.py` with all fields defined.
+**Verification Status**: ✅ **Verified** - TypedDict classes exist in
+`spotdl/types/options.py` with all fields defined.
 
 ### Usage Examples
 
-The following examples demonstrate both the **library API approach** (verified from source) and the **recommended subprocess approach**:
+The following examples demonstrate both the **library API approach** (verified
+from source) and the **recommended subprocess approach**:
 
 #### Library API Examples (Verified from Source)
 
@@ -1128,7 +1159,8 @@ The `Downloader` class uses asyncio internally for concurrent downloads:
 # Downloads run in an event loop with thread pool executor
 ```
 
-**Note**: While spotDL uses async internally, the public API (`Spotdl` class) is synchronous. The async implementation is an internal detail.
+**Note**: While spotDL uses async internally, the public API (`Spotdl` class) is
+synchronous. The async implementation is an internal detail.
 
 ### API Error Handling
 
@@ -1173,13 +1205,15 @@ except SongError as e:
 - `SongListError` - `spotdl/types/song.py` - Song list errors
 - `AudioProviderError` - `spotdl/providers/audio/base.py` - Audio provider errors
 
-**Verification Status**: ✅ **Verified** - Exception classes exist in their respective modules.
+**Verification Status**: ✅ **Verified** - Exception classes exist in their
+respective modules.
 
 ### Integration Considerations
 
 #### Recommended Approach
 
-**Use subprocess to call the CLI** - This is the stable, documented, and recommended approach:
+**Use subprocess to call the CLI** - This is the stable, documented, and
+recommended approach:
 
 ```python
 import subprocess
@@ -1240,7 +1274,8 @@ def download_with_spotdl(url, config):
 
 ### Version Information
 
-- **spotDL Version Analyzed**: 4.4.3 (verified from `spotdl/_version.py` in source code)
+- **spotDL Version Analyzed**: 4.4.3 (verified from `spotdl/_version.py` in
+  source code)
 - **Source Code Location**: `spotdl/` directory (cloned repository)
 - **Python Requirement**: 3.8+ (verify current requirements in [official documentation](https://spotdl.readthedocs.io/en/latest/))
 - **Last Updated**: Based on repository state and documentation as of analysis date
@@ -1249,16 +1284,23 @@ def download_with_spotdl(url, config):
 
 **Important Notes**:
 
-1. This analysis is based on **spotDL v4.4.3** (verified from source code in `spotdl/` directory).
+1. This analysis is based on **spotDL v4.4.3** (verified from source code in
+   `spotdl/` directory).
 
-2. The **Library API Structure and Usage** section contains **verified information from the source code**. However:
+2. The **Library API Structure and Usage** section contains **verified
+   information from the source code**. However:
    - spotDL does not officially document this as a public library API
    - The API may change between versions without notice
-   - The recommended approach for programmatic usage is still **subprocess** (stable, documented)
+   - The recommended approach for programmatic usage is still **subprocess**
+     (stable, documented)
 
 3. **spotDL is primarily a CLI tool, but provides a library API**:
-   - ✅ **Library API exists** - `Spotdl` class and supporting modules can be imported and used
-   - ✅ **Verified from source** - All classes, methods, and exceptions documented above exist in the codebase
-   - ⚠️ **Not officially documented** - While the API exists, it's not documented as a public API
-   - ✅ **Recommended**: Use subprocess for production use (stable, documented approach)
+   - ✅ **Library API exists** - `Spotdl` class and supporting modules can be
+     imported and used
+   - ✅ **Verified from source** - All classes, methods, and exceptions
+     documented above exist in the codebase
+   - ⚠️ **Not officially documented** - While the API exists, it's not
+     documented as a public API
+   - ✅ **Recommended**: Use subprocess for production use (stable, documented
+     approach)
    - ⚠️ **Use with caution**: Library API may change between versions
