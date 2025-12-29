@@ -1,32 +1,39 @@
-name: musicdl
+version: '2.4'
 
 services:
   musicdl:
-    image: musicdl:latest
-    build:
-      context: .
-      dockerfile: ./musicdl.Dockerfile
+    image: ghcr.io/sv4u/musicdl:latest
+    container_name: musicdl
+    hostname: musicdl
+    restart: "no"
+    network_mode: bridge
+    environment:
+      - CONFIG_PATH=${CONFIG_PATH:-/scripts/config.yaml}
+      - TZ=${TZ:-America/Denver}
+      - PYTHONUNBUFFERED=1
     volumes:
-      - /mnt/Storage/Storage/Music:/download:rw
+      # Music library - adjust path to match your TrueNAS dataset
+      - /mnt/peace-house-storage-pool/peace-house-storage/Music:/download:rw
+      # Uncomment and adjust path to use custom config file:
+      # - /path/to/your/config.yaml:/scripts/config.yaml:ro
+    working_dir: /download
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Resource limits (v2.x syntax for standalone Docker Compose)
+    # These limits are enforced in non-Swarm mode (TrueNAS Scale uses standalone mode)
+    mem_limit: 1g
+    mem_reservation: 256m
     cpus: 2
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://192.168.50.167:32400/"]
-      interval: 1m30s
-      timeout: 30s
-      retries: 5
-      start_period: 30s
+    # Security options (uncomment if image supports non-root user)
+    # Note: Check image documentation to verify if non-root execution is supported
+    user: "3000:3000"  # Adjust UID/GID to match your dataset owner
+    # read_only: true
+    # tmpfs:
+    #   - /tmp:rw,noexec,nosuid,size=100m
 
-  plex-playlist-push:
-    image: plex-playlist-push:latest
-    build:
-      context: .
-      dockerfile: ./plex-playlist-push.Dockerfile
-    volumes:
-      - /mnt/Storage/Storage/Music:/download:rw
-    cpus: 2
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://192.168.50.167:32400/"]
-      interval: 1m30s
-      timeout: 30s
-      retries: 5
-      start_period: 30s
+# Note: Scheduled execution is configured via TrueNAS Scale's built-in Task Scheduler (Cron Jobs)
+# See truenas-scale/README.md for instructions on setting up scheduled execution
+
