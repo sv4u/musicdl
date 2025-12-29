@@ -152,6 +152,8 @@ playlists: []
     
     def test_load_config_mixed_source_formats(self, tmp_path):
         """Test loading config with mixed source formats."""
+        # Note: YAML doesn't support mixing list and dict formats in the same structure
+        # This test verifies that the config loader handles list format correctly
         config_file = tmp_path / "config.yaml"
         config_file.write_text("""
 version: 1.2
@@ -160,13 +162,14 @@ download:
   client_secret: test_secret
 songs:
   - YYZ: https://open.spotify.com/track/1RKbVxcm267VdsIzqY7msi
-  Crawling: https://open.spotify.com/track/1BfzeCKzo8xSvJcYLmnP8f
+  - Crawling: https://open.spotify.com/track/1BfzeCKzo8xSvJcYLmnP8f
 artists: []
 playlists: []
 """)
-        # Should handle mixed formats gracefully
+        # Should handle list format correctly
         config = load_config(str(config_file))
-        assert len(config.songs) >= 2
+        assert len(config.songs) == 2
         song_names = [song.name for song in config.songs]
-        assert "YYZ" in song_names or "Crawling" in song_names
+        assert "YYZ" in song_names
+        assert "Crawling" in song_names
 
