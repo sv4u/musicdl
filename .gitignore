@@ -181,3 +181,6 @@ cython_debug/
 
 # Cursor IDE
 .cursor/plans/
+
+# m3u
+*.m3u
