@@ -3,6 +3,9 @@
 ![Tests](https://github.com/sv4u/musicdl/actions/workflows/test.yml/badge.svg)
 ![Coverage](https://github.com/sv4u/musicdl/actions/workflows/coverage.yml/badge.svg)
 ![Docker Build](https://github.com/sv4u/musicdl/actions/workflows/docker-build.yml/badge.svg)
+![Version](https://img.shields.io/github/v/tag/sv4u/musicdl?label=version&sort=semver)
+![License](https://img.shields.io/github/license/sv4u/musicdl)
+![Python](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
 
 Personal music downloader with native Python implementation (no spotDL dependency).
 

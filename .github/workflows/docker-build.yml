@@ -47,7 +47,7 @@ jobs:
                   echo "timestamp=${BUILD_TIMESTAMP}" >> $GITHUB_OUTPUT
 
             - name: Build Docker image
-              uses: docker/build-push-action@v5
+              uses: docker/build-push-action@v6
               with:
                   context: .
                   file: ./musicdl.Dockerfile
@@ -66,7 +66,7 @@ jobs:
 
             - name: Upload Docker image artifact
               if: github.event_name == 'pull_request'
-              uses: actions/upload-artifact@v4
+              uses: actions/upload-artifact@v6
               with:
                   name: ${{ steps.tags.outputs.artifact_name }}
                   path: docker-image.tar.gz
