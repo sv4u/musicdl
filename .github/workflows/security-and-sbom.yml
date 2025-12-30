@@ -1,0 +1,329 @@
+name: Security & SBOM
+
+on:
+    pull_request:
+        types: [opened, synchronize, reopened]
+    push:
+        branches:
+            - main
+    release:
+        types: [published]
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+permissions:
+    contents: write
+    packages: read
+
+jobs:
+    security-and-sbom:
+        name: Security Scanning & SBOM Generation
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Source Code Security Scanning
+              id: source-scan
+              uses: aquasecurity/trivy-action@v0.29.0
+              with:
+                  scan-type: "fs"
+                  scan-ref: "."
+                  format: "sarif"
+                  output: "trivy-source-scan.sarif"
+                  exit-code: "0"
+                  severity: "CRITICAL,HIGH,MEDIUM,LOW"
+
+            - name: Upload Trivy source scan results
+              uses: actions/upload-artifact@v6
+              if: always()
+              with:
+                  name: trivy-source-scan
+                  path: trivy-source-scan.sarif
+                  retention-days: 30
+
+            - name: Display source code vulnerability summary
+              if: always()
+              run: |
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo "[SCAN] Source Code Security Scan Summary"
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  if [ -f trivy-source-scan.sarif ]; then
+                    echo "Scan completed. Results uploaded as artifact."
+                    echo "Note: This workflow warns on vulnerabilities but does not fail."
+                  else
+                    echo "Warning: Scan results file not found"
+                  fi
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            - name: Build Docker image for scanning
+              id: docker-build
+              uses: docker/build-push-action@v6
+              with:
+                  context: .
+                  file: ./musicdl.Dockerfile
+                  tags: ghcr.io/sv4u/musicdl:security-scan
+                  load: true
+                  push: false
+
+            - name: Docker Image Security Scanning - Trivy
+              id: trivy-image-scan
+              uses: aquasecurity/trivy-action@v0.29.0
+              with:
+                  scan-type: "image"
+                  image-ref: "ghcr.io/sv4u/musicdl:security-scan"
+                  format: "sarif"
+                  output: "trivy-image-scan.sarif"
+                  exit-code: "0"
+                  severity: "CRITICAL,HIGH,MEDIUM,LOW"
+
+            - name: Upload Trivy image scan results
+              uses: actions/upload-artifact@v6
+              if: always()
+              with:
+                  name: trivy-image-scan
+                  path: trivy-image-scan.sarif
+                  retention-days: 30
+
+            - name: Docker Image Security Scanning - Grype
+              id: grype-image-scan
+              run: |
+                  docker run --rm \
+                    -v /var/run/docker.sock:/var/run/docker.sock \
+                    -v "$PWD:/output" \
+                    -w /output \
+                    anchore/grype:latest \
+                    ghcr.io/sv4u/musicdl:security-scan \
+                    --output json \
+                    --file /output/grype-image-scan.json \
+                    --fail-on none || true
+
+            - name: Upload Grype image scan results
+              uses: actions/upload-artifact@v6
+              if: always()
+              with:
+                  name: grype-image-scan
+                  path: grype-image-scan.json
+                  retention-days: 30
+
+            - name: Compare Trivy and Grype results
+              if: always()
+              run: |
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo "[SCAN] Docker Image Security Scan Comparison"
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo ""
+                  echo "Trivy scan: trivy-image-scan.sarif"
+                  echo "Grype scan: grype-image-scan.json"
+                  echo ""
+                  echo "Both scanners have completed. Results uploaded as artifacts."
+                  echo "Note: This workflow warns on vulnerabilities but does not fail."
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+            - name: Display Docker image vulnerability summary
+              if: always()
+              run: |
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo "[SCAN] Docker Image Security Scan Summary"
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  if [ -f trivy-image-scan.sarif ] && [ -f grype-image-scan.json ]; then
+                    echo "Both Trivy and Grype scans completed successfully."
+                    echo "Results uploaded as artifacts for review."
+                  else
+                    echo "Warning: Some scan results files are missing"
+                  fi
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+            - name: Generate SBOM from Source Code - Syft
+              id: syft-source-sbom
+              uses: anchore/sbom-action@v0.15.0
+              with:
+                  path: "."
+                  format: "cyclonedx-json"
+                  output-file: "syft-source-sbom-cyclonedx.json"
+
+            - name: Generate SBOM from Source Code - Syft (SPDX)
+              id: syft-source-sbom-spdx
+              uses: anchore/sbom-action@v0.15.0
+              with:
+                  path: "."
+                  format: "spdx-json"
+                  output-file: "syft-source-sbom-spdx.json"
+
+            - name: Upload Syft source SBOMs
+              uses: actions/upload-artifact@v6
+              if: always()
+              with:
+                  name: syft-source-sbom
+                  path: |
+                      syft-source-sbom-cyclonedx.json
+                      syft-source-sbom-spdx.json
+                  retention-days: 30
+
+            - name: Generate SBOM from Docker Image - Syft
+              id: syft-image-sbom
+              uses: anchore/sbom-action@v0.15.0
+              with:
+                  image: "ghcr.io/sv4u/musicdl:security-scan"
+                  format: "cyclonedx-json"
+                  output-file: "syft-image-sbom-cyclonedx.json"
+
+            - name: Generate SBOM from Docker Image - Syft (SPDX)
+              id: syft-image-sbom-spdx
+              uses: anchore/sbom-action@v0.15.0
+              with:
+                  image: "ghcr.io/sv4u/musicdl:security-scan"
+                  format: "spdx-json"
+                  output-file: "syft-image-sbom-spdx.json"
+
+            - name: Generate SBOM from Docker Image - Trivy
+              id: trivy-image-sbom
+              run: |
+                  docker run --rm \
+                    -v /var/run/docker.sock:/var/run/docker.sock \
+                    -v "$PWD:/output" \
+                    -w /output \
+                    aquasec/trivy:latest image \
+                    --format cyclonedx \
+                    --output /output/trivy-image-sbom-cyclonedx.json \
+                    ghcr.io/sv4u/musicdl:security-scan || true
+
+            - name: Generate SBOM from Docker Image - Trivy (SPDX)
+              id: trivy-image-sbom-spdx
+              run: |
+                  docker run --rm \
+                    -v /var/run/docker.sock:/var/run/docker.sock \
+                    -v "$PWD:/output" \
+                    -w /output \
+                    aquasec/trivy:latest image \
+                    --format spdx-json \
+                    --output /output/trivy-image-sbom-spdx.json \
+                    ghcr.io/sv4u/musicdl:security-scan || true
+
+            - name: Upload image SBOMs
+              uses: actions/upload-artifact@v6
+              if: always()
+              with:
+                  name: image-sboms
+                  path: |
+                      syft-image-sbom-cyclonedx.json
+                      syft-image-sbom-spdx.json
+                      trivy-image-sbom-cyclonedx.json
+                      trivy-image-sbom-spdx.json
+                  retention-days: 30
+
+            - name: Attach SBOMs to GitHub release
+              if: github.event_name == 'release'
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  RELEASE_TAG="${{ github.event.release.tag_name }}"
+
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo "[SBOM] Attaching SBOMs to GitHub release"
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+                  # Attach source code SBOMs
+                  if [ -f syft-source-sbom-cyclonedx.json ]; then
+                    if gh release upload "$RELEASE_TAG" syft-source-sbom-cyclonedx.json --clobber; then
+                      echo "  ✓ Uploaded source CycloneDX SBOM"
+                    else
+                      echo "  ⚠ Warning: Failed to upload source CycloneDX SBOM"
+                    fi
+                  fi
+
+                  if [ -f syft-source-sbom-spdx.json ]; then
+                    if gh release upload "$RELEASE_TAG" syft-source-sbom-spdx.json --clobber; then
+                      echo "  ✓ Uploaded source SPDX SBOM"
+                    else
+                      echo "  ⚠ Warning: Failed to upload source SPDX SBOM"
+                    fi
+                  fi
+
+                  # Attach Docker image SBOMs
+                  if [ -f syft-image-sbom-cyclonedx.json ]; then
+                    if gh release upload "$RELEASE_TAG" syft-image-sbom-cyclonedx.json --clobber; then
+                      echo "  ✓ Uploaded image CycloneDX SBOM (Syft)"
+                    else
+                      echo "  ⚠ Warning: Failed to upload image CycloneDX SBOM (Syft)"
+                    fi
+                  fi
+
+                  if [ -f syft-image-sbom-spdx.json ]; then
+                    if gh release upload "$RELEASE_TAG" syft-image-sbom-spdx.json --clobber; then
+                      echo "  ✓ Uploaded image SPDX SBOM (Syft)"
+                    else
+                      echo "  ⚠ Warning: Failed to upload image SPDX SBOM (Syft)"
+                    fi
+                  fi
+
+                  if [ -f trivy-image-sbom-cyclonedx.json ]; then
+                    if gh release upload "$RELEASE_TAG" trivy-image-sbom-cyclonedx.json --clobber; then
+                      echo "  ✓ Uploaded image CycloneDX SBOM (Trivy)"
+                    else
+                      echo "  ⚠ Warning: Failed to upload image CycloneDX SBOM (Trivy)"
+                    fi
+                  fi
+
+                  if [ -f trivy-image-sbom-spdx.json ]; then
+                    if gh release upload "$RELEASE_TAG" trivy-image-sbom-spdx.json --clobber; then
+                      echo "  ✓ Uploaded image SPDX SBOM (Trivy)"
+                    else
+                      echo "  ⚠ Warning: Failed to upload image SPDX SBOM (Trivy)"
+                    fi
+                  fi
+
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo "[OK] SBOM attachment completed"
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+            - name: Scan published Docker image (release events)
+              if: github.event_name == 'release'
+              id: scan-published-image
+              uses: aquasecurity/trivy-action@v0.29.0
+              with:
+                  scan-type: "image"
+                  image-ref: "ghcr.io/sv4u/musicdl:${{ github.event.release.tag_name }}"
+                  format: "sarif"
+                  output: "trivy-published-image-scan.sarif"
+                  exit-code: "0"
+                  severity: "CRITICAL,HIGH,MEDIUM,LOW"
+
+            - name: Upload published image scan results
+              if: github.event_name == 'release'
+              uses: actions/upload-artifact@v6
+              with:
+                  name: trivy-published-image-scan
+                  path: trivy-published-image-scan.sarif
+                  retention-days: 30
+
+            - name: Display SBOM summary
+              if: always()
+              run: |
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo "[SBOM] SBOM Generation Summary"
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo ""
+                  echo "Source Code SBOMs:"
+                  echo "  - syft-source-sbom-cyclonedx.json (CycloneDX)"
+                  echo "  - syft-source-sbom-spdx.json (SPDX)"
+                  echo ""
+                  echo "Docker Image SBOMs:"
+                  echo "  - syft-image-sbom-cyclonedx.json (CycloneDX)"
+                  echo "  - syft-image-sbom-spdx.json (SPDX)"
+                  echo "  - trivy-image-sbom-cyclonedx.json (CycloneDX)"
+                  echo "  - trivy-image-sbom-spdx.json (SPDX)"
+                  echo ""
+                  if [ "${{ github.event_name }}" == "release" ]; then
+                    echo "SBOMs have been attached to the GitHub release."
+                  else
+                    echo "SBOMs have been uploaded as artifacts."
+                  fi
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

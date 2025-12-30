@@ -1,0 +1,234 @@
+name: Docker Build & Test
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and Test Docker Image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Determine image tags
+        id: tags
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+            echo "image_tag=ghcr.io/sv4u/musicdl:pr-${PR_NUMBER}" >> $GITHUB_OUTPUT
+            echo "artifact_name=docker-image-pr-${PR_NUMBER}" >> $GITHUB_OUTPUT
+            echo "tags_list=ghcr.io/sv4u/musicdl:pr-${PR_NUMBER}" >> $GITHUB_OUTPUT
+          else
+            SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+            echo "image_tag=ghcr.io/sv4u/musicdl:sha-${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "image_tag_latest=ghcr.io/sv4u/musicdl:latest" >> $GITHUB_OUTPUT
+            echo "artifact_name=docker-image-${SHORT_SHA}" >> $GITHUB_OUTPUT
+            echo "tags_list=ghcr.io/sv4u/musicdl:sha-${SHORT_SHA},ghcr.io/sv4u/musicdl:latest" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate build timestamp
+        id: build-timestamp
+        run: |
+          BUILD_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          echo "timestamp=${BUILD_TIMESTAMP}" >> $GITHUB_OUTPUT
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./musicdl.Dockerfile
+          tags: ${{ steps.tags.outputs.tags_list }}
+          load: true
+          push: false
+          labels: |
+            org.opencontainers.image.source=https://github.com/sv4u/musicdl
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.build-timestamp.outputs.timestamp }}
+
+      - name: Run smoke tests
+        run: |
+          IMAGE_TAG="${{ steps.tags.outputs.image_tag }}"
+
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "[TEST] Running smoke tests for Docker image"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          # Test 1: Verify container can start
+          echo "[1/6] Testing container startup..."
+          if docker run --rm "$IMAGE_TAG" --help >/dev/null 2>&1; then
+            echo "  ✓ Container starts successfully"
+          else
+            echo "  ✗ Container failed to start"
+            exit 1
+          fi
+
+          # Test 2: Test entrypoint script execution
+          echo "[2/6] Testing entrypoint script execution..."
+          if docker run --rm "$IMAGE_TAG" --help >/dev/null 2>&1; then
+            echo "  ✓ Entrypoint script executes"
+          else
+            echo "  ✗ Entrypoint script failed"
+            exit 1
+          fi
+
+          # Test 3: Verify Python environment
+          echo "[3/6] Verifying Python environment..."
+          PYTHON_VERSION=$(docker run --rm --entrypoint python3 "$IMAGE_TAG" --version 2>&1 || echo "")
+          if echo "$PYTHON_VERSION" | grep -q "Python 3.12"; then
+            echo "  ✓ Python 3.12 is available: $PYTHON_VERSION"
+          else
+            echo "  ✗ Python 3.12 not found or incorrect version: $PYTHON_VERSION"
+            exit 1
+          fi
+
+          PIP_LIST=$(docker run --rm --entrypoint pip "$IMAGE_TAG" list 2>&1 || echo "")
+          MISSING_PACKAGES=""
+          if ! echo "$PIP_LIST" | grep -qF "spotipy"; then
+            MISSING_PACKAGES="${MISSING_PACKAGES} spotipy"
+          fi
+          if ! echo "$PIP_LIST" | grep -qF "yt-dlp"; then
+            MISSING_PACKAGES="${MISSING_PACKAGES} yt-dlp"
+          fi
+          if ! echo "$PIP_LIST" | grep -qF "mutagen"; then
+            MISSING_PACKAGES="${MISSING_PACKAGES} mutagen"
+          fi
+          if [ -z "$MISSING_PACKAGES" ]; then
+            echo "  ✓ Required Python packages are installed (spotipy, yt-dlp, mutagen)"
+          else
+            echo "  ✗ Required Python packages missing:$MISSING_PACKAGES"
+            exit 1
+          fi
+
+          # Test 4: Check required dependencies
+          echo "[4/6] Checking required system dependencies..."
+          FFMPEG_VERSION=$(docker run --rm --entrypoint ffmpeg "$IMAGE_TAG" -version 2>&1 | head -n 1 || echo "")
+          if echo "$FFMPEG_VERSION" | grep -q "ffmpeg version"; then
+            echo "  ✓ ffmpeg is installed: $(echo "$FFMPEG_VERSION" | cut -d' ' -f3 | head -n 1)"
+          else
+            echo "  ✗ ffmpeg not found"
+            exit 1
+          fi
+
+          ARIA2_VERSION=$(docker run --rm --entrypoint aria2c "$IMAGE_TAG" --version 2>&1 | head -n 1 || echo "")
+          if echo "$ARIA2_VERSION" | grep -q "aria2 version"; then
+            echo "  ✓ aria2 is installed: $(echo "$ARIA2_VERSION" | cut -d' ' -f3 | head -n 1)"
+          else
+            echo "  ✗ aria2 not found"
+            exit 1
+          fi
+
+          # Test 5: Verify directory structure
+          echo "[5/6] Verifying directory structure..."
+          if docker run --rm --entrypoint test "$IMAGE_TAG" -d /scripts && docker run --rm --entrypoint test "$IMAGE_TAG" -d /download; then
+            echo "  ✓ Required directories exist (/scripts, /download)"
+          else
+            echo "  ✗ Required directories missing"
+            exit 1
+          fi
+
+          # Test 6: Check file permissions
+          echo "[6/6] Checking file permissions..."
+          ENTRYPOINT_PERMS=$(docker run --rm --entrypoint ls "$IMAGE_TAG" -l /scripts/entrypoint.sh 2>&1 | awk '{print $1}' || echo "")
+          if echo "$ENTRYPOINT_PERMS" | grep -q "x"; then
+            echo "  ✓ Entrypoint script is executable"
+          else
+            echo "  ✗ Entrypoint script is not executable"
+            exit 1
+          fi
+
+          DOWNLOAD_PERMS=$(docker run --rm --entrypoint ls "$IMAGE_TAG" -ld /download 2>&1 | awk '{print $1}' || echo "")
+          if echo "$DOWNLOAD_PERMS" | grep -q "rwx"; then
+            echo "  ✓ Download directory has correct permissions"
+          else
+            echo "  ✗ Download directory has incorrect permissions"
+            exit 1
+          fi
+
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "[OK] All smoke tests passed"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      - name: Run functional tests
+        run: |
+          IMAGE_TAG="${{ steps.tags.outputs.image_tag }}"
+
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "[TEST] Running functional tests for Docker image"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          # Create minimal test config
+          cat > /tmp/test-config.yaml << 'EOF'
+          version: "1.2"
+          download:
+            client_id: "test"
+            client_secret: "test"
+            threads: 1
+            max_retries: 1
+            format: "mp3"
+            bitrate: "128k"
+            output: "test/{title}.{output-ext}"
+            audio_providers: ["youtube-music"]
+            cache_max_size: 10
+            cache_ttl: 60
+            overwrite: "skip"
+          songs: []
+          artists: {}
+          playlists: {}
+          EOF
+
+          echo "[1/2] Created minimal test configuration"
+
+          # Test that download.py can be executed with test config
+          # We expect it to fail gracefully (no valid Spotify credentials or URLs)
+          # but it should not crash with critical errors
+          echo "[2/2] Testing download.py execution with minimal config..."
+          set +e
+          set -o pipefail
+          docker run --rm \
+            -v /tmp/test-config.yaml:/scripts/config.yaml:ro \
+            "$IMAGE_TAG" 2>&1 | tee /tmp/docker-output.log
+          EXIT_CODE=$?
+          set +o pipefail
+          set -e
+
+          # Check for critical errors (segfault, import errors, etc.)
+          if grep -qi "segmentation fault\|import.*error\|module.*not found\|traceback" /tmp/docker-output.log; then
+            echo "  ✗ Critical error detected in container execution"
+            cat /tmp/docker-output.log
+            exit 1
+          fi
+
+          # Exit code 0 or non-zero is acceptable (depends on config validation)
+          # The important thing is that it doesn't crash
+          echo "  ✓ download.py executed without critical errors (exit code: $EXIT_CODE)"
+
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "[OK] All functional tests passed"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      - name: Save Docker image as artifact
+        if: github.event_name == 'pull_request'
+        run: |
+          docker save ${{ steps.tags.outputs.image_tag }} | gzip > docker-image.tar.gz
+
+      - name: Upload Docker image artifact
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ steps.tags.outputs.artifact_name }}
+          path: docker-image.tar.gz
+          retention-days: 1
