@@ -148,6 +148,7 @@ jobs:
                   path: "."
                   format: "cyclonedx-json"
                   output-file: "syft-source-sbom-cyclonedx.json"
+                  upload-artifact: false
 
             - name: Generate SBOM from Source Code - Syft (SPDX)
               id: syft-source-sbom-spdx
@@ -156,6 +157,7 @@ jobs:
                   path: "."
                   format: "spdx-json"
                   output-file: "syft-source-sbom-spdx.json"
+                  upload-artifact: false
 
             - name: Upload Syft source SBOMs
               uses: actions/upload-artifact@v6
@@ -174,6 +176,7 @@ jobs:
                   image: "ghcr.io/sv4u/musicdl:security-scan"
                   format: "cyclonedx-json"
                   output-file: "syft-image-sbom-cyclonedx.json"
+                  upload-artifact: false
 
             - name: Generate SBOM from Docker Image - Syft (SPDX)
               id: syft-image-sbom-spdx
@@ -182,6 +185,7 @@ jobs:
                   image: "ghcr.io/sv4u/musicdl:security-scan"
                   format: "spdx-json"
                   output-file: "syft-image-sbom-spdx.json"
+                  upload-artifact: false
 
             - name: Generate SBOM from Docker Image - Trivy
               id: trivy-image-sbom

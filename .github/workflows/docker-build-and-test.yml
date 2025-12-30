@@ -69,7 +69,7 @@ jobs:
 
           # Test 1: Verify container can start
           echo "[1/6] Testing container startup..."
-          if docker run --rm "$IMAGE_TAG" --help >/dev/null 2>&1; then
+          if docker run --rm --entrypoint sh "$IMAGE_TAG" -c "echo 'Container started successfully'" >/dev/null 2>&1; then
             echo "  ✓ Container starts successfully"
           else
             echo "  ✗ Container failed to start"
@@ -78,8 +78,9 @@ jobs:
 
           # Test 2: Test entrypoint script execution
           echo "[2/6] Testing entrypoint script execution..."
-          if docker run --rm "$IMAGE_TAG" --help >/dev/null 2>&1; then
-            echo "  ✓ Entrypoint script executes"
+          # Test that entrypoint script exists and is executable by running it with a test command
+          if docker run --rm --entrypoint test "$IMAGE_TAG" -x /scripts/entrypoint.sh >/dev/null 2>&1; then
+            echo "  ✓ Entrypoint script exists and is executable"
           else
             echo "  ✗ Entrypoint script failed"
             exit 1
@@ -87,7 +88,10 @@ jobs:
 
           # Test 3: Verify Python environment
           echo "[3/6] Verifying Python environment..."
-          PYTHON_VERSION=$(docker run --rm --entrypoint python3 "$IMAGE_TAG" --version 2>&1 || echo "")
+          if ! PYTHON_VERSION=$(docker run --rm --entrypoint python3 "$IMAGE_TAG" --version 2>&1); then
+            echo "  ✗ Failed to get Python version"
+            exit 1
+          fi
           if echo "$PYTHON_VERSION" | grep -q "Python 3.12"; then
             echo "  ✓ Python 3.12 is available: $PYTHON_VERSION"
           else
@@ -95,7 +99,10 @@ jobs:
             exit 1
           fi
 
-          PIP_LIST=$(docker run --rm --entrypoint pip "$IMAGE_TAG" list 2>&1 || echo "")
+          if ! PIP_LIST=$(docker run --rm --entrypoint python3 "$IMAGE_TAG" -m pip list 2>&1); then
+            echo "  ✗ Failed to run pip list"
+            exit 1
+          fi
           MISSING_PACKAGES=""
           if ! echo "$PIP_LIST" | grep -qF "spotipy"; then
             MISSING_PACKAGES="${MISSING_PACKAGES} spotipy"
@@ -109,54 +116,63 @@ jobs:
           if [ -z "$MISSING_PACKAGES" ]; then
             echo "  ✓ Required Python packages are installed (spotipy, yt-dlp, mutagen)"
           else
-            echo "  ✗ Required Python packages missing:$MISSING_PACKAGES"
+            echo "  ✗ Required Python packages missing: $MISSING_PACKAGES"
             exit 1
           fi
 
           # Test 4: Check required dependencies
           echo "[4/6] Checking required system dependencies..."
-          FFMPEG_VERSION=$(docker run --rm --entrypoint ffmpeg "$IMAGE_TAG" -version 2>&1 | head -n 1 || echo "")
+          if ! FFMPEG_VERSION=$(docker run --rm --entrypoint ffmpeg "$IMAGE_TAG" -version 2>&1 | head -n 1); then
+            echo "  ✗ Failed to get ffmpeg version"
+            exit 1
+          fi
           if echo "$FFMPEG_VERSION" | grep -q "ffmpeg version"; then
             echo "  ✓ ffmpeg is installed: $(echo "$FFMPEG_VERSION" | cut -d' ' -f3 | head -n 1)"
           else
-            echo "  ✗ ffmpeg not found"
+            echo "  ✗ ffmpeg not found or version check failed: $FFMPEG_VERSION"
             exit 1
           fi
 
-          ARIA2_VERSION=$(docker run --rm --entrypoint aria2c "$IMAGE_TAG" --version 2>&1 | head -n 1 || echo "")
+          if ! ARIA2_VERSION=$(docker run --rm --entrypoint aria2c "$IMAGE_TAG" --version 2>&1 | head -n 1); then
+            echo "  ✗ Failed to get aria2 version"
+            exit 1
+          fi
           if echo "$ARIA2_VERSION" | grep -q "aria2 version"; then
             echo "  ✓ aria2 is installed: $(echo "$ARIA2_VERSION" | cut -d' ' -f3 | head -n 1)"
           else
-            echo "  ✗ aria2 not found"
+            echo "  ✗ aria2 not found or version check failed: $ARIA2_VERSION"
             exit 1
           fi
 
           # Test 5: Verify directory structure
           echo "[5/6] Verifying directory structure..."
-          if docker run --rm --entrypoint test "$IMAGE_TAG" -d /scripts && docker run --rm --entrypoint test "$IMAGE_TAG" -d /download; then
-            echo "  ✓ Required directories exist (/scripts, /download)"
-          else
-            echo "  ✗ Required directories missing"
+          if ! docker run --rm --entrypoint test "$IMAGE_TAG" -d /scripts; then
+            echo "  ✗ Required directory /scripts is missing"
             exit 1
           fi
+          if ! docker run --rm --entrypoint test "$IMAGE_TAG" -d /download; then
+            echo "  ✗ Required directory /download is missing"
+            exit 1
+          fi
+          echo "  ✓ Required directories exist (/scripts, /download)"
 
           # Test 6: Check file permissions
           echo "[6/6] Checking file permissions..."
-          ENTRYPOINT_PERMS=$(docker run --rm --entrypoint ls "$IMAGE_TAG" -l /scripts/entrypoint.sh 2>&1 | awk '{print $1}' || echo "")
-          if echo "$ENTRYPOINT_PERMS" | grep -q "x"; then
-            echo "  ✓ Entrypoint script is executable"
-          else
+          if ! docker run --rm --entrypoint test "$IMAGE_TAG" -x /scripts/entrypoint.sh; then
             echo "  ✗ Entrypoint script is not executable"
             exit 1
           fi
+          echo "  ✓ Entrypoint script is executable"
 
-          DOWNLOAD_PERMS=$(docker run --rm --entrypoint ls "$IMAGE_TAG" -ld /download 2>&1 | awk '{print $1}' || echo "")
-          if echo "$DOWNLOAD_PERMS" | grep -q "rwx"; then
-            echo "  ✓ Download directory has correct permissions"
-          else
-            echo "  ✗ Download directory has incorrect permissions"
+          if ! docker run --rm --entrypoint test "$IMAGE_TAG" -d /download; then
+            echo "  ✗ Download directory does not exist"
             exit 1
           fi
+          if ! docker run --rm --entrypoint test "$IMAGE_TAG" -w /download; then
+            echo "  ✗ Download directory is not writable"
+            exit 1
+          fi
+          echo "  ✓ Download directory has correct permissions"
 
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "[OK] All smoke tests passed"
@@ -198,15 +214,22 @@ jobs:
           echo "[2/2] Testing download.py execution with minimal config..."
           set +e
           set -o pipefail
-          docker run --rm \
+          timeout 120 docker run --rm \
             -v /tmp/test-config.yaml:/scripts/config.yaml:ro \
             "$IMAGE_TAG" 2>&1 | tee /tmp/docker-output.log
           EXIT_CODE=$?
           set +o pipefail
           set -e
 
+          # Check for timeout
+          if [ $EXIT_CODE -eq 124 ]; then
+            echo "  ✗ Functional test timed out after 2 minutes"
+            cat /tmp/docker-output.log
+            exit 1
+          fi
+
           # Check for critical errors (segfault, import errors, etc.)
-          if grep -qi "segmentation fault\|import.*error\|module.*not found\|traceback" /tmp/docker-output.log; then
+          if grep -qiE "(segmentation fault|fatal error|import.*error|module.*not found|traceback|syntax error|nameerror|attributeerror|typeerror)" /tmp/docker-output.log; then
             echo "  ✗ Critical error detected in container execution"
             cat /tmp/docker-output.log
             exit 1
@@ -223,7 +246,14 @@ jobs:
       - name: Save Docker image as artifact
         if: github.event_name == 'pull_request'
         run: |
-          docker save ${{ steps.tags.outputs.image_tag }} | gzip > docker-image.tar.gz
+          if ! docker save ${{ steps.tags.outputs.image_tag }} | gzip > docker-image.tar.gz; then
+            echo "Error: Failed to save Docker image"
+            exit 1
+          fi
+          if [ ! -f docker-image.tar.gz ] || [ ! -s docker-image.tar.gz ]; then
+            echo "Error: Docker image artifact is missing or empty"
+            exit 1
+          fi
 
       - name: Upload Docker image artifact
         if: github.event_name == 'pull_request'
