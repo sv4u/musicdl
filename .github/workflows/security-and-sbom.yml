@@ -29,7 +29,7 @@ jobs:
 
             - name: Source Code Security Scanning
               id: source-scan
-              uses: aquasecurity/trivy-action@v0.29.0
+              uses: aquasecurity/trivy-action@0.33.1
               with:
                   scan-type: "fs"
                   scan-ref: "."
@@ -75,7 +75,7 @@ jobs:
 
             - name: Docker Image Security Scanning - Trivy
               id: trivy-image-scan
-              uses: aquasecurity/trivy-action@v0.29.0
+              uses: aquasecurity/trivy-action@0.33.1
               with:
                   scan-type: "image"
                   image-ref: "ghcr.io/sv4u/musicdl:security-scan"
@@ -287,7 +287,7 @@ jobs:
             - name: Scan published Docker image (release events)
               if: github.event_name == 'release'
               id: scan-published-image
-              uses: aquasecurity/trivy-action@v0.29.0
+              uses: aquasecurity/trivy-action@0.33.1
               with:
                   scan-type: "image"
                   image-ref: "ghcr.io/sv4u/musicdl:${{ github.event.release.tag_name }}"
