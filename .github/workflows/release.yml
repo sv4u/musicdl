@@ -1,8 +1,6 @@
-name: Docker Publish
+name: Release
 
 on:
-    release:
-        types: [published]
     workflow_dispatch:
         inputs:
             release_type:
@@ -21,40 +19,21 @@ on:
 
 permissions:
     contents: write
-    packages: write
 
 jobs:
-    publish:
-        name: Publish Docker Image
+    release:
+        name: Release
         runs-on: ubuntu-latest
         timeout-minutes: 60
         steps:
             - name: Checkout code
               uses: actions/checkout@v4
               with:
-                  ref: ${{ github.event_name == 'release' && github.event.release.tag_name || 'main' }}
+                  ref: main
                   fetch-depth: 0
                   token: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: Get version from release event
-              if: github.event_name == 'release'
-              id: version-from-release
-              run: |
-                  RELEASE_TAG="${{ github.event.release.tag_name }}"
-                  # Validate tag format
-                  if ! echo "$RELEASE_TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-                    echo "[X] Error: Invalid tag format: $RELEASE_TAG"
-                    echo "   Expected format: vX.Y.Z (e.g., v1.2.3)"
-                    exit 1
-                  fi
-                  VERSION=${RELEASE_TAG#v}  # Remove 'v' prefix
-                  echo "Release tag: $RELEASE_TAG"
-                  echo "Version: $VERSION"
-                  echo "tag=$RELEASE_TAG" >> $GITHUB_OUTPUT
-                  echo "version=$VERSION" >> $GITHUB_OUTPUT
-
             - name: Verify branch and working directory
-              if: github.event_name == 'workflow_dispatch'
               run: |
                   # Check if we're on main branch
                   CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -85,7 +64,6 @@ jobs:
                   echo "[OK] Branch verification passed"
 
             - name: Get current version
-              if: github.event_name == 'workflow_dispatch'
               id: current-version
               run: |
                   # Fetch all tags to ensure we have latest
@@ -105,7 +83,6 @@ jobs:
                   echo "version=$VERSION" >> $GITHUB_OUTPUT
 
             - name: Calculate next version
-              if: github.event_name == 'workflow_dispatch'
               id: next-version
               run: |
                   LATEST_TAG="${{ steps.current-version.outputs.tag }}"
@@ -187,6 +164,7 @@ jobs:
                   fi
 
                   # Validate tag name format (Git restrictions: no spaces, no special chars except - and .)
+                  # Tag names must be valid ref names: cannot contain spaces, control chars, or certain special chars
                   if ! echo "$NEXT_TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
                     echo "[X] Error: Invalid tag name format: $NEXT_TAG"
                     echo "   Tag names must match pattern: vX.Y.Z (e.g., v1.2.3)"
@@ -209,7 +187,6 @@ jobs:
                   echo "tag=$NEXT_TAG" >> $GITHUB_OUTPUT
 
             - name: Check commit range
-              if: github.event_name == 'workflow_dispatch'
               id: commit-range
               run: |
                   LATEST_TAG="${{ steps.current-version.outputs.tag }}"
@@ -241,8 +218,36 @@ jobs:
                   fi
                   echo "count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
 
+                  # Get commit types for preview (only from commits that match GitHub CLI's changelog filters)
+                  # Supports both scoped and unscoped Conventional Commits (e.g., feat: and feat(scope):)
+                  if [ "$LATEST_TAG" = "v0.0.0" ]; then
+                    COMMIT_TYPES=$(git log --format="%s" HEAD | \
+                      grep -E '^(feat|fix|docs|refactor|perf|ci|chore)(\([^)]+\))?!?:' | \
+                      grep -vE '^docs(\([^)]+\))?!?:.*README' | \
+                      grep -vE '^test(\([^)]+\))?!?:' | \
+                      sed -E 's/^([a-z]+)(\([^)]+\))?!?:.*/\1/' | \
+                      sort -u | \
+                      tr '\n' ', ' | \
+                      sed 's/,$//')
+                  else
+                    COMMIT_TYPES=$(git log --format="%s" ${LATEST_TAG}..HEAD | \
+                      grep -E '^(feat|fix|docs|refactor|perf|ci|chore)(\([^)]+\))?!?:' | \
+                      grep -vE '^docs(\([^)]+\))?!?:.*README' | \
+                      grep -vE '^test(\([^)]+\))?!?:' | \
+                      sed -E 's/^([a-z]+)(\([^)]+\))?!?:.*/\1/' | \
+                      sort -u | \
+                      tr '\n' ', ' | \
+                      sed 's/,$//')
+                  fi
+
+                  # Handle empty commit types (no Conventional Commits found)
+                  if [ -z "$COMMIT_TYPES" ]; then
+                    COMMIT_TYPES="(none - no Conventional Commits found)"
+                  fi
+                  echo "commit_types=$COMMIT_TYPES" >> $GITHUB_OUTPUT
+
             - name: Preview version and confirm
-              if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run != 'true' }}
+              if: ${{ inputs.dry_run != 'true' }}
               run: |
                   LATEST_TAG="${{ steps.current-version.outputs.tag }}"
                   IS_FIRST_RELEASE=false
@@ -266,6 +271,7 @@ jobs:
                   else
                     echo "Commits:         ${{ steps.commit-range.outputs.count }} commits since last release"
                   fi
+                  echo "Commit Types:    ${{ steps.commit-range.outputs.commit_types }}"
                   echo ""
                   if [ "$IS_FIRST_RELEASE" = "true" ]; then
                     echo "Compare View:    (Initial release - no previous version to compare)"
@@ -277,8 +283,8 @@ jobs:
                   echo ""
                   echo "[!] This will:"
                   echo "   1. Create and push tag: ${{ steps.next-version.outputs.tag }}"
-                  echo "   2. Build Docker image"
-                  echo "   3. Publish Docker image to GHCR"
+                  echo "   2. Generate changelog from commits"
+                  echo "   3. Create and publish GitHub release"
                   echo ""
                   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                   echo ""
@@ -287,7 +293,7 @@ jobs:
                   sleep 10
 
             - name: Display dry-run preview
-              if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run == 'true' }}
+              if: ${{ inputs.dry_run == 'true' }}
               run: |
                   LATEST_TAG="${{ steps.current-version.outputs.tag }}"
                   IS_FIRST_RELEASE=false
@@ -311,6 +317,7 @@ jobs:
                   else
                     echo "Commits:         ${{ steps.commit-range.outputs.count }} commits since last release"
                   fi
+                  echo "Commit Types:    ${{ steps.commit-range.outputs.commit_types }}"
                   echo ""
                   if [ "$IS_FIRST_RELEASE" = "true" ]; then
                     echo "Compare View:    (Initial release - no previous version to compare)"
@@ -320,10 +327,9 @@ jobs:
                   echo ""
                   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                   echo ""
-                  echo "[i] In dry-run mode, no tags or images will be created."
+                  echo "[i] In dry-run mode, no tags or releases will be created."
 
             - name: Check if tag already exists
-              if: github.event_name == 'workflow_dispatch'
               id: tag-check
               run: |
                   NEXT_TAG="${{ steps.next-version.outputs.tag }}"
@@ -356,7 +362,7 @@ jobs:
                   fi
 
             - name: Create and push tag
-              if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run != 'true' }}
+              if: ${{ inputs.dry_run != 'true' }}
               id: create-tag
               run: |
                   NEXT_TAG="${{ steps.next-version.outputs.tag }}"
@@ -416,75 +422,86 @@ jobs:
 
                   echo "[OK] Tag $NEXT_TAG created and pushed successfully"
 
-            - name: Set up Docker Buildx
-              uses: docker/setup-buildx-action@v3
-
-            - name: Log in to GHCR
-              if: ${{ (github.event_name == 'release') || (github.event_name == 'workflow_dispatch' && inputs.dry_run != 'true') }}
-              uses: docker/login-action@v3
-              with:
-                  registry: ghcr.io
-                  username: ${{ github.actor }}
-                  password: ${{ secrets.GITHUB_TOKEN }}
-
-            - name: Determine Docker image tags
-              id: docker-tags
+            - name: Verify GitHub CLI
+              if: ${{ inputs.dry_run != 'true' }}
               run: |
-                  # Get tag from appropriate source
-                  if [ "${{ github.event_name }}" == "release" ]; then
-                    VERSION_TAG="${{ steps.version-from-release.outputs.tag }}"
-                  else
-                    VERSION_TAG="${{ steps.next-version.outputs.tag }}"
-                  fi
-                  VERSION_TAG_FULL="ghcr.io/sv4u/musicdl:${VERSION_TAG}"
-                  echo "version_tag=${VERSION_TAG_FULL}" >> $GITHUB_OUTPUT
-                  if [ "${{ inputs.dry_run }}" != "true" ] || [ "${{ github.event_name }}" == "release" ]; then
-                    echo "tags_list=${VERSION_TAG_FULL},ghcr.io/sv4u/musicdl:latest" >> $GITHUB_OUTPUT
-                  else
-                    echo "tags_list=${VERSION_TAG_FULL}" >> $GITHUB_OUTPUT
+                  gh --version
+
+            - name: Check if release already exists
+              if: ${{ inputs.dry_run != 'true' }}
+              id: check-release
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  NEXT_TAG="${{ steps.next-version.outputs.tag }}"
+                  if gh release view "$NEXT_TAG" >/dev/null 2>&1; then
+                    echo "[X] Error: Release $NEXT_TAG already exists"
+                    echo "   To update the release, delete it first or use a different version"
+                    exit 1
                   fi
 
-            - name: Generate build timestamp
-              id: build-timestamp
+            - name: Create GitHub release with changelog
+              if: ${{ inputs.dry_run != 'true' }}
+              id: create-release
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
-                  BUILD_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-                  echo "timestamp=${BUILD_TIMESTAMP}" >> $GITHUB_OUTPUT
+                  NEXT_TAG="${{ steps.next-version.outputs.tag }}"
+                  RELEASE_TITLE="Release $NEXT_TAG"
 
-            - name: Build and push Docker image
-              id: docker-build
-              uses: docker/build-push-action@v6
-              continue-on-error: true
-              with:
-                  context: .
-                  file: ./musicdl.Dockerfile
-                  tags: ${{ steps.docker-tags.outputs.tags_list }}
-                  push: ${{ inputs.dry_run != 'true' }}
-                  labels: |
-                      org.opencontainers.image.source=https://github.com/sv4u/musicdl
-                      org.opencontainers.image.revision=${{ github.sha }}
-                      org.opencontainers.image.created=${{ steps.build-timestamp.outputs.timestamp }}
-                      org.opencontainers.image.version=${{ github.event_name == 'release' && github.event.release.tag_name || steps.next-version.outputs.tag }}
+                  # Create release with auto-generated changelog
+                  if gh release create "$NEXT_TAG" \
+                    --title "$RELEASE_TITLE" \
+                    --generate-notes; then
+                    echo "[OK] Release $NEXT_TAG created successfully"
+                  else
+                    RELEASE_EXIT=$?
+                    echo "[X] Error: Failed to create release (exit code: $RELEASE_EXIT)"
+                    echo "   This may occur if:"
+                    echo "   - Release already exists"
+                    echo "   - GitHub API rate limit exceeded"
+                    echo "   - Network connectivity issues"
+                    exit $RELEASE_EXIT
+                  fi
 
-            - name: Handle Docker build failure in dry-run mode
-              if: ${{ inputs.dry_run == 'true' && steps.docker-build.outcome == 'failure' }}
-              run: |
-                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                  echo "[X] Docker build failed in dry-run mode"
-                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                  echo ""
-                  echo "The Docker build failed during dry-run. This indicates there is an issue with"
-                  echo "the Docker build process that must be fixed before attempting a real release."
-                  echo ""
-                  echo "Please review the build logs above to identify and fix the issue."
-                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                  exit 1
-
-            - name: Rollback tag on failure
-              if: (failure() || steps.docker-build.outcome == 'failure') && github.event_name == 'workflow_dispatch' && inputs.dry_run != 'true' && steps.create-tag.outcome == 'success'
+            - name: Verify release was created
+              if: ${{ inputs.dry_run != 'true' }}
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
                   NEXT_TAG="${{ steps.next-version.outputs.tag }}"
 
-                  echo "[X] Workflow failed after tag creation. Rolling back tag..."
+                  # Check if GitHub CLI is available
+                  if command -v gh &> /dev/null; then
+                    echo "Verifying release using GitHub CLI..."
+                    if gh release view "$NEXT_TAG" --json tagName,body >/dev/null 2>&1; then
+                      RELEASE_BODY=$(gh release view "$NEXT_TAG" --json body --jq '.body')
+
+                      echo "[OK] Release verified:"
+                      echo "   Tag: $NEXT_TAG"
+                      echo "   Has changelog: $([ -n "$RELEASE_BODY" ] && echo "yes" || echo "no")"
+                    else
+                      echo "[!] Could not verify release via GitHub CLI"
+                    fi
+                  else
+                    # Fallback to API check
+                    echo "Verifying release using GitHub API..."
+                    API_RESPONSE=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+                      "https://api.github.com/repos/${{ github.repository }}/releases/tags/$NEXT_TAG" || echo "")
+
+                    if [ -n "$API_RESPONSE" ] && echo "$API_RESPONSE" | grep -q '"tag_name"'; then
+                      echo "[OK] Release verified via API"
+                    else
+                      echo "[!] Could not verify release via API (may still be processing)"
+                    fi
+                  fi
+
+            - name: Rollback tag on failure
+              if: ${{ inputs.dry_run != 'true' && (failure() || steps.create-release.outcome == 'failure') }}
+              run: |
+                  NEXT_TAG="${{ steps.next-version.outputs.tag }}"
+
+                  echo "[X] Release creation failed. Rolling back tag..."
 
                   # Delete local tag
                   if git rev-parse --verify "$NEXT_TAG" >/dev/null 2>&1; then
@@ -508,51 +525,19 @@ jobs:
                   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                   exit 1
 
-            - name: Verify Docker image was published
-              if: ${{ ((github.event_name == 'release') || (github.event_name == 'workflow_dispatch' && inputs.dry_run != 'true')) && steps.docker-build.outcome == 'success' }}
-              run: |
-                  # Get tag from appropriate source
-                  if [ "${{ github.event_name }}" == "release" ]; then
-                    VERSION_TAG="${{ steps.version-from-release.outputs.tag }}"
-                  else
-                    VERSION_TAG="${{ steps.next-version.outputs.tag }}"
-                  fi
-                  IMAGE_TAG="ghcr.io/sv4u/musicdl:${VERSION_TAG}"
-
-                  echo "Verifying Docker image was published..."
-                  echo "Image: $IMAGE_TAG"
-                  echo "Latest: ghcr.io/sv4u/musicdl:latest"
-                  echo ""
-                  echo "[OK] Docker image published successfully"
-
             - name: Display release summary
-              if: ${{ ((github.event_name == 'release') || (github.event_name == 'workflow_dispatch' && inputs.dry_run != 'true')) && steps.docker-build.outcome == 'success' }}
+              if: ${{ inputs.dry_run != 'true' && steps.create-release.outcome == 'success' }}
               run: |
-                  # Get tag and version from appropriate source
-                  if [ "${{ github.event_name }}" == "release" ]; then
-                    VERSION_TAG="${{ steps.version-from-release.outputs.tag }}"
-                    VERSION="${{ steps.version-from-release.outputs.version }}"
-                    COMMIT_INFO="(triggered by release event)"
-                  else
-                    VERSION_TAG="${{ steps.next-version.outputs.tag }}"
-                    VERSION="${{ steps.next-version.outputs.version }}"
-                    COMMIT_INFO="${{ steps.commit-range.outputs.count }} commits included"
-                  fi
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo "[OK] RELEASE COMPLETED SUCCESSFULLY"
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo ""
+                  echo "Tag:     ${{ steps.next-version.outputs.tag }}"
+                  echo "Version: ${{ steps.next-version.outputs.version }}"
+                  echo "Commits: ${{ steps.commit-range.outputs.count }} commits included"
+                  echo ""
+                  echo "Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ steps.next-version.outputs.tag }}"
+                  echo ""
+                  echo "The Docker Publish workflow will automatically trigger to build and publish the Docker image."
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                  echo "[OK] DOCKER PUBLISH COMPLETED SUCCESSFULLY"
-                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                  echo ""
-                  echo "Tag:     $VERSION_TAG"
-                  echo "Version: $VERSION"
-                  if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-                    echo "Commits: $COMMIT_INFO"
-                  else
-                    echo "Trigger: Automatic (release event)"
-                  fi
-                  echo ""
-                  echo "Docker Images:"
-                  echo "  - ghcr.io/sv4u/musicdl:$VERSION_TAG"
-                  echo "  - ghcr.io/sv4u/musicdl:latest"
-                  echo ""
-                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

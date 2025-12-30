@@ -293,9 +293,11 @@ image building, and publishing.
    all pull requests and pushes to `main`
 3. **Docker Build** - Builds Docker images on pull requests and pushes to
    `main` (images are not published in this workflow)
-4. **Docker Publish** - Manually triggered workflow that calculates semantic
-   versions, creates git tags, and publishes Docker images to GitHub Container
-   Registry (GHCR)
+4. **Release** - Manually triggered workflow that creates GitHub releases with
+   automatically generated changelogs and triggers Docker image publishing
+5. **Docker Publish** - Automatically triggered when a release is published, or
+   manually triggered for backwards compatibility. Builds and publishes Docker
+   images to GitHub Container Registry (GHCR)
 
 ### Workflow Architecture
 
@@ -309,21 +311,104 @@ flowchart TD
     PushMain --> CoverageWorkflow
     PushMain --> DockerBuildWorkflow
     
-    ManualDispatch["Manual Dispatch"] --> DockerPublishWorkflow["Docker Publish Workflow"]
+    ManualDispatchRelease["Manual Dispatch"] --> ReleaseWorkflow["Release Workflow"]
+    ReleaseWorkflow --> VersionCalc["Version Calculation major/minor/hotfix"]
+    VersionCalc --> TagCreation["Create Git Tag"]
+    TagCreation --> ChangelogGen["Generate Changelog via GitHub CLI"]
+    ChangelogGen --> ReleaseCreate["Create GitHub Release"]
+    ReleaseCreate --> ReleaseEvent["Release Published Event"]
+    ReleaseEvent --> DockerPublishWorkflow["Docker Publish Workflow"]
+    
+    ManualDispatchDocker["Manual Dispatch"] --> DockerPublishWorkflow
     
     TestWorkflow --> TestResults["Test Results"]
     CoverageWorkflow --> CoverageArtifacts["Coverage Reports HTML + XML"]
     DockerBuildWorkflow --> DockerArtifacts["Docker Image Artifacts PRs only"]
     
-    DockerPublishWorkflow --> VersionCalc["Version Calculation major/minor/hotfix"]
-    VersionCalc --> TagCreation["Create Git Tag"]
-    TagCreation --> DockerBuild["Docker Build"]
+    DockerPublishWorkflow --> DockerBuild["Docker Build"]
     DockerBuild --> GHCRPublish["Publish to GHCR ghcr.io/sv4u/musicdl"]
 ```
 
+### Release Process
+
+The release workflow creates GitHub releases with automatically generated changelogs and triggers Docker image publishing.
+
+**Prerequisites**:
+
+- All changes must be merged to the `main` branch
+- Working directory must be clean (no uncommitted changes)
+- Local branch must be up-to-date with remote `origin/main`
+
+**How to create a release**:
+
+1. Navigate to the [Actions](https://github.com/sv4u/musicdl/actions) tab in GitHub
+2. Select the "Release" workflow from the left sidebar
+3. Click "Run workflow" button (top right)
+4. Select the release type:
+   - **major**: Increments major version, resets minor and patch to 0 (e.g., v1.2.3 → v2.0.0)
+   - **minor**: Increments minor version, resets patch to 0 (e.g., v1.2.3 → v1.3.0)
+   - **hotfix**: Increments patch version only (e.g., v1.2.3 → v1.2.4)
+5. Optionally enable dry-run mode to test without creating a release
+6. Click "Run workflow" to start
+
+**What the release workflow does**:
+
+1. Validates branch and working directory state
+2. Calculates the next version based on the selected release type
+3. Validates that there are commits to include in the release
+4. Displays a preview of the release (version, commit count, commit types)
+5. Creates and pushes a git tag with the new version
+6. Generates changelog from Conventional Commits using GitHub CLI
+7. Creates and publishes GitHub release with changelog
+8. Verifies the release was created successfully
+
+**Automatic Docker Publishing**:
+
+When a release is published, the Docker Publish workflow automatically triggers and:
+
+- Builds Docker image from the release tag
+- Publishes Docker image to GHCR with version and latest tags
+- Verifies the image was published successfully
+
+**Manual Docker Publishing**:
+
+The Docker Publish workflow can still be triggered manually for backwards compatibility:
+
+- Navigate to Actions → Docker Publish workflow
+- Select release type and run workflow
+- This creates a tag and publishes Docker image (no GitHub release created)
+
+**Dry-Run Mode**:
+
+The release workflow supports a dry-run mode that allows you to test the entire release process without creating tags or releases. This is useful for:
+
+- Validating version calculation logic
+- Testing workflow changes in pull requests
+- Debugging release issues without creating test releases
+
+In dry-run mode, the workflow will:
+
+- ✅ Validate branch and working directory
+- ✅ Calculate and display next version
+- ✅ Show preview with commit count and types
+- ✅ Validate all release steps
+
+In dry-run mode, the workflow will NOT:
+
+- ❌ Create git tags
+- ❌ Create GitHub releases
+- ❌ Make any changes to the repository
+
 ### Docker Publishing
 
-To publish a new Docker image:
+The Docker Publish workflow can be triggered in two ways:
+
+1. **Automatically**: When a GitHub release is published (via the Release workflow)
+2. **Manually**: Direct trigger for backwards compatibility (creates tag but no GitHub release)
+
+**Manual Docker Publishing**:
+
+To manually publish a Docker image (without creating a GitHub release):
 
 1. Navigate to the [Actions](https://github.com/sv4u/musicdl/actions) tab in GitHub
 2. Select the "Docker Publish" workflow from the left sidebar
@@ -339,36 +424,14 @@ To publish a new Docker image:
 
 **What the workflow does**:
 
-1. Validates branch is `main` and working directory is clean
-2. Calculates the next version based on the selected release type
-3. Validates that there are commits to include in the release
-4. Displays a preview of the release (version, commit count)
-5. Creates and pushes a git tag with the new version
+1. Validates branch is `main` and working directory is clean (manual trigger only)
+2. Calculates the next version based on the selected release type (manual trigger only)
+3. Validates that there are commits to include in the release (manual trigger only)
+4. Displays a preview of the release (version, commit count) (manual trigger only)
+5. Creates and pushes a git tag with the new version (manual trigger only)
 6. Builds Docker image from `musicdl.Dockerfile`
 7. Publishes Docker image to GHCR with version and latest tags
 8. Verifies the image was published successfully
-
-**Dry-Run Mode**:
-
-The workflow supports a dry-run mode that allows you to test the entire release
-process without creating tags or publishing images. This is useful for:
-
-- Validating version calculation logic
-- Testing workflow changes in pull requests
-- Debugging release issues without creating test releases
-
-In dry-run mode, the workflow will:
-
-- ✅ Validate branch and working directory
-- ✅ Calculate and display next version
-- ✅ Show preview with commit count
-- ✅ Build Docker image (but not push)
-
-In dry-run mode, the workflow will NOT:
-
-- ❌ Create git tags
-- ❌ Publish Docker images
-- ❌ Make any changes to the repository
 
 **Published Images**:
 
