@@ -1,4 +1,4 @@
-name: Code Coverage
+name: Test & Coverage
 
 on:
   pull_request:
@@ -12,8 +12,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  coverage:
-    name: Generate Coverage Report
+  test-and-coverage:
+    name: Run Tests and Generate Coverage
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -63,10 +63,20 @@ jobs:
         if: always()
         run: |
           if [ -f coverage.xml ]; then
-            echo "Coverage report generated successfully"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "[OK] Coverage report generated successfully"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
             echo "HTML report: htmlcov/index.html"
             echo "XML report: coverage.xml"
+            echo ""
+            # Extract coverage percentage from coverage.xml if available
+            if command -v python3 &> /dev/null; then
+              COVERAGE=$(python3 -c "import xml.etree.ElementTree as ET; tree = ET.parse('coverage.xml'); root = tree.getroot(); print(f\"{float(root.get('line-rate', 0)) * 100:.2f}%\")" 2>/dev/null || echo "N/A")
+              echo "Coverage: $COVERAGE"
+            fi
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           else
-            echo "Warning: Coverage report not found"
+            echo "[!] Warning: Coverage report not found"
           fi
 

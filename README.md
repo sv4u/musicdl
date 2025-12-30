@@ -1,8 +1,8 @@
 # `musicdl`
 
-![Tests](https://github.com/sv4u/musicdl/actions/workflows/test.yml/badge.svg)
-![Coverage](https://github.com/sv4u/musicdl/actions/workflows/coverage.yml/badge.svg)
-![Docker Build](https://github.com/sv4u/musicdl/actions/workflows/docker-build.yml/badge.svg)
+![Tests & Coverage](https://github.com/sv4u/musicdl/actions/workflows/test-and-coverage.yml/badge.svg)
+![Docker Build & Test](https://github.com/sv4u/musicdl/actions/workflows/docker-build-and-test.yml/badge.svg)
+![Security & SBOM](https://github.com/sv4u/musicdl/actions/workflows/security-and-sbom.yml/badge.svg)
 ![Version](https://img.shields.io/github/v/tag/sv4u/musicdl?label=version&sort=semver)
 ![License](https://img.shields.io/github/license/sv4u/musicdl)
 ![Python](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
@@ -288,50 +288,43 @@ image building, and publishing.
 
 ### Workflows
 
-1. **Test Suite** - Runs pytest on all pull requests and pushes to `main`
-2. **Code Coverage** - Generates and uploads coverage reports (HTML and XML) on
-   all pull requests and pushes to `main`
-3. **Docker Build** - Builds Docker images on pull requests and pushes to
-   `main` (images are not published in this workflow)
-4. **Release** - Manually triggered workflow that creates GitHub releases with
-   automatically generated changelogs and triggers Docker image publishing
-5. **Docker Publish** - Automatically triggered when a release is published, or
-   manually triggered for backwards compatibility. Builds and publishes Docker
-   images to GitHub Container Registry (GHCR)
+1. **Test & Coverage** - Runs pytest with coverage on all pull requests and pushes to `main`. Generates and uploads coverage reports (HTML and XML)
+2. **Docker Build & Test** - Builds Docker images and runs comprehensive smoke and functional tests on pull requests and pushes to `main` (images are not published in this workflow)
+3. **Release & Publish** - Manually triggered workflow that creates GitHub releases with automatically generated changelogs and publishes Docker images to GHCR in a single workflow
+4. **Security & SBOM** - Performs security scanning (Trivy, Grype) and generates SBOMs (Syft, Trivy) for source code and Docker images on pull requests, pushes to `main`, and release events
 
 ### Workflow Architecture
 
 ```mermaid
 flowchart TD
-    PR["Pull Request"] --> TestWorkflow["Test Suite Workflow"]
-    PR --> CoverageWorkflow["Coverage Workflow"]
-    PR --> DockerBuildWorkflow["Docker Build Workflow"]
+    PR["Pull Request"] --> TestCoverageWorkflow["Test & Coverage Workflow"]
+    PR --> DockerBuildTestWorkflow["Docker Build & Test Workflow"]
+    PR --> SecuritySBOMWorkflow["Security & SBOM Workflow"]
     
-    PushMain["Push to main"] --> TestWorkflow
-    PushMain --> CoverageWorkflow
-    PushMain --> DockerBuildWorkflow
+    PushMain["Push to main"] --> TestCoverageWorkflow
+    PushMain --> DockerBuildTestWorkflow
+    PushMain --> SecuritySBOMWorkflow
     
-    ManualDispatchRelease["Manual Dispatch"] --> ReleaseWorkflow["Release Workflow"]
-    ReleaseWorkflow --> VersionCalc["Version Calculation major/minor/hotfix"]
+    ManualDispatch["Manual Dispatch"] --> ReleasePublishWorkflow["Release & Publish Workflow"]
+    ReleasePublishWorkflow --> VersionCalc["Version Calculation major/minor/hotfix"]
     VersionCalc --> TagCreation["Create Git Tag"]
     TagCreation --> ChangelogGen["Generate Changelog via GitHub CLI"]
     ChangelogGen --> ReleaseCreate["Create GitHub Release"]
-    ReleaseCreate --> ReleaseEvent["Release Published Event"]
-    ReleaseEvent --> DockerPublishWorkflow["Docker Publish Workflow"]
-    
-    ManualDispatchDocker["Manual Dispatch"] --> DockerPublishWorkflow
-    
-    TestWorkflow --> TestResults["Test Results"]
-    CoverageWorkflow --> CoverageArtifacts["Coverage Reports HTML + XML"]
-    DockerBuildWorkflow --> DockerArtifacts["Docker Image Artifacts PRs only"]
-    
-    DockerPublishWorkflow --> DockerBuild["Docker Build"]
+    ReleaseCreate --> DockerBuild["Build Docker Image"]
     DockerBuild --> GHCRPublish["Publish to GHCR ghcr.io/sv4u/musicdl"]
+    
+    ReleaseEvent["Release Published Event"] --> SecuritySBOMWorkflow
+    
+    TestCoverageWorkflow --> TestResults["Test Results + Coverage Reports HTML + XML"]
+    DockerBuildTestWorkflow --> DockerArtifacts["Docker Image Artifacts PRs only + Test Results"]
+    SecuritySBOMWorkflow --> SecurityReports["Security Scan Reports"]
+    SecuritySBOMWorkflow --> SBOMFiles["SBOM Files CycloneDX + SPDX"]
+    ReleasePublishWorkflow --> ReleaseArtifacts["GitHub Release + Docker Images"]
 ```
 
 ### Release Process
 
-The release workflow creates GitHub releases with automatically generated changelogs and triggers Docker image publishing.
+The Release & Publish workflow creates GitHub releases with automatically generated changelogs and publishes Docker images in a single workflow.
 
 **Prerequisites**:
 
@@ -342,103 +335,220 @@ The release workflow creates GitHub releases with automatically generated change
 **How to create a release**:
 
 1. Navigate to the [Actions](https://github.com/sv4u/musicdl/actions) tab in GitHub
-2. Select the "Release" workflow from the left sidebar
+2. Select the "Release & Publish" workflow from the left sidebar
 3. Click "Run workflow" button (top right)
 4. Select the release type:
-   - **major**: Increments major version, resets minor and patch to 0 (e.g., v1.2.3 → v2.0.0)
-   - **minor**: Increments minor version, resets patch to 0 (e.g., v1.2.3 → v1.3.0)
-   - **hotfix**: Increments patch version only (e.g., v1.2.3 → v1.2.4)
+   - **major**: Increments major version, resets minor to 0 (e.g., v0.13 → v1.0)
+   - **minor**: Increments minor version (e.g., v0.13 → v0.14)
+   - **hotfix**: Increments minor version (same as minor for two-part versioning)
 5. Optionally enable dry-run mode to test without creating a release
 6. Click "Run workflow" to start
 
-**What the release workflow does**:
+**What the Release & Publish workflow does**:
 
 1. Validates branch and working directory state
-2. Calculates the next version based on the selected release type
+2. Calculates the next version based on the selected release type (two-part versioning: vX.Y)
 3. Validates that there are commits to include in the release
 4. Displays a preview of the release (version, commit count, commit types)
-5. Creates and pushes a git tag with the new version
-6. Generates changelog from Conventional Commits using GitHub CLI
-7. Creates and publishes GitHub release with changelog
-8. Verifies the release was created successfully
+5. Checks if tag already exists (local and remote)
+6. Creates and pushes a git tag with the new version
+7. Generates changelog from Conventional Commits using GitHub CLI
+8. Creates and publishes GitHub release with changelog
+9. Verifies the release was created successfully
+10. Builds Docker image from `musicdl.Dockerfile`
+11. Publishes Docker image to GHCR with version tag and latest tag
+12. Verifies the image was published successfully
+13. Displays release summary with URLs
 
-**Automatic Docker Publishing**:
+**Version Calculation**:
 
-When a release is published, the Docker Publish workflow automatically triggers and:
+- The workflow uses **two-part versioning** (vX.Y format, e.g., v0.13, v1.0)
+- **Major release**: Increments major, resets minor to 0 (e.g., v0.13 → v1.0)
+- **Minor/Hotfix release**: Increments minor (e.g., v0.13 → v0.14)
+- **First release**: Defaults to v0.1 regardless of release type
+- Version format is validated to match `^v[0-9]+\.[0-9]+$` pattern
 
-- Builds Docker image from the release tag
-- Publishes Docker image to GHCR with version and latest tags
-- Verifies the image was published successfully
+**Tag Handling**:
 
-**Manual Docker Publishing**:
-
-The Docker Publish workflow can still be triggered manually for backwards compatibility:
-
-- Navigate to Actions → Docker Publish workflow
-- Select release type and run workflow
-- This creates a tag and publishes Docker image (no GitHub release created)
-
-**Dry-Run Mode**:
-
-The release workflow supports a dry-run mode that allows you to test the entire release process without creating tags or releases. This is useful for:
-
-- Validating version calculation logic
-- Testing workflow changes in pull requests
-- Debugging release issues without creating test releases
-
-In dry-run mode, the workflow will:
-
-- ✅ Validate branch and working directory
-- ✅ Calculate and display next version
-- ✅ Show preview with commit count and types
-- ✅ Validate all release steps
-
-In dry-run mode, the workflow will NOT:
-
-- ❌ Create git tags
-- ❌ Create GitHub releases
-- ❌ Make any changes to the repository
-
-### Docker Publishing
-
-The Docker Publish workflow can be triggered in two ways:
-
-1. **Automatically**: When a GitHub release is published (via the Release workflow)
-2. **Manually**: Direct trigger for backwards compatibility (creates tag but no GitHub release)
-
-**Manual Docker Publishing**:
-
-To manually publish a Docker image (without creating a GitHub release):
-
-1. Navigate to the [Actions](https://github.com/sv4u/musicdl/actions) tab in GitHub
-2. Select the "Docker Publish" workflow from the left sidebar
-3. Click "Run workflow" button (top right)
-4. Select the release type:
-   - **major**: Increments major version, resets minor and patch to 0
-     (e.g., v1.2.3 → v2.0.0)
-   - **minor**: Increments minor version, resets patch to 0
-     (e.g., v1.2.3 → v1.3.0)
-   - **hotfix**: Increments patch version only (e.g., v1.2.3 → v1.2.4)
-5. Optionally enable dry-run mode to test without creating tags or publishing images
-6. Click "Run workflow" to start
-
-**What the workflow does**:
-
-1. Validates branch is `main` and working directory is clean (manual trigger only)
-2. Calculates the next version based on the selected release type (manual trigger only)
-3. Validates that there are commits to include in the release (manual trigger only)
-4. Displays a preview of the release (version, commit count) (manual trigger only)
-5. Creates and pushes a git tag with the new version (manual trigger only)
-6. Builds Docker image from `musicdl.Dockerfile`
-7. Publishes Docker image to GHCR with version and latest tags
-8. Verifies the image was published successfully
+- Checks for existing tags (local and remote) before creation to prevent duplicates
+- Automatically rolls back tags if release or Docker publish fails after tag creation
+- Provides manual cleanup instructions if automatic rollback fails
 
 **Published Images**:
 
 Published Docker images are available at:
 
-- `ghcr.io/sv4u/musicdl:v{version}` (e.g., `ghcr.io/sv4u/musicdl:v1.2.3`)
+- `ghcr.io/sv4u/musicdl:v{version}` (e.g., `ghcr.io/sv4u/musicdl:v0.14`)
 - `ghcr.io/sv4u/musicdl:latest` (always points to the latest published version)
+
+**Dry-Run Mode**:
+
+The Release & Publish workflow supports a dry-run mode that allows you to test the entire release process without creating tags, releases, or publishing images. This is useful for:
+
+- Validating version calculation logic
+- Testing workflow changes in pull requests
+- Debugging release issues without creating test releases
+
+**What runs in dry-run mode**:
+
+- ✅ Branch and working directory validation
+- ✅ Version calculation and validation (two-part versioning)
+- ✅ Commit range checking (warnings instead of errors if no commits)
+- ✅ Tag availability checking
+- ✅ Preview of what would be created
+
+**What is skipped in dry-run mode**:
+
+- ❌ Git tag creation and pushing
+- ❌ GitHub release creation
+- ❌ Docker image building and publishing
+
+**Commit validation in dry-run**:
+
+- In dry-run mode, if there are no commits to release, the workflow will show a warning instead of failing
+- This allows you to test the workflow even when no new commits exist
+- The dry-run summary will indicate if validation would have failed
+
+### Docker Build & Test
+
+The Docker Build & Test workflow builds Docker images and validates they function correctly.
+
+**Triggers**:
+
+- Pull requests (opened, synchronize, reopened)
+- Pushes to `main` branch
+
+**What the workflow does**:
+
+1. Builds Docker image using `musicdl.Dockerfile`
+2. Tags images appropriately:
+   - PRs: `ghcr.io/sv4u/musicdl:pr-{number}`
+   - Main branch: `ghcr.io/sv4u/musicdl:sha-{short-sha}` and `ghcr.io/sv4u/musicdl:latest`
+3. **Smoke Tests**:
+   - Verifies container can start successfully
+   - Tests entrypoint script execution
+   - Verifies Python environment (Python 3.12, required packages)
+   - Checks required dependencies (ffmpeg, aria2)
+   - Verifies directory structure (/scripts, /download)
+   - Checks file permissions
+4. **Functional Tests**:
+   - Creates minimal test configuration
+   - Runs download.py with test config
+   - Verifies no critical errors occur
+5. Saves Docker image as artifact for PRs (for manual testing)
+
+**Test Results**:
+
+- All smoke and functional tests must pass for the workflow to succeed
+- Test results are displayed in workflow logs
+- Docker images are available as artifacts for PRs (1 day retention)
+
+### Security & SBOM
+
+The Security & SBOM workflow performs comprehensive security scanning and generates Software Bill of Materials (SBOM) for both source code and Docker images.
+
+**Triggers**:
+
+- Pull requests (opened, synchronize, reopened)
+- Pushes to `main` branch
+- Release events (when releases are published)
+
+**Source Code Security Scanning**:
+
+- Uses **Trivy** to scan repository for vulnerabilities
+- Scans dependency files (`requirements.txt`, `test-requirements.txt`)
+- Generates security reports in SARIF format
+- Uploads scan results as artifacts (30 days retention)
+- **Warns on vulnerabilities but does not fail the workflow**
+
+**Docker Image Security Scanning**:
+
+- Uses **Trivy** and **Grype** to scan Docker images
+- Generates security reports from both scanners
+- Compares results from both scanners
+- Uploads scan results as artifacts (30 days retention)
+- **Warns on vulnerabilities but does not fail the workflow**
+
+**SBOM Generation from Source Code**:
+
+- Uses **Syft** to generate SBOMs from repository
+- Generates SBOMs in CycloneDX and SPDX formats
+- Includes all dependencies from `requirements.txt` and `test-requirements.txt`
+- Uploads SBOM artifacts (30 days retention)
+
+**SBOM Generation from Docker Image**:
+
+- Uses **Syft** and **Trivy** to generate SBOMs from Docker images
+- Generates SBOMs in CycloneDX and SPDX formats
+- Includes all packages installed in the Docker image
+- Uploads SBOM artifacts (30 days retention)
+
+**For Release Events**:
+
+- Automatically attaches SBOMs to GitHub releases
+- Scans the published Docker image from GHCR
+- All SBOMs are available as release assets
+
+### Personal Access Token (PAT) Setup
+
+**Note**: The Release & Publish workflow no longer requires a PAT since Docker publishing is integrated into the same workflow. The workflow uses `GITHUB_TOKEN` for all operations, which simplifies setup and maintenance.
+
+**Security Best Practices**:
+
+- Use fine-grained PATs if available (more secure)
+- Set appropriate expiration dates
+- Rotate tokens periodically (recommended: before expiration)
+- Use minimal required scopes
+- Never commit tokens to repository
+- Revoke tokens if compromised
+
+**Fallback Behavior**:
+
+- If `RELEASE_PAT` is not configured, the workflow will use `GITHUB_TOKEN` as fallback
+- The release will be created successfully, but Docker workflow will NOT trigger automatically
+- You can manually trigger Docker workflow if needed
+- The workflow will display warnings when using the fallback token
+
+### Troubleshooting Release Workflow
+
+**Issue: Docker workflow not triggering after release**:
+
+- ✅ Check `RELEASE_PAT` secret exists in repository settings
+- ✅ Verify PAT has `repo` scope (required)
+- ✅ Check PAT hasn't expired (GitHub Settings → Developer settings → Tokens)
+- ✅ Review release workflow logs for PAT-related warnings
+- ✅ Manually trigger Docker workflow if needed (Actions → Docker Publish)
+
+**Issue: Dry-run mode failing unexpectedly**:
+
+- ✅ Check workflow logs for specific error message
+- ✅ Verify you're on `main` branch and up-to-date with remote
+- ✅ Ensure working directory is clean (no uncommitted changes)
+- ✅ Validate GoReleaser configuration file exists and is valid
+- ✅ Check for syntax errors in workflow file
+
+**Issue: Release creation failing with authentication error**:
+
+- ✅ Verify `RELEASE_PAT` secret is correctly configured
+- ✅ Check PAT hasn't been revoked or expired
+- ✅ Verify PAT has correct scopes (`repo` required)
+- ✅ Try regenerating PAT and updating secret
+- ✅ Check GitHub API status for outages
+
+**Issue: Tag rollback not working**:
+
+- ✅ Check workflow logs for rollback step execution
+- ✅ Verify tag exists before attempting deletion
+- ✅ Check repository permissions (contents: write required)
+- ✅ Manually delete tag if automatic rollback fails: `git push origin :refs/tags/vX.Y.Z`
+
+**Issue: GoReleaser build failing**:
+
+- ✅ Validate `.goreleaser.yml` configuration
+- ✅ Check GoReleaser version compatibility
+- ✅ Review build logs for specific platform errors
+- ✅ Test GoReleaser locally: `goreleaser check`
+- ✅ Verify all required files exist for build
 
 ## Dependency Management
 
