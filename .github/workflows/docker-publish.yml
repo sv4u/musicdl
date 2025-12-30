@@ -100,6 +100,21 @@ jobs:
                     exit 0
                   fi
 
+                  # Normalize version if it's missing the patch component (e.g., 0.13 → 0.13.0)
+                  # This handles legacy tags that don't follow semantic versioning's three-component format
+                  if echo "$CURRENT_VERSION" | grep -qE '^[0-9]+\.[0-9]+$'; then
+                    echo "[i] Normalizing version: $CURRENT_VERSION → ${CURRENT_VERSION}.0 (missing patch component)"
+                    CURRENT_VERSION="${CURRENT_VERSION}.0"
+                    echo "[OK] Version normalized successfully"
+                  elif echo "$CURRENT_VERSION" | grep -qE '^[0-9]+$'; then
+                    echo "[X] Error: Invalid version format: $CURRENT_VERSION"
+                    echo "   Version has only one component (MAJOR)"
+                    echo "   Expected format: X.Y.Z (e.g., 1.2.3) or X.Y (e.g., 1.2)"
+                    echo "   Latest tag: $LATEST_TAG"
+                    echo "   Suggestion: Update tag to use three-component format (e.g., v1.0.0)"
+                    exit 1
+                  fi
+
                   # Validate current version format (must be X.Y.Z, no pre-release suffixes)
                   if ! echo "$CURRENT_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
                     echo "[X] Error: Invalid version format: $CURRENT_VERSION"
