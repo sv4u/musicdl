@@ -9,3 +9,4 @@
   - The download "plan" initial will have duplicate elements but will go through an optimization step before it is executed
 - [ ] [Properly handle `spotipy` rate/request limit](./.cursor/plans/spotipy_rate_limiting.plan.md)
 - [x] [Reimplement `spotdl` library and simplify complexity of it](./.cursor/plans/re-implement_spotdl_for_musicdl.plan.md)
+- [ ] [Update changelog generation to be more structured](./.cursor/plans/structured_changelog_generation.plan.md)
