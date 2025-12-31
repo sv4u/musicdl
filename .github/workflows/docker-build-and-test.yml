@@ -179,6 +179,9 @@ jobs:
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
       - name: Run functional tests
+        env:
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
         run: |
           IMAGE_TAG="${{ steps.tags.outputs.image_tag }}"
 
@@ -186,12 +189,21 @@ jobs:
           echo "[TEST] Running functional tests for Docker image"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-          # Create minimal test config
+          # Check if secrets are available (may not be available for PRs from forks)
+          if [ -z "$SPOTIFY_CLIENT_ID" ] || [ -z "$SPOTIFY_CLIENT_SECRET" ]; then
+            echo "[!] Warning: SPOTIFY_CLIENT_ID or SPOTIFY_CLIENT_SECRET secrets not available"
+            echo "   Using test credentials for functional test validation"
+            echo "   Note: Secrets may not be available for PRs from forks"
+            SPOTIFY_CLIENT_ID="test_client_id"
+            SPOTIFY_CLIENT_SECRET="test_client_secret"
+          else
+            echo "[✓] Using repository secrets for Spotify credentials"
+          fi
+
+          # Create minimal test config (without credentials - using env vars instead)
           cat > /tmp/test-config.yaml << 'EOF'
           version: "1.2"
           download:
-            client_id: "test"
-            client_secret: "test"
             threads: 1
             max_retries: 1
             format: "mp3"
@@ -206,15 +218,17 @@ jobs:
           playlists: {}
           EOF
 
-          echo "[1/2] Created minimal test configuration"
+          echo "[1/2] Created minimal test configuration (credentials via environment variables)"
 
-          # Test that download.py can be executed with test config
+          # Test that download.py can be executed with test config and environment variables
           # We expect it to fail gracefully (no valid Spotify credentials or URLs)
           # but it should not crash with critical errors
-          echo "[2/2] Testing download.py execution with minimal config..."
+          echo "[2/2] Testing download.py execution with minimal config and env vars..."
           set +e
           set -o pipefail
           timeout 120 docker run --rm \
+            -e SPOTIFY_CLIENT_ID="$SPOTIFY_CLIENT_ID" \
+            -e SPOTIFY_CLIENT_SECRET="$SPOTIFY_CLIENT_SECRET" \
             -v /tmp/test-config.yaml:/scripts/config.yaml:ro \
             "$IMAGE_TAG" 2>&1 | tee /tmp/docker-output.log
           EXIT_CODE=$?

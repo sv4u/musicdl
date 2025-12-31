@@ -2,11 +2,12 @@
 Configuration models and loader.
 """
 
+import os
 import yaml
 from pathlib import Path
-from typing import List, Literal
+from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from core.exceptions import ConfigError
 
@@ -14,8 +15,8 @@ from core.exceptions import ConfigError
 class DownloadSettings(BaseModel):
     """Download configuration settings."""
 
-    client_id: str
-    client_secret: str
+    client_id: Optional[str] = Field(default=None)
+    client_secret: Optional[str] = Field(default=None)
     threads: int = 4
     max_retries: int = 3
     format: str = "mp3"
@@ -25,6 +26,76 @@ class DownloadSettings(BaseModel):
     cache_max_size: int = 1000  # Maximum cached entries
     cache_ttl: int = 3600  # Cache TTL in seconds (1 hour)
     overwrite: Literal["skip", "overwrite", "metadata"] = "skip"
+
+    @staticmethod
+    def _resolve_credential(
+        field_name: str, env_var: str, config_value: Optional[str]
+    ) -> Optional[str]:
+        """
+        Resolve credential from environment variable or config value.
+
+        Args:
+            field_name: Name of the credential field (for error messages)
+            env_var: Environment variable name
+            config_value: Value from config file (may be None)
+
+        Returns:
+            Resolved credential value, or None if not found
+        """
+        # Try environment variable first (highest priority)
+        env_value = os.getenv(env_var)
+        if env_value is not None:
+            env_value = env_value.strip()
+            if env_value:  # Not empty after stripping
+                return env_value
+
+        # Fall back to config file value
+        if config_value is not None:
+            config_value = config_value.strip()
+            if config_value:  # Not empty after stripping
+                return config_value
+
+        return None
+
+    @model_validator(mode="after")
+    def validate_credentials(self) -> "DownloadSettings":
+        """
+        Validate that both credentials are present from either environment variables or config.
+
+        Returns:
+            Self with resolved credentials
+
+        Raises:
+            ConfigError: If credentials are missing
+        """
+        # Resolve credentials from environment variables or config
+        resolved_client_id = self._resolve_credential(
+            "client_id", "SPOTIFY_CLIENT_ID", self.client_id
+        )
+        resolved_client_secret = self._resolve_credential(
+            "client_secret", "SPOTIFY_CLIENT_SECRET", self.client_secret
+        )
+
+        # Build error message if credentials are missing
+        missing = []
+        if not resolved_client_id:
+            missing.append("client_id")
+        if not resolved_client_secret:
+            missing.append("client_secret")
+
+        if missing:
+            missing_str = " and ".join(missing)
+            raise ConfigError(
+                f"Missing Spotify {missing_str}. Both client_id and client_secret must be provided via:\n"
+                "  - Environment variables: SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET, OR\n"
+                "  - Configuration file: download.client_id and download.client_secret"
+            )
+
+        # Update fields with resolved values
+        self.client_id = resolved_client_id
+        self.client_secret = resolved_client_secret
+
+        return self
 
 
 class MusicSource(BaseModel):

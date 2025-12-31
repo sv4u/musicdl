@@ -9,6 +9,16 @@ LABEL description="This image allows for quick execution of musicdl"
 # Default to built-in config, but allow override via volume mount
 ENV CONFIG_PATH=/scripts/config.yaml
 
+# Required environment variables for Spotify API credentials:
+#   SPOTIFY_CLIENT_ID - Spotify API client ID (required at runtime)
+#   SPOTIFY_CLIENT_SECRET - Spotify API client secret (required at runtime)
+# These should be provided at runtime via:
+#   - docker run -e SPOTIFY_CLIENT_ID=... -e SPOTIFY_CLIENT_SECRET=...
+#   - Docker secrets
+#   - Environment file (.env)
+#   - Docker Compose environment section
+# Do NOT set these at build time - they should be injected at runtime for security
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
 	ca-certificates curl ffmpeg openssl aria2 g++ \
 	git python3-cffi libffi-dev zlib1g-dev && \
