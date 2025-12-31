@@ -45,6 +45,7 @@ Before deploying, ensure you have:
    - Adjust path in `compose.yaml` if using a different location
 5. **Spotify API credentials** (client_id and client_secret)
    - Get credentials from [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
+   - Credentials should be provided via environment variables (recommended) or config file
 
 ## Quick Start
 
@@ -164,9 +165,13 @@ The configuration file uses YAML format version 1.2:
 version: "1.2"
 
 download:
-  # Spotify API credentials (required)
-  client_id: "your_spotify_client_id"
-  client_secret: "your_spotify_client_secret"
+  # Spotify API credentials
+  # These should be provided via environment variables (recommended):
+  #   SPOTIFY_CLIENT_ID
+  #   SPOTIFY_CLIENT_SECRET
+  # For local development, you can still add them here (not recommended for production)
+  # client_id: "your_spotify_client_id"
+  # client_secret: "your_spotify_client_secret"
   
   # Download settings
   threads: 4                    # Number of parallel downloads

@@ -89,9 +89,13 @@ The tool uses a single `config.yaml` file (version 1.2) for all settings.
 version: 1.2
 
 download:
-  # Spotify credentials
-  client_id: "your_client_id"
-  client_secret: "your_client_secret"
+  # Spotify API credentials
+  # These should be provided via environment variables:
+  #   SPOTIFY_CLIENT_ID
+  #   SPOTIFY_CLIENT_SECRET
+  # For local development, you can still add them here (not recommended for production)
+  # client_id: "your_client_id"
+  # client_secret: "your_client_secret"
   
   # Download settings
   threads: 4
@@ -115,11 +119,61 @@ artists: []
 playlists: []
 ```
 
+### Environment Variables
+
+Spotify API credentials should be provided via environment variables for security:
+
+- `SPOTIFY_CLIENT_ID`: Spotify API client ID (required)
+- `SPOTIFY_CLIENT_SECRET`: Spotify API client secret (required)
+
+**Credential Resolution Order:**
+1. Environment variables (`SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`) - highest priority
+2. Configuration file (`download.client_id`, `download.client_secret`) - fallback for local development
+
+**Setting Environment Variables:**
+
+**Local Development:**
+```bash
+# Option 1: Export in shell
+export SPOTIFY_CLIENT_ID="your_client_id"
+export SPOTIFY_CLIENT_SECRET="your_client_secret"
+
+# Option 2: Use .env file (recommended)
+# Copy .env.example to .env and fill in your credentials
+cp .env.example .env
+# Edit .env with your credentials
+```
+
+**Docker:**
+```bash
+# Pass via -e flags
+docker run --rm \
+  -e SPOTIFY_CLIENT_ID="your_client_id" \
+  -e SPOTIFY_CLIENT_SECRET="your_client_secret" \
+  -v /path/to/music:/download \
+  musicdl:latest
+
+# Or use .env file
+docker run --rm \
+  --env-file .env \
+  -v /path/to/music:/download \
+  musicdl:latest
+```
+
+**Docker Compose:**
+```yaml
+services:
+  musicdl:
+    environment:
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
+```
+
 ### Download Settings
 
 All download settings are configured under the `download` section:
 
-- `client_id` / `client_secret`: Spotify API credentials (required)
+- `client_id` / `client_secret`: Spotify API credentials (optional in config file, required via environment variables or config file)
 - `threads`: Number of parallel downloads (default: 4)
 - `max_retries`: Retry attempts for failed downloads (default: 3)
 - `format`: Audio format - mp3, flac, m4a, opus (default: mp3)
@@ -180,15 +234,22 @@ builds and publishing.
 
 ### Basic Usage
 
-Run the container with a volume mount for your music library:
+Run the container with a volume mount for your music library and Spotify credentials:
 
 ```bash
-docker run --rm -v /path/to/music/library:/download musicdl:latest
+docker run --rm \
+  -e SPOTIFY_CLIENT_ID="your_client_id" \
+  -e SPOTIFY_CLIENT_SECRET="your_client_secret" \
+  -v /path/to/music/library:/download \
+  musicdl:latest
 ```
 
 The container will automatically execute `download.py` with the built-in
 configuration file. Downloaded music will be saved to the mounted volume at
 `/download`.
+
+**Note:** Spotify API credentials are required via environment variables. See
+[Environment Variables](#environment-variables) section for more details.
 
 ### Custom Volume Mount
 
@@ -207,6 +268,8 @@ mounting your own configuration file:
 
 ```bash
 docker run --rm \
+  -e SPOTIFY_CLIENT_ID="your_client_id" \
+  -e SPOTIFY_CLIENT_SECRET="your_client_secret" \
   -v /path/to/music/library:/download \
   -v /path/to/your/config.yaml:/scripts/config.yaml:ro \
   musicdl:latest
@@ -217,11 +280,21 @@ environment variable:
 
 ```bash
 docker run --rm \
+  -e SPOTIFY_CLIENT_ID="your_client_id" \
+  -e SPOTIFY_CLIENT_SECRET="your_client_secret" \
   -v /path/to/music/library:/download \
   -v /path/to/your/config.yaml:/custom/config.yaml:ro \
   -e CONFIG_PATH=/custom/config.yaml \
   musicdl:latest
 ```
+
+### Troubleshooting
+
+**Error: Missing Spotify credentials**
+- Ensure `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` environment variables are set
+- Verify credentials are not empty strings
+- Check that credentials are correctly passed to the container (use `docker run -e` or `--env-file`)
+- For local development, you can still add credentials to `config.yaml` as a fallback
 
 ### Docker Compose
 

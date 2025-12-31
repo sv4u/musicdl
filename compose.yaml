@@ -11,6 +11,16 @@ services:
       - CONFIG_PATH=${CONFIG_PATH:-/scripts/config.yaml}
       - TZ=${TZ:-America/Denver}
       - PYTHONUNBUFFERED=1
+      # Spotify API credentials (required)
+      # Option 1: Set directly (not recommended for production)
+      # - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
+      # - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
+      # Option 2: Use .env file (recommended - ensure .env is in .gitignore)
+      # Create a .env file with:
+      #   SPOTIFY_CLIENT_ID=your_client_id
+      #   SPOTIFY_CLIENT_SECRET=your_client_secret
+      # Option 3: Use Docker secrets (most secure for production)
+      # See Docker documentation for secret management
     volumes:
       # Music library - adjust path to match your TrueNAS dataset
       - /mnt/peace-house-storage-pool/peace-house-storage/Music:/download:rw
