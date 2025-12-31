@@ -738,4 +738,3 @@ If issues are discovered:
 ### Resource Requirements
 
 - **Development Time**: 4-5 days
-- **Testing Time**: 1-2 days
