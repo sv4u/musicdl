@@ -200,7 +200,7 @@ All download settings are configured under the `download` section:
 ### Music Sources
 
 - `songs`: List of individual songs `{name: url}`
-- `artists`: List of artists to download entire discography
+- `artists`: List of artists to download discography (albums and singles only, excludes compilations and featured appearances)
 - `playlists`: List of playlists (creates M3U files)
 
 ## Usage

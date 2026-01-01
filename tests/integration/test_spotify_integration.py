@@ -88,6 +88,11 @@ class TestSpotifyClientIntegration:
         assert len(albums) > 0
         assert "id" in albums[0]
         assert "name" in albums[0]
+        # Verify that only albums and singles are returned (compilations and appears_on excluded)
+        # The API filters at source, so all returned albums should be album or single type
+        for album in albums:
+            assert album.get("album_type") in ["album", "single"], \
+                f"Unexpected album type: {album.get('album_type')} for album {album.get('name')}"
     
     def test_invalid_track_id(self, spotify_client):
         """Test handling of invalid track ID."""

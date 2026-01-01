@@ -98,14 +98,31 @@ class SpotifyClient:
         )
 
     def get_artist_albums(self, artist_id_or_url: str) -> List[Dict[str, Any]]:
-        """Get all albums for an artist (cached)."""
+        """
+        Get all albums and singles for an artist (cached).
+        
+        Excludes compilations and "Appears On" albums to focus on the
+        artist's discography only.
+        
+        Args:
+            artist_id_or_url: Spotify artist URL or ID
+        
+        Returns:
+            List of album dictionaries (albums and singles only)
+        """
         artist_id = extract_id_from_url(artist_id_or_url)
         cache_key = f"artist_albums:{artist_id}"
 
         def fetch_albums() -> List[Dict[str, Any]]:
-            """Fetch all albums for artist with pagination."""
+            """Fetch all albums for artist with pagination, filtered to discography only."""
             albums = []
-            results = self.client.artist_albums(artist_id, limit=50)
+            # Filter to discography only (albums and singles)
+            # Excludes compilations and "appears_on" albums where artist is featured
+            results = self.client.artist_albums(
+                artist_id,
+                limit=50,
+                include_groups="album,single"
+            )
             albums.extend(results.get("items", []))
 
             # Handle pagination
