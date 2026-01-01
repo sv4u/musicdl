@@ -137,6 +137,37 @@ class TestSpotifyClient:
         assert len(albums) == 2
         assert albums[0]["id"] == "77CZUF57sYqgtznUe3OikQ"
         assert albums[1]["id"] == "album2"
+        # Verify API is called with include_groups filter
+        mock_spotify.artist_albums.assert_called_with(
+            "3hOdow4ZPmrby7Q1wfPLEy",
+            limit=50,
+            include_groups="album,single"
+        )
+    
+    def test_get_artist_albums_filters_compilations(self, spotify_client, mock_spotify):
+        """Test that get_artist_albums excludes compilations and appears_on."""
+        # Mock Spotify API response with mixed album types
+        # Note: The API will filter these, so we only get albums and singles back
+        mock_spotify.artist_albums.return_value = {
+            "items": [
+                {"id": "1", "name": "Studio Album", "album_type": "album"},
+                {"id": "2", "name": "Single", "album_type": "single"},
+            ],
+            "next": None,
+        }
+        
+        albums = spotify_client.get_artist_albums("artist_id")
+        
+        # Verify API is called with include_groups filter
+        mock_spotify.artist_albums.assert_called_with(
+            "artist_id",
+            limit=50,
+            include_groups="album,single"
+        )
+        
+        # Verify only albums and singles are returned (API filters at source)
+        assert len(albums) == 2
+        assert all(album["album_type"] in ["album", "single"] for album in albums)
     
     def test_get_track_api_error(self, spotify_client, mock_spotify):
         """Test handling of Spotify API errors."""

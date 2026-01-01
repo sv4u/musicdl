@@ -315,7 +315,15 @@ class Downloader:
 
     def download_artist(self, artist_url: str) -> List[Tuple[bool, Optional[Path]]]:
         """
-        Download all albums for an artist.
+        Download all albums and singles for an artist (discography only).
+        
+        Downloads the artist's discography, including:
+        - Full studio albums
+        - Single releases
+        
+        Excludes:
+        - Compilation albums
+        - "Appears On" albums (where artist is featured but not main artist)
 
         Args:
             artist_url: Spotify artist URL or ID
