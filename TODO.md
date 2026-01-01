@@ -10,3 +10,5 @@
 - [ ] [Properly handle `spotipy` rate/request limit](./.cursor/plans/spotipy_rate_limiting.plan.md)
 - [x] [Reimplement `spotdl` library and simplify complexity of it](./.cursor/plans/re-implement_spotdl_for_musicdl.plan.md)
 - [ ] [Update changelog generation to be more structured](./.cursor/plans/structured_changelog_generation.plan.md)
+- [ ] [Reduce scope of artist downloads to just artist discography - do not include playlists](./.cursor/plans/reduce_artist_download_scope.plan.md)
+- [ ] [Add support for downloading albums similar to songs, playlists, and artists](./.cursor/plans/add_album_download_support.plan.md)
