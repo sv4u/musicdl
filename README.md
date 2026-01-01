@@ -111,6 +111,14 @@ download:
   cache_max_size: 1000
   cache_ttl: 3600
   
+  # Rate limiting settings (Spotify API)
+  spotify_max_retries: 3  # Maximum retry attempts for rate-limited requests
+  spotify_retry_base_delay: 1.0  # Base delay in seconds for exponential backoff
+  spotify_retry_max_delay: 120.0  # Maximum delay in seconds for exponential backoff
+  spotify_rate_limit_enabled: true  # Enable proactive rate limiting
+  spotify_rate_limit_requests: 10  # Maximum requests per window
+  spotify_rate_limit_window: 1.0  # Window size in seconds
+  
   # File management
   overwrite: "skip"  # skip, overwrite, metadata
 
@@ -182,6 +190,12 @@ All download settings are configured under the `download` section:
 - `audio_providers`: List of audio sources to try in order (default: ["youtube-music"])
 - `cache_max_size`: Maximum cached Spotify API responses (default: 1000)
 - `cache_ttl`: Cache expiration time in seconds (default: 3600 = 1 hour)
+- `spotify_max_retries`: Maximum retry attempts for rate-limited requests (default: 3)
+- `spotify_retry_base_delay`: Base delay in seconds for exponential backoff (default: 1.0)
+- `spotify_retry_max_delay`: Maximum delay in seconds for exponential backoff (default: 120.0)
+- `spotify_rate_limit_enabled`: Enable proactive rate limiting to prevent hitting API limits (default: true)
+- `spotify_rate_limit_requests`: Maximum requests per time window (default: 10)
+- `spotify_rate_limit_window`: Time window size in seconds (default: 1.0)
 - `overwrite`: Behavior when file exists - "skip", "overwrite", or "metadata"
   (default: "skip")
 
@@ -202,6 +216,55 @@ All download settings are configured under the `download` section:
 - `songs`: List of individual songs `{name: url}`
 - `artists`: List of artists to download discography (albums and singles only, excludes compilations and featured appearances)
 - `playlists`: List of playlists (creates M3U files)
+
+### Rate Limiting
+
+musicdl includes comprehensive rate limiting to ensure reliable API interactions with Spotify:
+
+**Features:**
+
+- **Automatic Retry**: Detects HTTP 429 (rate limit) responses and automatically retries with exponential backoff
+- **Retry-After Support**: Respects Spotify's `Retry-After` header when provided
+- **Proactive Throttling**: Prevents hitting rate limits by throttling requests before they occur
+- **Configurable**: All rate limiting behavior can be customized via configuration
+
+**How It Works:**
+
+1. **Proactive Rate Limiting**: Before each API request, the rate limiter checks if the request would exceed the limit (default: 10 requests/second). If so, it waits until the window allows the request.
+2. **Reactive Retry**: If a rate limit error (HTTP 429) occurs, the client automatically retries with exponential backoff and jitter to prevent thundering herd problems.
+3. **Retry-After Header**: When Spotify provides a `Retry-After` header, the client uses that value instead of calculating backoff.
+
+**Configuration Options:**
+
+- `spotify_rate_limit_enabled`: Enable/disable proactive rate limiting (default: `true`)
+- `spotify_rate_limit_requests`: Maximum requests per time window (default: `10`)
+- `spotify_rate_limit_window`: Time window size in seconds (default: `1.0`)
+- `spotify_max_retries`: Maximum retry attempts for rate-limited requests (default: `3`)
+- `spotify_retry_base_delay`: Base delay in seconds for exponential backoff (default: `1.0`)
+- `spotify_retry_max_delay`: Maximum delay in seconds (default: `120.0`)
+
+**Example Configuration:**
+
+```yaml
+download:
+  # Conservative rate limiting (slower but safer)
+  spotify_rate_limit_enabled: true
+  spotify_rate_limit_requests: 8  # Stay below 10 req/sec limit
+  spotify_rate_limit_window: 1.0
+  spotify_max_retries: 5
+  spotify_retry_base_delay: 2.0
+  spotify_retry_max_delay: 60.0
+```
+
+**Disabling Rate Limiting:**
+If you want to disable rate limiting (not recommended), set:
+
+```yaml
+download:
+  spotify_rate_limit_enabled: false
+```
+
+Note: Even with rate limiting disabled, the client will still retry on rate limit errors, but won't proactively throttle requests.
 
 ## Usage
 
