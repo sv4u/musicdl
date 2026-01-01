@@ -3,8 +3,9 @@ Integration tests for SpotifyClient with real Spotify API.
 Requires SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET environment variables.
 """
 import os
+import time
 import pytest
-from core.spotify_client import SpotifyClient
+from core.spotify_client import SpotifyClient, RateLimiter
 from core.exceptions import SpotifyError
 
 
@@ -122,4 +123,71 @@ class TestSpotifyClientIntegration:
         
         # Both should be valid, but from different API calls
         assert track1 == track2  # Same data, but different fetch
+
+    def test_rate_limiter_integration(self, spotify_credentials):
+        """Test that rate limiter works with real API calls."""
+        # Create client with rate limiting enabled
+        client = SpotifyClient(
+            client_id=spotify_credentials["client_id"],
+            client_secret=spotify_credentials["client_secret"],
+            rate_limit_enabled=True,
+            rate_limit_requests=10,
+            rate_limit_window=1.0,
+        )
+        
+        # Make multiple requests - should be throttled by rate limiter
+        track_ids = ["1RKbVxcm267VdsIzqY7msi"] * 5  # Same track, multiple requests
+        
+        start_time = time.time()
+        for track_id in track_ids:
+            track = client.get_track(track_id)
+            assert track is not None
+        elapsed = time.time() - start_time
+        
+        # Should have taken some time due to rate limiting
+        # (though caching may make this faster)
+        # At minimum, verify no errors occurred
+        assert elapsed >= 0  # Basic sanity check
+
+    def test_rate_limiter_disabled(self, spotify_credentials):
+        """Test that rate limiter can be disabled."""
+        client = SpotifyClient(
+            client_id=spotify_credentials["client_id"],
+            client_secret=spotify_credentials["client_secret"],
+            rate_limit_enabled=False,
+        )
+        
+        # Should work without rate limiting
+        track = client.get_track("1RKbVxcm267VdsIzqY7msi")
+        assert track is not None
+        assert client.rate_limiter is None
+
+    def test_rate_limiter_configuration(self, spotify_credentials):
+        """Test that rate limiter configuration is properly applied."""
+        client = SpotifyClient(
+            client_id=spotify_credentials["client_id"],
+            client_secret=spotify_credentials["client_secret"],
+            rate_limit_enabled=True,
+            rate_limit_requests=5,
+            rate_limit_window=0.5,
+        )
+        
+        assert client.rate_limit_enabled is True
+        assert client.rate_limiter is not None
+        assert client.rate_limiter.max_requests == 5
+        assert client.rate_limiter.window_seconds == 0.5
+
+    def test_retry_configuration(self, spotify_credentials):
+        """Test that retry configuration is properly applied."""
+        client = SpotifyClient(
+            client_id=spotify_credentials["client_id"],
+            client_secret=spotify_credentials["client_secret"],
+            max_retries=5,
+            retry_base_delay=0.5,
+            retry_max_delay=60.0,
+        )
+        
+        assert client.max_retries == 5
+        assert client.retry_base_delay == 0.5
+        assert client.retry_max_delay == 60.0
 

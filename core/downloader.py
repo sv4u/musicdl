@@ -158,6 +158,12 @@ class Downloader:
             config.client_secret,
             cache_max_size=config.cache_max_size,
             cache_ttl=config.cache_ttl,
+            max_retries=config.spotify_max_retries,
+            retry_base_delay=config.spotify_retry_base_delay,
+            retry_max_delay=config.spotify_retry_max_delay,
+            rate_limit_enabled=config.spotify_rate_limit_enabled,
+            rate_limit_requests=config.spotify_rate_limit_requests,
+            rate_limit_window=config.spotify_rate_limit_window,
         )
         self.audio = AudioProvider(
             output_format=config.format,
