@@ -2,21 +2,14 @@
 
 ## Executive Summary
 
-This plan outlines the reduction of artist download scope to include only the artist's discography (albums and singles), excluding compilations and "Appears On" albums where the artist is featured but not the main artist. This change ensures that artist downloads focus on the artist's own releases rather than including collaborative works or compilation appearances, providing a cleaner and more focused discography download experience.
-
-**Target Audience**: Technical leads, junior engineers, and technical management
-
-**Estimated Effort**: 1-2 days
-
-**Risk Level**: Low
-
-**Priority**: Medium (improves download accuracy and user experience)
+This plan outlines the reduction of artist download scope to include only the artist's discography (albums and singles), excluding compilations and "Appears On" albums where the artist is featured but not the main artist. This change ensures that artist downloads focus on the artist's own releases rather than including collaborative works or compilation appearances, providing a cleaner and more focused discography download experience.**Target Audience**: Technical leads, junior engineers, and technical management**Estimated Effort**: 1-2 days**Risk Level**: Low**Priority**: Medium (improves download accuracy and user experience)
 
 ## Current State Analysis
 
 ### Current Implementation
 
 #### Artist Download Flow (`core/downloader.py`)
+
 ```python
 def download_artist(self, artist_url: str) -> List[Tuple[bool, Optional[Path]]]:
     """Download all albums for an artist."""
@@ -35,7 +28,10 @@ def download_artist(self, artist_url: str) -> List[Tuple[bool, Optional[Path]]]:
         return all_tracks
 ```
 
+
+
 #### Spotify API Call (`core/spotify_client.py`)
+
 ```python
 def get_artist_albums(self, artist_id_or_url: str) -> List[Dict[str, Any]]:
     """Get all albums for an artist (cached)."""
@@ -52,17 +48,21 @@ def get_artist_albums(self, artist_id_or_url: str) -> List[Dict[str, Any]]:
         return albums
 ```
 
+
+
 ### Current Behavior
 
 **What Gets Downloaded**:
+
 - All albums where the artist appears (no filtering)
 - Includes:
-  - **Albums**: Full studio albums where artist is main artist
-  - **Singles**: Single releases where artist is main artist
-  - **Compilations**: Compilation albums (e.g., "Greatest Hits", "Best Of")
-  - **Appears On**: Albums where artist is featured but not main artist
+- **Albums**: Full studio albums where artist is main artist
+- **Singles**: Single releases where artist is main artist
+- **Compilations**: Compilation albums (e.g., "Greatest Hits", "Best Of")
+- **Appears On**: Albums where artist is featured but not main artist
 
 **Problem**: Downloads include albums where the artist is not the primary artist, leading to:
+
 - Duplicate content (same songs from different albums)
 - Unwanted collaborative works
 - Compilation albums that may not represent the artist's discography
@@ -91,6 +91,7 @@ The Spotify API `artist_albums` endpoint supports filtering via `include_groups`
 ### Phase 1: Update Spotify API Call
 
 #### Step 1.1: Modify `get_artist_albums` Method
+
 Update the Spotify API call to filter album types:
 
 ```python
@@ -121,11 +122,13 @@ def get_artist_albums(self, artist_id_or_url: str) -> List[Dict[str, Any]]:
 ```
 
 **Key Changes**:
+
 - Add `include_groups="album,single"` parameter to `artist_albums()` call
 - This filters out compilations and "appears_on" albums at the API level
 - Cache key remains the same (no breaking change to cache)
 
 #### Step 1.2: Update Method Documentation
+
 Update docstring to reflect the filtering:
 
 ```python
@@ -144,9 +147,12 @@ def get_artist_albums(self, artist_id_or_url: str) -> List[Dict[str, Any]]:
     """
 ```
 
+
+
 ### Phase 2: Update Downloader Documentation
 
 #### Step 2.1: Update `download_artist` Docstring
+
 Clarify what gets downloaded:
 
 ```python
@@ -170,9 +176,12 @@ def download_artist(self, artist_url: str) -> List[Tuple[bool, Optional[Path]]]:
     """
 ```
 
+
+
 ### Phase 3: Update Tests
 
 #### Step 3.1: Update Unit Tests
+
 Update tests to verify filtering behavior:
 
 ```python
@@ -202,7 +211,10 @@ def test_get_artist_albums_filters_compilations(mock_spotify_client):
     assert all(album["album_type"] in ["album", "single"] for album in albums)
 ```
 
+
+
 #### Step 3.2: Update Integration Tests
+
 Update E2E tests if they expect specific album counts:
 
 ```python
@@ -219,9 +231,12 @@ def test_artist_download_excludes_compilations(spotify_client, downloader):
     # Additional assertions based on known artist discography
 ```
 
+
+
 ### Phase 4: Update Documentation
 
 #### Step 4.1: Update README.md
+
 Update the documentation to clarify artist download behavior:
 
 ```markdown
@@ -232,7 +247,10 @@ Update the documentation to clarify artist download behavior:
 - `playlists`: List of playlists (creates M3U files)
 ```
 
+
+
 #### Step 4.2: Update Code Comments
+
 Add inline comments explaining the filtering:
 
 ```python
@@ -245,11 +263,14 @@ results = self.client.artist_albums(
 )
 ```
 
+
+
 ## Implementation Details
 
 ### API Parameter Usage
 
 **Spotify API `artist_albums` endpoint**:
+
 - **Parameter**: `include_groups`
 - **Type**: Comma-separated string
 - **Values**: `"album"`, `"single"`, `"compilation"`, `"appears_on"`
@@ -259,6 +280,7 @@ results = self.client.artist_albums(
 ### Cache Considerations
 
 **Cache Key**: `f"artist_albums:{artist_id}"`
+
 - **Impact**: Cache key remains the same
 - **Behavior**: Filtered results will be cached (desired behavior)
 - **Invalidation**: No changes needed - cache will update naturally on TTL expiration
@@ -266,12 +288,14 @@ results = self.client.artist_albums(
 ### Backward Compatibility
 
 **Breaking Changes**: None
+
 - Existing functionality remains the same
 - Only the scope of what's downloaded changes
 - No API changes to `download_artist()` method signature
 - No configuration changes required
 
 **User Impact**:
+
 - Users will download fewer albums (only discography)
 - This is the intended behavior (feature, not bug)
 - May reduce download time and storage usage
@@ -374,6 +398,7 @@ If issues are discovered:
 ### Spotify API `include_groups`
 
 The `include_groups` parameter filters album types:
+
 - `"album"`: Full studio albums
 - `"single"`: Single releases
 - `"compilation"`: Compilation albums (excluded)
@@ -400,14 +425,3 @@ The `include_groups` parameter filters album types:
 - **Efficiency**: Reduced download size and time
 - **Accuracy**: Avoids unwanted collaborative works
 - **Storage**: Less storage used per artist download
-
-### Resource Requirements
-
-- **Development Time**: 1-2 days
-- **Testing Time**: 0.5 day
-- **Risk**: Low (simple API parameter change)
-
-### Recommendation
-
-Proceed with implementation. This is a straightforward improvement that aligns artist downloads with user expectations (discography only). The change is low-risk, well-tested, and improves the user experience.
-
