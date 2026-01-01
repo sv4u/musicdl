@@ -1,10 +1,13 @@
 """
 Unit tests for SpotifyClient with mocked dependencies.
 """
+import time
 import pytest
 from unittest.mock import Mock, MagicMock, patch
-from core.spotify_client import SpotifyClient, extract_id_from_url
-from core.exceptions import SpotifyError
+from spotipy.exceptions import SpotifyException
+
+from core.spotify_client import SpotifyClient, extract_id_from_url, RateLimiter
+from core.exceptions import SpotifyError, SpotifyRateLimitError
 from tests.conftest import SAMPLE_TRACK_DATA, SAMPLE_ALBUM_DATA
 
 
@@ -194,4 +197,123 @@ class TestSpotifyClient:
         # Next call should fetch from API again
         spotify_client.get_track("track123")
         assert mock_spotify.track.call_count == 2  # Called again after clear
+
+    def test_is_rate_limit_error(self, spotify_client):
+        """Test rate limit error detection."""
+        # Test with rate limit exception
+        rate_limit_exception = SpotifyException(
+            http_status=429,
+            code=-1,
+            msg="Rate limited",
+            headers={"Retry-After": "5"}
+        )
+        assert spotify_client._is_rate_limit_error(rate_limit_exception) is True
+
+        # Test with non-rate limit exception
+        other_exception = SpotifyException(
+            http_status=404,
+            code=-1,
+            msg="Not found"
+        )
+        assert spotify_client._is_rate_limit_error(other_exception) is False
+
+        # Test with non-SpotifyException
+        assert spotify_client._is_rate_limit_error(Exception("Other error")) is False
+
+    def test_extract_retry_after(self, spotify_client):
+        """Test Retry-After header extraction."""
+        # Test with Retry-After header
+        rate_limit_exception = SpotifyException(
+            http_status=429,
+            code=-1,
+            msg="Rate limited",
+            headers={"Retry-After": "5"}
+        )
+        retry_after = spotify_client._extract_retry_after(rate_limit_exception)
+        assert retry_after == 5
+
+        # Test without Retry-After header
+        rate_limit_exception_no_header = SpotifyException(
+            http_status=429,
+            code=-1,
+            msg="Rate limited",
+            headers={}
+        )
+        retry_after = spotify_client._extract_retry_after(rate_limit_exception_no_header)
+        assert retry_after is None
+
+        # Test with invalid Retry-After value
+        rate_limit_exception_invalid = SpotifyException(
+            http_status=429,
+            code=-1,
+            msg="Rate limited",
+            headers={"Retry-After": "invalid"}
+        )
+        retry_after = spotify_client._extract_retry_after(rate_limit_exception_invalid)
+        assert retry_after is None
+
+        # Test with non-SpotifyException
+        assert spotify_client._extract_retry_after(Exception("Other error")) is None
+
+    def test_rate_limit_error_retry(self, mock_spotify, mocker):
+        """Test retry logic with rate limit errors."""
+        with patch("core.spotify_client.Spotify") as mock_spotify_class, \
+             patch("core.spotify_client.SpotifyClientCredentials") as mock_creds:
+            mock_spotify_class.return_value = mock_spotify
+            client = SpotifyClient(
+                client_id="test_id",
+                client_secret="test_secret",
+                cache_max_size=10,
+                cache_ttl=3600,
+                max_retries=2,
+                retry_base_delay=0.1,  # Short delay for testing
+                rate_limit_enabled=False,  # Disable rate limiter for this test
+            )
+            client.client = mock_spotify
+
+            # First call raises rate limit, second succeeds
+            rate_limit_exception = SpotifyException(
+                http_status=429,
+                code=-1,
+                msg="Rate limited",
+                headers={"Retry-After": "0.1"}
+            )
+            mock_spotify.track.side_effect = [rate_limit_exception, SAMPLE_TRACK_DATA]
+
+            # Should retry and succeed
+            result = client.get_track("track123")
+            assert result["name"] == "YYZ"
+            assert mock_spotify.track.call_count == 2
+
+    def test_rate_limit_error_max_retries_exceeded(self, mock_spotify, mocker):
+        """Test that max retries are respected."""
+        with patch("core.spotify_client.Spotify") as mock_spotify_class, \
+             patch("core.spotify_client.SpotifyClientCredentials") as mock_creds:
+            mock_spotify_class.return_value = mock_spotify
+            client = SpotifyClient(
+                client_id="test_id",
+                client_secret="test_secret",
+                cache_max_size=10,
+                cache_ttl=3600,
+                max_retries=2,
+                retry_base_delay=0.1,
+                rate_limit_enabled=False,
+            )
+            client.client = mock_spotify
+
+            # Always raise rate limit
+            rate_limit_exception = SpotifyException(
+                http_status=429,
+                code=-1,
+                msg="Rate limited",
+                headers={"Retry-After": "0.1"}
+            )
+            mock_spotify.track.side_effect = rate_limit_exception
+
+            # Should raise SpotifyRateLimitError after max retries
+            with pytest.raises(SpotifyRateLimitError):
+                client.get_track("track123")
+            
+            # Should have tried max_retries + 1 times (initial + retries)
+            assert mock_spotify.track.call_count == 3  # 1 initial + 2 retries
 

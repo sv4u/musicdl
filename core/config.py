@@ -26,6 +26,13 @@ class DownloadSettings(BaseModel):
     cache_max_size: int = 1000  # Maximum cached entries
     cache_ttl: int = 3600  # Cache TTL in seconds (1 hour)
     overwrite: Literal["skip", "overwrite", "metadata"] = "skip"
+    # Rate limiting settings
+    spotify_max_retries: int = 3  # Maximum retry attempts for rate-limited requests
+    spotify_retry_base_delay: float = 1.0  # Base delay in seconds for exponential backoff
+    spotify_retry_max_delay: float = 120.0  # Maximum delay in seconds for exponential backoff
+    spotify_rate_limit_enabled: bool = True  # Enable proactive rate limiting
+    spotify_rate_limit_requests: int = 10  # Maximum requests per window
+    spotify_rate_limit_window: float = 1.0  # Window size in seconds
 
     @staticmethod
     def _resolve_credential(
