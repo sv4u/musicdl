@@ -19,6 +19,7 @@ simplified, self-contained implementation that uses spotDL's dependencies
 ## Features
 
 - Downloads tracks, albums, playlists, and artist discographies from Spotify
+- Per-album M3U playlist file creation (optional)
 - Sources audio from YouTube Music, YouTube, and SoundCloud
 - Embeds metadata (album art, track information) using mutagen
 - Supports multiple audio formats (MP3, FLAC, M4A, Opus)
@@ -143,6 +144,7 @@ download:
 songs: []
 artists: []
 playlists: []
+albums: []
 ```
 
 ### Environment Variables
@@ -238,6 +240,34 @@ All download settings are configured under the `download` section:
 - `songs`: List of individual songs `{name: url}`
 - `artists`: List of artists to download discography (albums and singles only, excludes compilations and featured appearances)
 - `playlists`: List of playlists (creates M3U files)
+- `albums`: List of albums to download (optional M3U file creation)
+
+#### Album Configuration
+
+Albums support two formats:
+
+**Simple format** (no M3U file):
+```yaml
+albums:
+    - "Album Name": https://open.spotify.com/album/...
+```
+
+**Extended format** (with M3U option):
+```yaml
+albums:
+    - name: "Album Name"
+      url: https://open.spotify.com/album/...
+      create_m3u: true  # Optional, defaults to false
+```
+
+**Mixed format** (both in same config):
+```yaml
+albums:
+    - "Simple Album": https://open.spotify.com/album/...
+    - name: "Extended Album"
+      url: https://open.spotify.com/album/...
+      create_m3u: true
+```
 
 ### Rate Limiting
 
@@ -302,7 +332,7 @@ musicdl uses a plan-based architecture that provides better optimization, parall
 
 **How It Works**:
 
-1. **Plan Generation**: Converts configuration (songs, artists, playlists) into a structured download plan with hierarchy
+1. **Plan Generation**: Converts configuration (songs, artists, playlists, albums) into a structured download plan with hierarchy
 2. **Plan Optimization**: Removes duplicates, checks for existing files, sorts items for optimal processing
 3. **Plan Execution**: Executes downloads in parallel with detailed progress tracking
 4. **Plan Persistence** (optional): Saves plan to disk for inspection or resuming
@@ -338,7 +368,7 @@ python3 download.py config.yaml
 The script will:
 
 1. Load and validate the configuration
-2. Process all songs, artists, and playlists
+2. Process all songs, artists, playlists, and albums
 3. Display a summary of successful and failed downloads
 
 ## Docker

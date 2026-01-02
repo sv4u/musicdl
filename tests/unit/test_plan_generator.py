@@ -178,6 +178,179 @@ class TestPlanGenerator:
         assert len(track_items) == 1
         assert len(m3u_items) == 1
 
+    def test_generate_plan_with_albums_with_m3u(self, mock_spotify_client):
+        """Test generating plan with albums that request M3U creation."""
+        # Create config with only albums
+        config = MusicDLConfig(
+            version="1.2",
+            download=DownloadSettings(client_id="test", client_secret="test"),
+            albums=[
+                MusicSource(
+                    name="Test Album",
+                    url="https://open.spotify.com/album/album123",
+                    create_m3u=True,
+                ),
+            ],
+        )
+
+        # Mock album data
+        mock_spotify_client.get_album.return_value = {
+            "id": "album123",
+            "name": "Test Album",
+            "album_type": "album",
+            "release_date": "2023-01-01",
+            "external_urls": {"spotify": "https://open.spotify.com/album/album123"},
+            "tracks": {
+                "items": [
+                    {
+                        "id": "track1",
+                        "name": "Track 1",
+                        "track_number": 1,
+                        "disc_number": 1,
+                        "external_urls": {"spotify": "https://open.spotify.com/track/track1"},
+                    }
+                ],
+                "next": None,
+            },
+        }
+
+        generator = PlanGenerator(config, mock_spotify_client)
+        plan = generator.generate_plan()
+
+        # Should have album, track, and M3U items
+        album_items = [item for item in plan.items if item.item_type == PlanItemType.ALBUM]
+        track_items = [item for item in plan.items if item.item_type == PlanItemType.TRACK]
+        m3u_items = [item for item in plan.items if item.item_type == PlanItemType.M3U]
+
+        assert len(album_items) == 1
+        assert len(track_items) == 1
+        assert len(m3u_items) == 1
+        # Verify create_m3u is stored in metadata
+        assert album_items[0].metadata.get("create_m3u") is True
+
+    def test_generate_plan_with_albums_without_m3u(self, mock_spotify_client):
+        """Test generating plan with albums that don't request M3U creation."""
+        # Create config with only albums
+        config = MusicDLConfig(
+            version="1.2",
+            download=DownloadSettings(client_id="test", client_secret="test"),
+            albums=[
+                MusicSource(
+                    name="Test Album",
+                    url="https://open.spotify.com/album/album123",
+                    create_m3u=False,
+                ),
+            ],
+        )
+
+        # Mock album data
+        mock_spotify_client.get_album.return_value = {
+            "id": "album123",
+            "name": "Test Album",
+            "album_type": "album",
+            "release_date": "2023-01-01",
+            "external_urls": {"spotify": "https://open.spotify.com/album/album123"},
+            "tracks": {
+                "items": [
+                    {
+                        "id": "track1",
+                        "name": "Track 1",
+                        "track_number": 1,
+                        "disc_number": 1,
+                        "external_urls": {"spotify": "https://open.spotify.com/track/track1"},
+                    }
+                ],
+                "next": None,
+            },
+        }
+
+        generator = PlanGenerator(config, mock_spotify_client)
+        plan = generator.generate_plan()
+
+        # Should have album and track items, but NO M3U items
+        album_items = [item for item in plan.items if item.item_type == PlanItemType.ALBUM]
+        track_items = [item for item in plan.items if item.item_type == PlanItemType.TRACK]
+        m3u_items = [item for item in plan.items if item.item_type == PlanItemType.M3U]
+
+        assert len(album_items) == 1
+        assert len(track_items) == 1
+        assert len(m3u_items) == 0  # No M3U when create_m3u is False
+        # Verify create_m3u is stored in metadata
+        assert album_items[0].metadata.get("create_m3u") is False
+
+    def test_generate_plan_honors_m3u_for_duplicate_album(self, mock_spotify_client):
+        """Test that explicit album with create_m3u=True is honored even if album exists from artist."""
+        # Create config with artist and explicit album (same album) with create_m3u=True
+        config = MusicDLConfig(
+            version="1.2",
+            download=DownloadSettings(client_id="test", client_secret="test"),
+            artists=[
+                MusicSource(name="Test Artist", url="https://open.spotify.com/artist/456"),
+            ],
+            albums=[
+                MusicSource(
+                    name="Test Album",
+                    url="https://open.spotify.com/album/album123",
+                    create_m3u=True,
+                ),
+            ],
+        )
+
+        # Mock artist data
+        mock_spotify_client.get_artist.return_value = {
+            "id": "456",
+            "name": "Test Artist",
+            "external_urls": {"spotify": "https://open.spotify.com/artist/456"},
+        }
+
+        # Mock albums for artist (same album ID as explicit album)
+        mock_spotify_client.get_artist_albums.return_value = [
+            {
+                "id": "album123",
+                "name": "Test Album",
+                "album_type": "album",
+                "external_urls": {"spotify": "https://open.spotify.com/album/album123"},
+            }
+        ]
+
+        # Mock album data (will be called twice - once for artist, once for explicit)
+        mock_spotify_client.get_album.return_value = {
+            "id": "album123",
+            "name": "Test Album",
+            "album_type": "album",
+            "release_date": "2023-01-01",
+            "external_urls": {"spotify": "https://open.spotify.com/album/album123"},
+            "tracks": {
+                "items": [
+                    {
+                        "id": "track1",
+                        "name": "Track 1",
+                        "track_number": 1,
+                        "disc_number": 1,
+                        "external_urls": {"spotify": "https://open.spotify.com/track/track1"},
+                    }
+                ],
+                "next": None,
+            },
+        }
+
+        generator = PlanGenerator(config, mock_spotify_client)
+        plan = generator.generate_plan()
+
+        # Should have album, track, and M3U items
+        album_items = [item for item in plan.items if item.item_type == PlanItemType.ALBUM]
+        track_items = [item for item in plan.items if item.item_type == PlanItemType.TRACK]
+        m3u_items = [item for item in plan.items if item.item_type == PlanItemType.M3U]
+
+        assert len(album_items) == 1  # Only one album (duplicate was handled)
+        assert len(track_items) == 1
+        assert len(m3u_items) == 1  # M3U should be created despite duplicate
+        # Verify create_m3u is set in metadata
+        assert album_items[0].metadata.get("create_m3u") is True
+        # Verify M3U item exists and is linked to album
+        assert m3u_items[0].parent_id == album_items[0].item_id
+        assert m3u_items[0].item_id in album_items[0].child_ids
+
     def test_generate_plan_removes_duplicates(self, mock_spotify_client):
         """Test that plan generator removes duplicates during generation."""
         config = MusicDLConfig(
