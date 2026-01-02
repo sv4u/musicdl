@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 from core.audio_provider import AudioProvider
+from core.cache import TTLCache
 from core.exceptions import DownloadError, MetadataError, SpotifyError
 from core.metadata import MetadataEmbedder
 from core.models import Song
@@ -169,8 +170,16 @@ class Downloader:
             output_format=config.format,
             bitrate=config.bitrate,
             audio_providers=config.audio_providers,
+            cache_max_size=config.audio_search_cache_max_size,
+            cache_ttl=config.audio_search_cache_ttl,
         )
         self.metadata = MetadataEmbedder()
+        
+        # Initialize file existence cache
+        self.file_existence_cache = TTLCache(
+            max_size=config.file_existence_cache_max_size,
+            ttl_seconds=config.file_existence_cache_ttl,
+        )
 
     def download_track(self, track_url: str) -> Tuple[bool, Optional[Path]]:
         """
@@ -194,9 +203,9 @@ class Downloader:
                 song = spotify_track_to_song(track_data, album_data)
                 logger.info(f"Found: {song.artist} - {song.title}")
 
-                # 2. Check if file already exists
+                # 2. Check if file already exists (cached)
                 output_path = self._get_output_path(song)
-                if output_path.exists() and self.config.overwrite == "skip":
+                if self._file_exists_cached(output_path) and self.config.overwrite == "skip":
                     logger.info(f"Skipping (already exists): {output_path}")
                     return True, output_path
 
@@ -217,6 +226,9 @@ class Downloader:
                 # 5. Embed metadata
                 logger.info("Embedding metadata...")
                 self.metadata.embed(downloaded_path, song, song.cover_url)
+
+                # Invalidate cache entry (file now exists)
+                self._invalidate_file_cache(downloaded_path)
 
                 logger.info(f"Successfully downloaded: {downloaded_path}")
                 return True, downloaded_path
@@ -360,6 +372,46 @@ class Downloader:
         filename = format_filename(self.config.output, song, self.config.format)
         return Path(filename)
 
+    def _file_exists_cached(self, file_path: Path) -> bool:
+        """
+        Check if file exists (cached).
+
+        Args:
+            file_path: Path to check
+
+        Returns:
+            True if file exists, False otherwise
+        """
+        # Use absolute path for cache key to ensure consistency
+        cache_key = f"file_exists:{file_path.resolve()}"
+        
+        # Check cache first
+        cached_result = self.file_existence_cache.get(cache_key)
+        if cached_result is not None:
+            logger.debug(f"Cache hit for file existence: {file_path}")
+            return cached_result
+        
+        logger.debug(f"Cache miss for file existence: {file_path}")
+        
+        # Check filesystem
+        exists = file_path.exists()
+        
+        # Cache result
+        self.file_existence_cache.set(cache_key, exists)
+        
+        return exists
+    
+    def _invalidate_file_cache(self, file_path: Path) -> None:
+        """
+        Invalidate cache entry for a file (called when file is created).
+
+        Args:
+            file_path: Path to file that was created
+        """
+        cache_key = f"file_exists:{file_path.resolve()}"
+        # Update cache to reflect that file now exists
+        self.file_existence_cache.set(cache_key, True)
+
     def _create_m3u(self, playlist_name: str, tracks: List[Tuple[bool, Optional[Path]]]):
         """Create M3U playlist file."""
         playlist_name_safe = _sanitize(playlist_name)
@@ -368,7 +420,7 @@ class Downloader:
         with open(m3u_path, "w", encoding="utf-8") as f:
             f.write("#EXTM3U\n")
             for success, file_path in tracks:
-                if success and file_path and file_path.exists():
+                if success and file_path and self._file_exists_cached(file_path):
                     # Extract title from filename
                     title = file_path.stem
                     f.write(f"#EXTINF:-1,{title}\n")

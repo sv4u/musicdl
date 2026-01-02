@@ -9,9 +9,13 @@ from typing import List, Optional
 
 import yt_dlp
 
+from core.cache import TTLCache
 from core.exceptions import DownloadError
 
 logger = logging.getLogger(__name__)
+
+# Sentinel object to represent cached "not found" results
+_CACHE_NOT_FOUND = object()
 
 
 class AudioProvider:
@@ -22,6 +26,8 @@ class AudioProvider:
         output_format: str = "mp3",
         bitrate: str = "128k",
         audio_providers: Optional[List[str]] = None,
+        cache_max_size: int = 500,
+        cache_ttl: int = 86400,  # 24 hours for search results
     ):
         """
         Initialize with format and bitrate settings.
@@ -30,10 +36,18 @@ class AudioProvider:
             output_format: Output audio format (mp3, flac, m4a, opus)
             bitrate: Audio bitrate (e.g., "128k", "320k")
             audio_providers: List of providers to use (youtube, youtube-music, soundcloud)
+            cache_max_size: Maximum number of cached search results (default: 500)
+            cache_ttl: Cache TTL in seconds for search results (default: 86400 = 24 hours)
         """
         self.output_format = output_format
         self.bitrate = bitrate
         self.audio_providers = audio_providers or ["youtube-music", "youtube"]
+
+        # Initialize search cache
+        self.search_cache = TTLCache(
+            max_size=cache_max_size,
+            ttl_seconds=cache_ttl,
+        )
 
         # Configure yt-dlp format based on output format
         if output_format == "m4a":
@@ -58,7 +72,7 @@ class AudioProvider:
 
     def search(self, query: str) -> Optional[str]:
         """
-        Search for audio URL matching query.
+        Search for audio URL matching query (cached).
 
         Args:
             query: Search query (e.g., "Artist - Song Name")
@@ -66,17 +80,53 @@ class AudioProvider:
         Returns:
             URL of best matching audio, or None if not found
         """
+        # Normalize query for cache key
+        cache_key = self._normalize_query(query)
+        
+        # Check cache first
+        cached_result = self.search_cache.get(cache_key)
+        if cached_result is not None:
+            logger.debug(f"Cache hit for audio search: {query}")
+            # Return None if cached as _CACHE_NOT_FOUND, otherwise return URL
+            if cached_result is _CACHE_NOT_FOUND:
+                return None
+            return cached_result
+        
+        logger.debug(f"Cache miss for audio search: {query}")
+        
+        # Perform search
+        audio_url = None
         # Try each provider in order
         for provider in self.audio_providers:
             try:
                 url = self._search_provider(provider, query)
                 if url:
-                    return url
+                    audio_url = url
+                    break
             except Exception as e:
                 logger.debug(f"Provider {provider} failed: {e}")
                 continue
+        
+        # Cache result (even if None, to avoid repeated failed searches)
+        # Use sentinel object to distinguish between "not cached" and "cached as None"
+        cache_value = audio_url if audio_url else _CACHE_NOT_FOUND
+        self.search_cache.set(cache_key, cache_value)
+        
+        return audio_url
+    
+    def _normalize_query(self, query: str) -> str:
+        """
+        Normalize query string for cache key.
 
-        return None
+        Args:
+            query: Original search query
+
+        Returns:
+            Normalized query string
+        """
+        # Lowercase, strip whitespace, and create cache key
+        normalized = query.lower().strip()
+        return f"audio_search:{normalized}"
 
     def _search_provider(self, provider: str, query: str) -> Optional[str]:
         """Search using a specific provider."""

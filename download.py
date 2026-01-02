@@ -47,9 +47,7 @@ def setup_logging(log_level: str) -> None:
 
 def process_downloads(config) -> Dict[str, Dict[str, int]]:
     """
-    Orchestrate all downloads.
-
-    Uses plan-based architecture if enabled, otherwise uses sequential processing.
+    Orchestrate all downloads using plan-based architecture.
 
     Args:
         config: MusicDLConfig instance
@@ -57,10 +55,7 @@ def process_downloads(config) -> Dict[str, Dict[str, int]]:
     Returns:
         Dictionary with download statistics
     """
-    if config.download.use_plan_architecture:
-        return _process_downloads_plan(config)
-    else:
-        return _process_downloads_sequential(config)
+    return _process_downloads_plan(config)
 
 
 def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
@@ -147,8 +142,7 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
         stats = executor.execute(plan, progress_callback=progress_callback)
 
         # Convert plan stats to legacy format
-        # Include both completed and skipped as success (matches sequential mode behavior
-        # where existing files return (True, path) and are counted as success)
+        # Include both completed and skipped as success
         results = {
             "songs": {
                 "success": stats["completed"] + stats["skipped"],
@@ -162,6 +156,9 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
         plan_stats = plan.get_statistics()
         logger.info(f"Plan execution complete: {plan_stats}")
 
+        # Print cache statistics
+        print_cache_stats(downloader, spotify_client)
+
         return results
     else:
         # Plan generation/execution disabled, return empty results
@@ -173,73 +170,57 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
         }
 
 
-def _process_downloads_sequential(config) -> Dict[str, Dict[str, int]]:
+
+
+def print_cache_stats(downloader: Downloader, spotify_client: SpotifyClient = None) -> None:
     """
-    Process downloads using sequential architecture (legacy).
+    Print cache statistics for all caches.
 
     Args:
-        config: MusicDLConfig instance
-
-    Returns:
-        Dictionary with download statistics
+        downloader: Downloader instance with caches
+        spotify_client: Optional SpotifyClient instance (for plan-based architecture)
     """
-    logger.info("Using sequential architecture (legacy)")
-    downloader = Downloader(config.download)
-    results = {
-        "songs": {"success": 0, "failed": 0},
-        "artists": {"success": 0, "failed": 0},
-        "playlists": {"success": 0, "failed": 0},
-    }
+    logger.info("")
+    logger.info("=" * 80)
+    logger.info("CACHE STATISTICS")
+    logger.info("=" * 80)
 
-    # Process songs
-    logger.info(f"Processing {len(config.songs)} songs...")
-    for song in config.songs:
-        logger.info(f"Downloading song: {song.name}")
-        try:
-            success, path = downloader.download_track(song.url)
-            if success:
-                results["songs"]["success"] += 1
-                logger.info(f"Successfully downloaded: {song.name}")
-            else:
-                results["songs"]["failed"] += 1
-                logger.error(f"Failed to download: {song.name}")
-        except Exception as e:
-            results["songs"]["failed"] += 1
-            logger.error(f"Error downloading {song.name}: {e}")
+    # Spotify API cache
+    # Use the separate spotify_client (created for plan generation)
+    spotify_cache = None
+    if spotify_client and hasattr(spotify_client, "cache"):
+        spotify_cache = spotify_client.cache
+    elif hasattr(downloader.spotify, "cache"):
+        spotify_cache = downloader.spotify.cache
 
-    # Process artists
-    logger.info(f"Processing {len(config.artists)} artists...")
-    for artist in config.artists:
-        logger.info(f"Downloading artist: {artist.name}")
-        try:
-            tracks = downloader.download_artist(artist.url)
-            success_count = sum(1 for success, _ in tracks if success)
-            failed_count = len(tracks) - success_count
-            results["artists"]["success"] += success_count
-            results["artists"]["failed"] += failed_count
-            logger.info(
-                f"Artist {artist.name}: {success_count} successful, {failed_count} failed"
-            )
-        except Exception as e:
-            logger.error(f"Error downloading artist {artist.name}: {e}")
+    if spotify_cache:
+        spotify_stats = spotify_cache.stats()
+        logger.info("Spotify API Cache:")
+        logger.info(f"  Size: {spotify_stats['size']}/{spotify_stats['max_size']} entries")
+        logger.info(f"  TTL: {spotify_stats['ttl_seconds']}s ({spotify_stats['ttl_seconds'] // 3600}h)")
+        logger.info(f"  Hits: {spotify_stats['hits']}, Misses: {spotify_stats['misses']}")
+        logger.info(f"  Hit Rate: {spotify_stats['hit_rate']}")
 
-    # Process playlists
-    logger.info(f"Processing {len(config.playlists)} playlists...")
-    for playlist in config.playlists:
-        logger.info(f"Downloading playlist: {playlist.name}")
-        try:
-            tracks = downloader.download_playlist(playlist.url, create_m3u=True)
-            success_count = sum(1 for success, _ in tracks if success)
-            failed_count = len(tracks) - success_count
-            results["playlists"]["success"] += success_count
-            results["playlists"]["failed"] += failed_count
-            logger.info(
-                f"Playlist {playlist.name}: {success_count} successful, {failed_count} failed"
-            )
-        except Exception as e:
-            logger.error(f"Error downloading playlist {playlist.name}: {e}")
+    # Audio search cache
+    if hasattr(downloader.audio, "search_cache"):
+        audio_stats = downloader.audio.search_cache.stats()
+        logger.info("Audio Search Cache:")
+        logger.info(f"  Size: {audio_stats['size']}/{audio_stats['max_size']} entries")
+        logger.info(f"  TTL: {audio_stats['ttl_seconds']}s ({audio_stats['ttl_seconds'] // 3600}h)")
+        logger.info(f"  Hits: {audio_stats['hits']}, Misses: {audio_stats['misses']}")
+        logger.info(f"  Hit Rate: {audio_stats['hit_rate']}")
 
-    return results
+    # File existence cache
+    if hasattr(downloader, "file_existence_cache"):
+        file_stats = downloader.file_existence_cache.stats()
+        logger.info("File Existence Cache:")
+        logger.info(f"  Size: {file_stats['size']}/{file_stats['max_size']} entries")
+        logger.info(f"  TTL: {file_stats['ttl_seconds']}s ({file_stats['ttl_seconds'] // 3600}h)")
+        logger.info(f"  Hits: {file_stats['hits']}, Misses: {file_stats['misses']}")
+        logger.info(f"  Hit Rate: {file_stats['hit_rate']}")
+
+    logger.info("=" * 80)
+    logger.info("")
 
 
 def print_summary(results: Dict[str, Dict[str, int]]) -> None:
@@ -297,7 +278,7 @@ def main() -> None:
         setup_logging(config.download.log_level)
 
     logger.info("Starting download process...")
-    logger.info(f"Architecture: {'Plan-based' if config.download.use_plan_architecture else 'Sequential (legacy)'}")
+    logger.info("Architecture: Plan-based (parallel execution)")
     logger.info(f"Threads: {config.download.threads}")
     logger.info(f"Max retries: {config.download.max_retries}")
     logger.info(f"Format: {config.download.format}")
@@ -315,8 +296,8 @@ def main() -> None:
 
     except KeyboardInterrupt:
         logger.warning("Download interrupted by user")
-        # Note: If using plan architecture, the executor's graceful shutdown handler
-        # will automatically save plan progress to download_plan_progress.json
+        # Note: The executor's graceful shutdown handler will automatically
+        # save plan progress to download_plan_progress.json
         sys.exit(130)
     except Exception as e:
         logger.error(f"Unexpected error: {e}", exc_info=True)

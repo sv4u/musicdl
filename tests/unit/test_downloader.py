@@ -129,12 +129,22 @@ class TestDownloader:
         config.client_secret = "test_secret"
         config.cache_max_size = 100
         config.cache_ttl = 3600
+        config.audio_search_cache_max_size = 500
+        config.audio_search_cache_ttl = 86400
+        config.file_existence_cache_max_size = 10000
+        config.file_existence_cache_ttl = 3600
         config.format = "mp3"
         config.bitrate = "128k"
         config.audio_providers = ["youtube-music"]
         config.output = "{artist}/{album}/{track-number} - {title}.{output-ext}"
         config.overwrite = "skip"
         config.max_retries = 3
+        config.spotify_max_retries = 3
+        config.spotify_retry_base_delay = 1.0
+        config.spotify_retry_max_delay = 120.0
+        config.spotify_rate_limit_enabled = True
+        config.spotify_rate_limit_requests = 10
+        config.spotify_rate_limit_window = 1.0
         
         with patch("core.downloader.SpotifyClient") as mock_spotify_class, \
              patch("core.downloader.AudioProvider") as mock_audio_class, \
@@ -364,4 +374,193 @@ class TestDownloader:
         # Each album: 1 call in download_album + 2 calls in download_track (one per track) = 3 calls per album
         # For 2 albums: 2 * 3 = 6 calls
         assert mock_spotify.get_album.call_count == 6
+
+    def test_file_exists_cached_hit(self, mock_downloader_dependencies, tmp_test_dir):
+        """Test that cached file existence checks avoid filesystem calls."""
+        downloader, _, _, _, _, _ = mock_downloader_dependencies
+        
+        # Create a test file
+        test_file = tmp_test_dir / "test_file.mp3"
+        test_file.write_bytes(b"test content")
+        
+        # First check - should hit filesystem
+        with patch.object(Path, "exists") as mock_exists:
+            mock_exists.return_value = True
+            result1 = downloader._file_exists_cached(test_file)
+            assert result1 is True
+            assert mock_exists.call_count == 1
+        
+        # Second check - should use cache (no filesystem call)
+        with patch.object(Path, "exists") as mock_exists:
+            result2 = downloader._file_exists_cached(test_file)
+            assert result2 is True
+            assert mock_exists.call_count == 0  # Cache hit, no filesystem call
+
+    def test_file_exists_cached_miss(self, mock_downloader_dependencies, tmp_test_dir):
+        """Test that cache miss triggers filesystem check."""
+        downloader, _, _, _, _, _ = mock_downloader_dependencies
+        
+        # File doesn't exist
+        test_file = tmp_test_dir / "nonexistent.mp3"
+        
+        with patch.object(Path, "exists") as mock_exists:
+            mock_exists.return_value = False
+            result = downloader._file_exists_cached(test_file)
+            assert result is False
+            assert mock_exists.call_count == 1
+
+    def test_file_exists_cached_invalidation(self, mock_downloader_dependencies, tmp_test_dir):
+        """Test that cache is invalidated when file is created."""
+        downloader, _, _, _, _, _ = mock_downloader_dependencies
+        
+        test_file = tmp_test_dir / "new_file.mp3"
+        
+        # First check - file doesn't exist
+        assert downloader._file_exists_cached(test_file) is False
+        
+        # Create file
+        test_file.write_bytes(b"content")
+        
+        # Invalidate cache (simulating file creation)
+        downloader._invalidate_file_cache(test_file)
+        
+        # Check again - should return True (from cache)
+        result = downloader._file_exists_cached(test_file)
+        assert result is True
+        
+        # Verify cache was updated
+        cache_key = f"file_exists:{test_file.resolve()}"
+        cached_value = downloader.file_existence_cache.get(cache_key)
+        assert cached_value is True
+
+    def test_file_exists_cached_statistics(self, mock_downloader_dependencies, tmp_test_dir):
+        """Test that file existence cache tracks statistics."""
+        downloader, _, _, _, _, _ = mock_downloader_dependencies
+        
+        test_file1 = tmp_test_dir / "file1.mp3"
+        test_file2 = tmp_test_dir / "file2.mp3"
+        
+        # Create file1
+        test_file1.write_bytes(b"content")
+        
+        # First check - cache miss
+        downloader._file_exists_cached(test_file1)
+        
+        # Second check - cache hit
+        downloader._file_exists_cached(test_file1)
+        
+        # Check nonexistent file - cache miss
+        downloader._file_exists_cached(test_file2)
+        
+        # Check statistics
+        stats = downloader.file_existence_cache.stats()
+        assert stats["hits"] == 1
+        assert stats["misses"] == 2  # First check for file1, check for file2
+        assert stats["hit_rate"] == "33.33%"
+
+    def test_file_exists_cached_absolute_path(self, mock_downloader_dependencies, tmp_test_dir):
+        """Test that cache uses absolute paths for consistency."""
+        downloader, _, _, _, _, _ = mock_downloader_dependencies
+        
+        test_file = tmp_test_dir / "test.mp3"
+        test_file.write_bytes(b"content")
+        
+        # Check with absolute path
+        abs_path = test_file.resolve()
+        result1 = downloader._file_exists_cached(abs_path)
+        
+        # Check with relative path (should use same cache key)
+        rel_path = test_file.relative_to(tmp_test_dir)
+        # Need to resolve relative path to absolute for comparison
+        # But the cache should handle this via resolve() in _file_exists_cached
+        result2 = downloader._file_exists_cached(test_file)
+        
+        assert result1 == result2
+        
+        # Both should use same cache entry
+        cache_key1 = f"file_exists:{abs_path}"
+        cache_key2 = f"file_exists:{test_file.resolve()}"
+        assert cache_key1 == cache_key2
+
+    def test_download_track_invalidates_cache(self, mock_downloader_dependencies):
+        """Test that successful download invalidates file existence cache."""
+        downloader, mock_spotify, mock_audio, mock_metadata, config, tmp_dir = mock_downloader_dependencies
+        
+        # Create output file
+        output_file = tmp_dir / "Rush" / "I Love My Computer" / "03 - YYZ.mp3"
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        mock_audio.download.return_value = output_file
+        
+        # Download track
+        success, path = downloader.download_track("https://open.spotify.com/track/1RKbVxcm267VdsIzqY7msi")
+        
+        assert success is True
+        
+        # Verify cache was updated (file now exists)
+        cache_key = f"file_exists:{output_file.resolve()}"
+        cached_value = downloader.file_existence_cache.get(cache_key)
+        assert cached_value is True
+
+    def test_cache_configuration_applied(self, mock_downloader_dependencies):
+        """Test that cache configuration is properly applied."""
+        downloader, _, _, _, config, _ = mock_downloader_dependencies
+        
+        # Verify file existence cache configuration (not mocked)
+        assert downloader.file_existence_cache.max_size == config.file_existence_cache_max_size
+        assert downloader.file_existence_cache.ttl_seconds == config.file_existence_cache_ttl
+        
+        # Verify AudioProvider was called with correct cache parameters
+        # (audio is mocked, so we check the call arguments)
+        from core.downloader import AudioProvider
+        import core.downloader
+        # Check that AudioProvider was instantiated with cache config
+        # Since it's mocked, we verify the file existence cache which is real
+        assert downloader.file_existence_cache.max_size == 10000
+        assert downloader.file_existence_cache.ttl_seconds == 3600
+
+    def test_cache_configuration_custom_values(self, mocker, tmp_test_dir):
+        """Test that custom cache configuration values are applied."""
+        # Create config with custom cache settings
+        config = mocker.Mock()
+        config.client_id = "test_id"
+        config.client_secret = "test_secret"
+        config.cache_max_size = 1000
+        config.cache_ttl = 3600
+        config.audio_search_cache_max_size = 200  # Custom
+        config.audio_search_cache_ttl = 7200  # Custom
+        config.file_existence_cache_max_size = 5000  # Custom
+        config.file_existence_cache_ttl = 1800  # Custom
+        config.format = "mp3"
+        config.bitrate = "128k"
+        config.audio_providers = ["youtube-music"]
+        config.output = "{artist}/{album}/{track-number} - {title}.{output-ext}"
+        config.overwrite = "skip"
+        config.max_retries = 3
+        config.spotify_max_retries = 3
+        config.spotify_retry_base_delay = 1.0
+        config.spotify_retry_max_delay = 120.0
+        config.spotify_rate_limit_enabled = True
+        config.spotify_rate_limit_requests = 10
+        config.spotify_rate_limit_window = 1.0
+        
+        with patch("core.downloader.SpotifyClient") as mock_spotify_class, \
+             patch("core.downloader.AudioProvider") as mock_audio_class, \
+             patch("core.downloader.MetadataEmbedder"):
+            mock_spotify_class.return_value = mocker.Mock()
+            mock_audio_class.return_value = mocker.Mock()
+            
+            downloader = Downloader(config)
+            
+            # Verify custom values are applied to file existence cache
+            assert downloader.file_existence_cache.max_size == 5000
+            assert downloader.file_existence_cache.ttl_seconds == 1800
+            
+            # Verify AudioProvider was called with custom cache config
+            mock_audio_class.assert_called_once_with(
+                output_format="mp3",
+                bitrate="128k",
+                audio_providers=["youtube-music"],
+                cache_max_size=200,
+                cache_ttl=7200,
+            )
 
