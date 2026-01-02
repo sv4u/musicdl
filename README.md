@@ -28,9 +28,21 @@ simplified, self-contained implementation that uses spotDL's dependencies
 
 ## Architecture
 
-The application uses a simplified, modular architecture:
+The application uses a simplified, modular architecture with two download modes:
 
-- **Core Modules**: Spotify client, audio provider, metadata embedder, download orchestrator
+- **Sequential Mode (Legacy)**: Processes songs, artists, and playlists one by one
+- **Plan-Based Mode (Phase 3)**: Generates a comprehensive download plan, optimizes it, then executes in parallel
+
+**Core Modules**:
+- **Spotify Client**: API client with rate limiting and caching
+- **Audio Provider**: yt-dlp wrapper for downloading from YouTube/SoundCloud
+- **Metadata Embedder**: Mutagen-based metadata embedding
+- **Download Orchestrator**: Coordinates downloads (sequential or plan-based)
+- **Plan Generator**: Converts configuration to download plan (plan-based mode)
+- **Plan Optimizer**: Removes duplicates, checks existing files, sorts items (plan-based mode)
+- **Plan Executor**: Executes plan with parallel processing and progress tracking (plan-based mode)
+
+**Supporting Systems**:
 - **Caching**: Simple in-memory cache with TTL and LRU support (no external dependencies)
 - **Configuration**: Pydantic models for type-safe configuration validation
 - **Error Handling**: Custom exceptions with retry logic and exponential backoff
@@ -119,6 +131,13 @@ download:
   spotify_rate_limit_requests: 10  # Maximum requests per window
   spotify_rate_limit_window: 1.0  # Window size in seconds
   
+  # Plan-based architecture (Phase 3) - Feature flags
+  use_plan_architecture: false  # Enable plan-based architecture (default: false, uses sequential mode)
+  plan_generation_enabled: true  # Enable plan generation (sub-flag)
+  plan_optimization_enabled: true  # Enable plan optimization (sub-flag)
+  plan_execution_enabled: true  # Enable plan execution (sub-flag)
+  plan_persistence_enabled: false  # Enable plan persistence (save/load plans to disk)
+  
   # File management
   overwrite: "skip"  # skip, overwrite, metadata
 
@@ -196,6 +215,11 @@ All download settings are configured under the `download` section:
 - `spotify_rate_limit_enabled`: Enable proactive rate limiting to prevent hitting API limits (default: true)
 - `spotify_rate_limit_requests`: Maximum requests per time window (default: 10)
 - `spotify_rate_limit_window`: Time window size in seconds (default: 1.0)
+- `use_plan_architecture`: Enable plan-based architecture for better optimization and parallelization (default: false)
+- `plan_generation_enabled`: Enable plan generation (sub-flag, default: true)
+- `plan_optimization_enabled`: Enable plan optimization (sub-flag, default: true)
+- `plan_execution_enabled`: Enable plan execution (sub-flag, default: true)
+- `plan_persistence_enabled`: Enable saving/loading plans to disk for resuming (default: false)
 - `overwrite`: Behavior when file exists - "skip", "overwrite", or "metadata"
   (default: "skip")
 
@@ -265,6 +289,58 @@ download:
 ```
 
 Note: Even with rate limiting disabled, the client will still retry on rate limit errors, but won't proactively throttle requests.
+
+### Plan-Based Architecture (Phase 3)
+
+musicdl includes an advanced plan-based architecture that provides better optimization, parallelization, and progress tracking. This feature is controlled by the `use_plan_architecture` flag.
+
+**Benefits of Plan-Based Architecture**:
+
+- **Better Optimization**: Removes duplicates before downloading, checks existing files
+- **Improved Parallelization**: Processes all tracks in parallel regardless of source (song, album, playlist)
+- **Detailed Progress Tracking**: Real-time per-item progress with status updates
+- **Plan Persistence**: Save and resume download plans (when enabled)
+- **Better Error Recovery**: Failed items can be retried without reprocessing entire plan
+
+**How It Works**:
+
+1. **Plan Generation**: Converts configuration (songs, artists, playlists) into a structured download plan with hierarchy
+2. **Plan Optimization**: Removes duplicates, checks for existing files, sorts items for optimal processing
+3. **Plan Execution**: Executes downloads in parallel with detailed progress tracking
+4. **Plan Persistence** (optional): Saves plan to disk for inspection or resuming
+
+**Enabling Plan-Based Architecture**:
+
+```yaml
+download:
+  use_plan_architecture: true  # Enable plan-based mode
+  plan_persistence_enabled: true  # Optional: save plans to disk
+```
+
+**Sub-Feature Flags**:
+
+You can enable/disable individual components for testing:
+
+```yaml
+download:
+  use_plan_architecture: true
+  plan_generation_enabled: true   # Generate plan from config
+  plan_optimization_enabled: true # Optimize plan (remove duplicates, check files)
+  plan_execution_enabled: true     # Execute downloads
+  plan_persistence_enabled: true   # Save plans to disk
+```
+
+**Plan Persistence**:
+
+When `plan_persistence_enabled` is true, plans are saved to:
+- `download_plan.json`: Initial plan after generation
+- `download_plan_optimized.json`: Optimized plan after optimization
+
+You can inspect these files to see what will be downloaded, or use them for debugging.
+
+**Migration from Sequential Mode**:
+
+The plan-based architecture is backward compatible. By default, musicdl uses sequential mode (`use_plan_architecture: false`). To enable plan-based mode, simply set `use_plan_architecture: true` in your configuration. No other changes are required.
 
 ## Usage
 

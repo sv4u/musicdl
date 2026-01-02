@@ -397,14 +397,53 @@ class SpotifyClient:
             )
             albums.extend(results.get("items", []))
 
-            # Handle pagination
+            # Handle pagination with rate limiting
             while results.get("next"):
-                results = self.client.next(results)
+                results = self._next_with_rate_limit(results)
                 albums.extend(results.get("items", []))
 
             return albums
 
         return self._get_cached_or_fetch(cache_key, fetch_albums)
+
+    def _next_with_rate_limit(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Get next page of results with rate limiting.
+
+        Args:
+            results: Current page results with 'next' field
+
+        Returns:
+            Next page results
+
+        Raises:
+            SpotifyRateLimitError: If rate limited and max retries exceeded
+            SpotifyError: For other Spotify API errors
+        """
+        # Wait for rate limit if enabled
+        if self.rate_limiter:
+            self.rate_limiter.wait_if_needed()
+
+        # Fetch next page with retry logic
+        @retry_with_backoff(
+            max_retries=self.max_retries,
+            base_delay=self.retry_base_delay,
+            max_delay=self.retry_max_delay,
+        )
+        def fetch_next_with_retry() -> Dict[str, Any]:
+            try:
+                return self.client.next(results)
+            except Exception as e:
+                # Convert to rate limit error if applicable
+                if self._is_rate_limit_error(e):
+                    retry_after = self._extract_retry_after(e)
+                    raise SpotifyRateLimitError(
+                        f"Spotify API rate limited during pagination: {e}",
+                        retry_after=retry_after,
+                    ) from e
+                raise SpotifyError(f"Spotify API error during pagination: {e}") from e
+
+        return fetch_next_with_retry()
 
     def clear_cache(self) -> None:
         """Clear the cache (useful for testing or forced refresh)."""
