@@ -33,6 +33,12 @@ class DownloadSettings(BaseModel):
     spotify_rate_limit_enabled: bool = True  # Enable proactive rate limiting
     spotify_rate_limit_requests: int = 10  # Maximum requests per window
     spotify_rate_limit_window: float = 1.0  # Window size in seconds
+    # Plan architecture feature flags
+    use_plan_architecture: bool = False  # Enable plan-based architecture (Phase 3)
+    plan_generation_enabled: bool = True  # Enable plan generation (sub-flag)
+    plan_optimization_enabled: bool = True  # Enable plan optimization (sub-flag)
+    plan_execution_enabled: bool = True  # Enable plan execution (sub-flag)
+    plan_persistence_enabled: bool = False  # Enable plan persistence (save/load to disk)
 
     @staticmethod
     def _resolve_credential(
