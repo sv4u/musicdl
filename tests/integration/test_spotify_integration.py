@@ -5,6 +5,8 @@ Requires SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET environment variables.
 import os
 import time
 import pytest
+from spotipy.exceptions import SpotifyOauthError
+
 from core.spotify_client import SpotifyClient, RateLimiter
 from core.exceptions import SpotifyError
 
@@ -126,6 +128,9 @@ class TestSpotifyClientIntegration:
 
     def test_rate_limiter_integration(self, spotify_credentials):
         """Test that rate limiter works with real API calls."""
+        if not os.getenv("SPOTIFY_CLIENT_ID"):
+            pytest.skip("SPOTIFY_CLIENT_ID not set")
+        
         # Create client with rate limiting enabled
         client = SpotifyClient(
             client_id=spotify_credentials["client_id"],
@@ -138,29 +143,56 @@ class TestSpotifyClientIntegration:
         # Make multiple requests - should be throttled by rate limiter
         track_ids = ["1RKbVxcm267VdsIzqY7msi"] * 5  # Same track, multiple requests
         
-        start_time = time.time()
-        for track_id in track_ids:
-            track = client.get_track(track_id)
-            assert track is not None
-        elapsed = time.time() - start_time
-        
-        # Should have taken some time due to rate limiting
-        # (though caching may make this faster)
-        # At minimum, verify no errors occurred
-        assert elapsed >= 0  # Basic sanity check
+        try:
+            start_time = time.time()
+            for track_id in track_ids:
+                track = client.get_track(track_id)
+                assert track is not None
+            elapsed = time.time() - start_time
+            
+            # Should have taken some time due to rate limiting
+            # (though caching may make this faster)
+            # At minimum, verify no errors occurred
+            assert elapsed >= 0  # Basic sanity check
+        except (SpotifyError, SpotifyOauthError) as e:
+            # Skip if credentials are invalid (check both error message and original exception)
+            error_str = str(e).lower()
+            # Check original exception if available
+            original_error = getattr(e, "__cause__", None)
+            if original_error:
+                error_str += " " + str(original_error).lower()
+            
+            if any(keyword in error_str for keyword in ["invalid_client", "invalid client", "authentication", "unauthorized"]):
+                pytest.skip(f"Invalid Spotify credentials: {e}")
+            raise
 
     def test_rate_limiter_disabled(self, spotify_credentials):
         """Test that rate limiter can be disabled."""
+        if not os.getenv("SPOTIFY_CLIENT_ID"):
+            pytest.skip("SPOTIFY_CLIENT_ID not set")
+        
         client = SpotifyClient(
             client_id=spotify_credentials["client_id"],
             client_secret=spotify_credentials["client_secret"],
             rate_limit_enabled=False,
         )
         
-        # Should work without rate limiting
-        track = client.get_track("1RKbVxcm267VdsIzqY7msi")
-        assert track is not None
-        assert client.rate_limiter is None
+        try:
+            # Should work without rate limiting
+            track = client.get_track("1RKbVxcm267VdsIzqY7msi")
+            assert track is not None
+            assert client.rate_limiter is None
+        except (SpotifyError, SpotifyOauthError) as e:
+            # Skip if credentials are invalid (check both error message and original exception)
+            error_str = str(e).lower()
+            # Check original exception if available
+            original_error = getattr(e, "__cause__", None)
+            if original_error:
+                error_str += " " + str(original_error).lower()
+            
+            if any(keyword in error_str for keyword in ["invalid_client", "invalid client", "authentication", "unauthorized"]):
+                pytest.skip(f"Invalid Spotify credentials: {e}")
+            raise
 
     def test_rate_limiter_configuration(self, spotify_credentials):
         """Test that rate limiter configuration is properly applied."""
