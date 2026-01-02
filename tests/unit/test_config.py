@@ -277,3 +277,117 @@ playlists: []
         assert config.download.client_id == "config_client_id"
         assert config.download.client_secret == "config_client_secret"
 
+    def test_config_with_albums_simple_format(self, tmp_path, monkeypatch):
+        """Test config with albums in simple format."""
+        monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+        monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+        
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("""
+version: 1.2
+download:
+  threads: 4
+albums:
+  Test Album: https://open.spotify.com/album/77CZUF57sYqgtznUe3OikQ
+songs: []
+artists: []
+playlists: []
+""")
+        config = load_config(str(config_file))
+        assert len(config.albums) == 1
+        assert config.albums[0].name == "Test Album"
+        assert config.albums[0].url == "https://open.spotify.com/album/77CZUF57sYqgtznUe3OikQ"
+        assert config.albums[0].create_m3u is False  # Default
+
+    def test_config_with_albums_extended_format(self, tmp_path, monkeypatch):
+        """Test config with albums in extended format."""
+        monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+        monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+        
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("""
+version: 1.2
+download:
+  threads: 4
+albums:
+  - name: Test Album
+    url: https://open.spotify.com/album/77CZUF57sYqgtznUe3OikQ
+    create_m3u: true
+songs: []
+artists: []
+playlists: []
+""")
+        config = load_config(str(config_file))
+        assert len(config.albums) == 1
+        assert config.albums[0].name == "Test Album"
+        assert config.albums[0].url == "https://open.spotify.com/album/77CZUF57sYqgtznUe3OikQ"
+        assert config.albums[0].create_m3u is True
+
+    def test_config_with_albums_mixed_format(self, tmp_path, monkeypatch):
+        """Test config with albums in mixed format (simple and extended)."""
+        monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+        monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+        
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("""
+version: 1.2
+download:
+  threads: 4
+albums:
+  - Simple Album: https://open.spotify.com/album/77CZUF57sYqgtznUe3OikQ
+  - name: Extended Album
+    url: https://open.spotify.com/album/77CZUF57sYqgtznUe3OikQ
+    create_m3u: true
+songs: []
+artists: []
+playlists: []
+""")
+        config = load_config(str(config_file))
+        assert len(config.albums) == 2
+        # Find albums by name
+        simple_album = next(a for a in config.albums if a.name == "Simple Album")
+        extended_album = next(a for a in config.albums if a.name == "Extended Album")
+        assert simple_album.create_m3u is False
+        assert extended_album.create_m3u is True
+
+    def test_config_with_albums_list_url_format(self, tmp_path, monkeypatch):
+        """Test config with albums as list of URLs."""
+        monkeypatch.setenv("SPOTIFY_CLIENT_ID", "test_id")
+        monkeypatch.setenv("SPOTIFY_CLIENT_SECRET", "test_secret")
+        
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("""
+version: 1.2
+download:
+  threads: 4
+albums:
+  - https://open.spotify.com/album/77CZUF57sYqgtznUe3OikQ
+songs: []
+artists: []
+playlists: []
+""")
+        config = load_config(str(config_file))
+        assert len(config.albums) == 1
+        assert config.albums[0].name == "https://open.spotify.com/album/77CZUF57sYqgtznUe3OikQ"
+        assert config.albums[0].url == "https://open.spotify.com/album/77CZUF57sYqgtznUe3OikQ"
+        assert config.albums[0].create_m3u is False  # Default
+
+    def test_music_source_with_create_m3u(self):
+        """Test MusicSource model with create_m3u flag."""
+        album = MusicSource(
+            name="Test Album",
+            url="https://open.spotify.com/album/77CZUF57sYqgtznUe3OikQ",
+            create_m3u=True,
+        )
+        assert album.name == "Test Album"
+        assert album.url == "https://open.spotify.com/album/77CZUF57sYqgtznUe3OikQ"
+        assert album.create_m3u is True
+
+    def test_music_source_default_create_m3u(self):
+        """Test that MusicSource defaults create_m3u to False."""
+        source = MusicSource(
+            name="Test Source",
+            url="https://open.spotify.com/track/123",
+        )
+        assert source.create_m3u is False
+

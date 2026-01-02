@@ -119,10 +119,11 @@ class DownloadSettings(BaseModel):
 
 
 class MusicSource(BaseModel):
-    """Music source entry."""
+    """Music source entry with optional M3U creation."""
 
     name: str
     url: str
+    create_m3u: bool = False  # Default to False for backward compatibility (used for albums)
 
 
 class MusicDLConfig(BaseModel):
@@ -133,6 +134,7 @@ class MusicDLConfig(BaseModel):
     songs: List[MusicSource] = Field(default_factory=list)
     artists: List[MusicSource] = Field(default_factory=list)
     playlists: List[MusicSource] = Field(default_factory=list)
+    albums: List[MusicSource] = Field(default_factory=list)
 
     @classmethod
     def from_yaml(cls, path: str) -> "MusicDLConfig":
@@ -189,6 +191,38 @@ class MusicDLConfig(BaseModel):
                     result.append(MusicSource(name=name, url=url))
             return result
 
+        def convert_album_sources(sources):
+            """Convert dict or list format to MusicSource list, supporting both formats."""
+            if not sources:
+                return []
+            result = []
+            if isinstance(sources, list):
+                for item in sources:
+                    if isinstance(item, dict):
+                        # Extended format: {name: "...", url: "...", create_m3u: true/false}
+                        if "name" in item and "url" in item:
+                            result.append(
+                                MusicSource(
+                                    name=item["name"],
+                                    url=item["url"],
+                                    create_m3u=item.get("create_m3u", False),
+                                )
+                            )
+                        else:
+                            # Simple format: {name: url}
+                            for name, url in item.items():
+                                result.append(
+                                    MusicSource(name=name, url=url, create_m3u=False)
+                                )
+                    elif isinstance(item, str):
+                        # Handle [url, ...] - use URL as name
+                        result.append(MusicSource(name=item, url=item, create_m3u=False))
+            elif isinstance(sources, dict):
+                # Handle {name: url, ...} - simple format
+                for name, url in sources.items():
+                    result.append(MusicSource(name=name, url=url, create_m3u=False))
+            return result
+
         # Convert sources
         if "songs" in data:
             data["songs"] = convert_sources(data["songs"])
@@ -196,6 +230,8 @@ class MusicDLConfig(BaseModel):
             data["artists"] = convert_sources(data["artists"])
         if "playlists" in data:
             data["playlists"] = convert_sources(data["playlists"])
+        if "albums" in data:
+            data["albums"] = convert_album_sources(data["albums"])
 
         try:
             return cls(**data)

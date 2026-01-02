@@ -267,6 +267,61 @@ class TestPlanExecutor:
         playlist_item = plan.get_item("playlist:1")
         assert playlist_item.status == PlanItemStatus.FAILED
 
+    def test_execute_creates_m3u_files_for_albums(self, mock_downloader):
+        """Test that executor creates M3U files for albums when requested."""
+        plan = DownloadPlan()
+        
+        album = PlanItem(
+            item_id="album:1",
+            item_type=PlanItemType.ALBUM,
+            name="Test Album",
+            metadata={"create_m3u": True},
+        )
+        
+        track1 = PlanItem(
+            item_id="track:1",
+            item_type=PlanItemType.TRACK,
+            spotify_url="https://open.spotify.com/track/1",
+            parent_id="album:1",
+            name="Track 1",
+        )
+        track1.mark_completed(Path("test1.mp3"))
+        
+        track2 = PlanItem(
+            item_id="track:2",
+            item_type=PlanItemType.TRACK,
+            spotify_url="https://open.spotify.com/track/2",
+            parent_id="album:1",
+            name="Track 2",
+        )
+        track2.mark_completed(Path("test2.mp3"))
+        
+        m3u = PlanItem(
+            item_id="m3u:album:1",
+            item_type=PlanItemType.M3U,
+            parent_id="album:1",
+            name="Test Album.m3u",
+            metadata={"album_name": "Test Album"},
+        )
+        
+        album.child_ids = [track1.item_id, track2.item_id, m3u.item_id]
+        
+        plan.items = [album, track1, track2, m3u]
+        
+        executor = PlanExecutor(mock_downloader, max_workers=2)
+        
+        with patch("pathlib.Path.exists", return_value=True):
+            with patch("builtins.open", create=True) as mock_open:
+                mock_file = MagicMock()
+                mock_open.return_value.__enter__.return_value = mock_file
+                
+                executor.execute(plan)
+
+                # M3U should be completed
+                m3u_item = plan.get_item("m3u:album:1")
+                assert m3u_item.status == PlanItemStatus.COMPLETED
+                assert m3u_item.file_path is not None
+
     def test_execute_respects_max_workers(self, mock_downloader, sample_plan):
         """Test that executor respects max_workers setting."""
         executor = PlanExecutor(mock_downloader, max_workers=1)

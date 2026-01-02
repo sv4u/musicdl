@@ -64,6 +64,11 @@ class PlanGenerator:
         for playlist in self.config.playlists:
             self._process_playlist(plan, playlist)
 
+        # Process albums
+        logger.info(f"Processing {len(self.config.albums)} albums...")
+        for album in self.config.albums:
+            self._process_album(plan, album)
+
         stats = plan.get_statistics()
         logger.info(
             f"Plan generation complete: {stats['total_items']} items "
@@ -381,6 +386,105 @@ class PlanGenerator:
             item.mark_failed(str(e))
             plan.items.append(item)
 
+    def _process_album(self, plan: DownloadPlan, album: MusicSource) -> None:
+        """
+        Process an album and add tracks/M3U to plan.
+
+        Args:
+            plan: DownloadPlan to add items to
+            album: MusicSource for the album
+        """
+        try:
+            album_id = extract_id_from_url(album.url)
+            album_id = self._extract_album_id(album_id)
+
+            # Check for duplicates
+            if album_id in self.seen_album_ids:
+                # Album already exists (likely from artist processing)
+                # Check if user requested M3U creation for this explicit album entry
+                if album.create_m3u:
+                    logger.info(
+                        f"Album {album.name} already exists, but honoring create_m3u=True request"
+                    )
+                    # Find existing album item
+                    existing_album_item_id = f"album:{album_id}"
+                    existing_album_item = plan.get_item(existing_album_item_id)
+                    if existing_album_item:
+                        # Update metadata to indicate M3U should be created
+                        existing_album_item.metadata["create_m3u"] = True
+                        # Check if M3U item already exists
+                        m3u_item_id = f"m3u:album:{album_id}"
+                        existing_m3u_item = plan.get_item(m3u_item_id)
+                        if not existing_m3u_item:
+                            # Create M3U item if it doesn't exist
+                            album_name = existing_album_item.name
+                            m3u_item = PlanItem(
+                                item_id=m3u_item_id,
+                                item_type=PlanItemType.M3U,
+                                parent_id=existing_album_item.item_id,
+                                name=f"{album_name}.m3u",
+                                metadata={
+                                    "album_name": album_name,
+                                },
+                            )
+                            plan.items.append(m3u_item)
+                            existing_album_item.child_ids.append(m3u_item.item_id)
+                            logger.debug(f"Added M3U item for duplicate album: {album.name}")
+                else:
+                    logger.debug(f"Skipping duplicate album: {album.name} ({album_id})")
+                return
+
+            # Fetch album metadata
+            album_data = self.spotify.get_album(album_id)
+            album_name = album_data.get("name", album.name)
+
+            # Create album item
+            album_item = PlanItem(
+                item_id=f"album:{album_id}",
+                item_type=PlanItemType.ALBUM,
+                spotify_id=album_id,
+                spotify_url=album_data.get("external_urls", {}).get("spotify", album.url),
+                name=album_name,
+                metadata={
+                    "source_name": album.name,
+                    "source_url": album.url,
+                    "create_m3u": album.create_m3u,  # Store M3U flag in metadata
+                    "album_type": album_data.get("album_type"),
+                    "release_date": album_data.get("release_date"),
+                },
+            )
+            plan.items.append(album_item)
+            self.seen_album_ids.add(album_id)
+
+            # Process album tracks
+            self._process_album_tracks(plan, album_item, album_id)
+
+            # Create M3U item only if requested (unlike playlists which always create M3U)
+            if album.create_m3u:
+                m3u_item = PlanItem(
+                    item_id=f"m3u:album:{album_id}",
+                    item_type=PlanItemType.M3U,
+                    parent_id=album_item.item_id,
+                    name=f"{album_name}.m3u",
+                    metadata={
+                        "album_name": album_name,
+                    },
+                )
+                plan.items.append(m3u_item)
+                album_item.child_ids.append(m3u_item.item_id)
+
+        except Exception as e:
+            logger.error(f"Error processing album {album.name}: {e}")
+            # Create failed item
+            item = PlanItem(
+                item_id=f"album:error:{album.name}",
+                item_type=PlanItemType.ALBUM,
+                name=album.name,
+                metadata={"source_url": album.url, "error": str(e)},
+            )
+            item.mark_failed(str(e))
+            plan.items.append(item)
+
     def _extract_track_id(self, url_or_id: str) -> str:
         """
         Extract track ID from URL or return as-is if already an ID.
@@ -418,5 +522,18 @@ class PlanGenerator:
             Playlist ID
         """
         match = re.search(r"playlist/([a-zA-Z0-9]+)", url_or_id)
+        return match.group(1) if match else url_or_id
+
+    def _extract_album_id(self, url_or_id: str) -> str:
+        """
+        Extract album ID from URL or return as-is if already an ID.
+
+        Args:
+            url_or_id: Spotify URL or ID
+
+        Returns:
+            Album ID
+        """
+        match = re.search(r"album/([a-zA-Z0-9]+)", url_or_id)
         return match.group(1) if match else url_or_id
 

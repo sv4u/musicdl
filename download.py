@@ -150,6 +150,7 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
             },
             "artists": {"success": 0, "failed": 0},
             "playlists": {"success": 0, "failed": 0},
+            "albums": {"success": 0, "failed": 0},
         }
 
         # Count by type for better reporting
@@ -167,6 +168,7 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
             "songs": {"success": 0, "failed": 0},
             "artists": {"success": 0, "failed": 0},
             "playlists": {"success": 0, "failed": 0},
+            "albums": {"success": 0, "failed": 0},
         }
 
 

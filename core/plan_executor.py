@@ -408,7 +408,7 @@ class PlanExecutor:
 
     def _process_m3u_files(self, plan: DownloadPlan) -> None:
         """
-        Create M3U files for playlists after all tracks are processed.
+        Create M3U files for playlists and albums after all tracks are processed.
 
         Args:
             plan: DownloadPlan to process
@@ -423,17 +423,17 @@ class PlanExecutor:
             self._notify_progress(m3u_item)
 
             try:
-                # Get parent playlist
+                # Get parent container (playlist or album)
                 if not m3u_item.parent_id:
-                    raise ValueError("M3U item missing parent playlist ID")
+                    raise ValueError("M3U item missing parent container ID")
 
-                playlist_item = plan.get_item(m3u_item.parent_id)
-                if not playlist_item:
-                    raise ValueError(f"Parent playlist not found: {m3u_item.parent_id}")
+                container_item = plan.get_item(m3u_item.parent_id)
+                if not container_item:
+                    raise ValueError(f"Parent container not found: {m3u_item.parent_id}")
 
-                # Get all track items for this playlist (fix double lookup)
+                # Get all track items for this container
                 track_items = []
-                for child_id in playlist_item.child_ids:
+                for child_id in container_item.child_ids:
                     item = plan.get_item(child_id)
                     if item and item.item_type == PlanItemType.TRACK:
                         track_items.append(item)
@@ -454,8 +454,13 @@ class PlanExecutor:
                     continue
 
                 # Create M3U file
-                playlist_name = m3u_item.metadata.get("playlist_name", playlist_item.name)
-                m3u_path = self._create_m3u_file(playlist_name, available_tracks)
+                # For playlists, use playlist_name from metadata; for albums, use album_name
+                container_name = (
+                    m3u_item.metadata.get("playlist_name")
+                    or m3u_item.metadata.get("album_name")
+                    or container_item.name
+                )
+                m3u_path = self._create_m3u_file(container_name, available_tracks)
 
                 m3u_item.mark_completed(m3u_path)
                 logger.info(f"Created M3U file: {m3u_path}")
