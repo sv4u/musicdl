@@ -21,14 +21,30 @@ logger = logging.getLogger(__name__)
 
 class PlanExecutor:
     """
-    Executes download plan with parallel processing and progress tracking.
+    Executes download plan with optimized parallel processing and progress tracking.
+
+    Parallelization Strategy:
+    - Uses ThreadPoolExecutor for concurrent track downloads
+    - All pending tracks are submitted to the thread pool simultaneously
+    - Thread-safe status updates using locks to prevent race conditions
+    - Graceful shutdown handling with progress saving on interruption
+    - Container items (albums, artists, playlists) are processed sequentially
+      after all tracks complete (they depend on track completion status)
+
+    Performance Optimizations:
+    - Parallel execution of all track downloads (limited by max_workers)
+    - Thread-safe caching (file existence, audio search, Spotify API) reduces
+      redundant I/O operations across threads
+    - Atomic status updates prevent race conditions in multi-threaded environment
+    - Efficient progress tracking with minimal locking overhead
 
     The executor:
-    - Processes items in parallel using ThreadPoolExecutor
-    - Updates item status atomically
+    - Processes tracks in parallel using ThreadPoolExecutor
+    - Updates item status atomically (thread-safe)
     - Handles errors gracefully (per-item, doesn't stop entire plan)
-    - Provides detailed progress tracking with ETA
+    - Provides detailed progress tracking
     - Creates M3U files after playlist tracks complete
+    - Supports graceful shutdown with progress persistence
     """
 
     def __init__(self, downloader: Downloader, max_workers: Optional[int] = None):
@@ -95,7 +111,7 @@ class PlanExecutor:
         logger.info(f"Starting plan execution with {self.max_workers} workers...")
         start_time = time.time()
 
-        # Get items to execute (pending tracks first, then containers)
+        # Get items to execute (pending tracks only - containers processed after)
         track_items = [
             item
             for item in plan.items
@@ -103,9 +119,18 @@ class PlanExecutor:
             and item.status == PlanItemStatus.PENDING
         ]
 
-        # Execute tracks in parallel
+        logger.info(f"Executing {len(track_items)} tracks with {self.max_workers} parallel workers")
+
+        # Execute tracks in parallel using ThreadPoolExecutor
+        # All tracks are submitted simultaneously, with execution limited by max_workers
+        # This maximizes parallelism while respecting resource constraints
         try:
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+                # Submit all track downloads to the thread pool
+                # Each track download benefits from shared caches (thread-safe):
+                # - Spotify API cache (reduces redundant API calls)
+                # - Audio search cache (reduces redundant YouTube searches)
+                # - File existence cache (reduces redundant filesystem checks)
                 futures = {
                     executor.submit(self._execute_track, item, plan): item
                     for item in track_items
@@ -130,7 +155,9 @@ class PlanExecutor:
             logger.warning("Interrupted by user, initiating graceful shutdown...")
             self._shutdown_requested.set()
 
-        # Process containers and M3U files after tracks (if not shutting down)
+        # Process containers and M3U files after tracks complete (if not shutting down)
+        # Note: Containers are processed sequentially after parallel track execution
+        # because they depend on the final status of their child tracks
         if not self._shutdown_requested.is_set():
             self._process_containers(plan)
             self._process_m3u_files(plan)

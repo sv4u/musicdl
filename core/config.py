@@ -23,8 +23,15 @@ class DownloadSettings(BaseModel):
     bitrate: str = "128k"
     output: str = "{artist}/{album}/{track-number} - {title}.{output-ext}"
     audio_providers: List[str] = Field(default_factory=lambda: ["youtube-music"])
-    cache_max_size: int = 1000  # Maximum cached entries
-    cache_ttl: int = 3600  # Cache TTL in seconds (1 hour)
+    # Spotify API cache settings
+    cache_max_size: int = 1000  # Maximum cached entries for Spotify API
+    cache_ttl: int = 3600  # Cache TTL in seconds for Spotify API (1 hour)
+    # Audio search cache settings
+    audio_search_cache_max_size: int = 500  # Maximum cached audio search results
+    audio_search_cache_ttl: int = 86400  # Cache TTL in seconds for audio search (24 hours)
+    # File existence cache settings
+    file_existence_cache_max_size: int = 10000  # Maximum cached file existence checks
+    file_existence_cache_ttl: int = 3600  # Cache TTL in seconds for file existence (1 hour)
     overwrite: Literal["skip", "overwrite", "metadata"] = "skip"
     # Rate limiting settings
     spotify_max_retries: int = 3  # Maximum retry attempts for rate-limited requests
@@ -33,11 +40,11 @@ class DownloadSettings(BaseModel):
     spotify_rate_limit_enabled: bool = True  # Enable proactive rate limiting
     spotify_rate_limit_requests: int = 10  # Maximum requests per window
     spotify_rate_limit_window: float = 1.0  # Window size in seconds
-    # Plan architecture feature flags
-    use_plan_architecture: bool = False  # Enable plan-based architecture (Phase 3)
-    plan_generation_enabled: bool = True  # Enable plan generation (sub-flag)
-    plan_optimization_enabled: bool = True  # Enable plan optimization (sub-flag)
-    plan_execution_enabled: bool = True  # Enable plan execution (sub-flag)
+    # Plan architecture feature flags (Phase 3+)
+    # Note: Plan-based architecture is now the only supported architecture
+    plan_generation_enabled: bool = True  # Enable plan generation
+    plan_optimization_enabled: bool = True  # Enable plan optimization
+    plan_execution_enabled: bool = True  # Enable plan execution
     plan_persistence_enabled: bool = False  # Enable plan persistence (save/load to disk)
 
     @staticmethod
