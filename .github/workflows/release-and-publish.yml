@@ -10,7 +10,7 @@ on:
         options:
           - major
           - minor
-          - hotfix
+          - hotfix/patch
       dry_run:
         description: "Run in dry-run mode (no releases or commits)"
         required: false
@@ -71,66 +71,85 @@ jobs:
           git fetch --tags
 
           # Get latest tag, preferring v-prefixed tags
-          LATEST_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || \
-                       git describe --tags --abbrev=0 2>/dev/null || \
-                       echo "v0.0.0")
+          ORIGINAL_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || \
+                         git describe --tags --abbrev=0 2>/dev/null || \
+                         echo "v0.0.0")
 
-          # Remove 'v' prefix if present
-          VERSION=${LATEST_TAG#v}
+          # Store original tag for git operations (must exist in repository)
+          # Remove 'v' prefix if present for version calculation
+          VERSION=${ORIGINAL_TAG#v}
 
-          echo "Current version tag: $LATEST_TAG"
+          # Normalize version format: convert X.Y to X.Y.0 for backward compatibility
+          # This normalized version is used for calculations, but git operations use original tag
+          NORMALIZED_TAG="$ORIGINAL_TAG"
+          if echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+$'; then
+            # Two-part version (X.Y) - add .0 patch component
+            VERSION="${VERSION}.0"
+            NORMALIZED_TAG="v${VERSION}"
+            echo "[i] Normalized legacy tag format: $ORIGINAL_TAG -> $NORMALIZED_TAG (for version calculation)"
+            echo "[i] Git operations will use original tag: $ORIGINAL_TAG"
+          fi
+
+          echo "Original tag (for git operations): $ORIGINAL_TAG"
+          echo "Normalized tag (for version calculation): $NORMALIZED_TAG"
           echo "Current version: $VERSION"
-          echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "original_tag=$ORIGINAL_TAG" >> $GITHUB_OUTPUT
+          echo "tag=$NORMALIZED_TAG" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Calculate next version
         id: next-version
         run: |
-          LATEST_TAG="${{ steps.current-version.outputs.tag }}"
+          ORIGINAL_TAG="${{ steps.current-version.outputs.original_tag }}"
+          NORMALIZED_TAG="${{ steps.current-version.outputs.tag }}"
           CURRENT_VERSION="${{ steps.current-version.outputs.version }}"
           RELEASE_TYPE="${{ inputs.release_type }}"
 
-          # For first release (no tags exist), always default to v0.1 regardless of release type
-          if [ "$LATEST_TAG" = "v0.0.0" ]; then
-            NEXT_VERSION="0.1"
-            NEXT_TAG="v0.1"
-            echo "First release detected. Defaulting to v0.1 (release type '$RELEASE_TYPE' is ignored for first release)."
+          # For first release (no tags exist), always default to v0.0.1 regardless of release type
+          # Check original tag to determine if this is the first release
+          if [ "$ORIGINAL_TAG" = "v0.0.0" ]; then
+            NEXT_VERSION="0.0.1"
+            NEXT_TAG="v0.0.1"
+            echo "First release detected. Defaulting to v0.0.1 (release type '$RELEASE_TYPE' is ignored for first release)."
             echo "version=$NEXT_VERSION" >> $GITHUB_OUTPUT
             echo "tag=$NEXT_TAG" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # Validate current version format (must be X.Y, two-part versioning)
-          if ! echo "$CURRENT_VERSION" | grep -qE '^[0-9]+\.[0-9]+$'; then
+          # Validate current version format (must be X.Y.Z, three-part semantic versioning)
+          if ! echo "$CURRENT_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "[X] Error: Invalid version format: $CURRENT_VERSION"
-            echo "   Expected format: X.Y (e.g., 0.13)"
-            echo "   Latest tag: $LATEST_TAG"
+            echo "   Expected format: X.Y.Z (e.g., 1.1.0)"
+            echo "   Original tag: $ORIGINAL_TAG"
+            echo "   Normalized tag: $NORMALIZED_TAG"
             exit 1
           fi
 
-          # Parse version components (two-part: MAJOR.MINOR)
-          IFS='.' read -r MAJOR MINOR <<< "$CURRENT_VERSION"
+          # Parse version components (three-part: MAJOR.MINOR.PATCH)
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
 
           # Validate all components are non-empty
-          if [ -z "$MAJOR" ] || [ -z "$MINOR" ]; then
+          if [ -z "$MAJOR" ] || [ -z "$MINOR" ] || [ -z "$PATCH" ]; then
             echo "[X] Error: Invalid version format: $CURRENT_VERSION"
-            echo "   Version must have two components: MAJOR.MINOR"
-            echo "   Parsed components: MAJOR='$MAJOR' MINOR='$MINOR'"
+            echo "   Version must have three components: MAJOR.MINOR.PATCH"
+            echo "   Parsed components: MAJOR='$MAJOR' MINOR='$MINOR' PATCH='$PATCH'"
             exit 1
           fi
 
-          # Calculate next version based on release type (two-part versioning)
+          # Calculate next version based on release type (three-part semantic versioning)
           # Use 10# prefix to force decimal interpretation and prevent octal issues with leading zeros
           case "$RELEASE_TYPE" in
             major)
               MAJOR=$((10#$MAJOR + 1))
               MINOR=0
+              PATCH=0
               ;;
             minor)
               MINOR=$((10#$MINOR + 1))
+              PATCH=0
               ;;
-            hotfix)
-              MINOR=$((10#$MINOR + 1))
+            "hotfix/patch")
+              PATCH=$((10#$PATCH + 1))
               ;;
             *)
               echo "[X] Error: Invalid release type: $RELEASE_TYPE"
@@ -138,20 +157,20 @@ jobs:
               ;;
           esac
 
-          NEXT_VERSION="$MAJOR.$MINOR"
+          NEXT_VERSION="$MAJOR.$MINOR.$PATCH"
           NEXT_TAG="v$NEXT_VERSION"
 
           # Validate calculated version format
-          if ! echo "$NEXT_VERSION" | grep -qE '^[0-9]+\.[0-9]+$'; then
+          if ! echo "$NEXT_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "[X] Error: Calculated version format is invalid: $NEXT_VERSION"
             exit 1
           fi
 
           # Validate tag name format (Git restrictions: no spaces, no special chars except - and .)
           # Tag names must be valid ref names: cannot contain spaces, control chars, or certain special chars
-          if ! echo "$NEXT_TAG" | grep -qE '^v[0-9]+\.[0-9]+$'; then
+          if ! echo "$NEXT_TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "[X] Error: Invalid tag name format: $NEXT_TAG"
-            echo "   Tag names must match pattern: vX.Y (e.g., v0.13)"
+            echo "   Tag names must match pattern: vX.Y.Z (e.g., v1.1.0)"
             exit 1
           fi
 
@@ -173,22 +192,23 @@ jobs:
       - name: Check commit range
         id: commit-range
         run: |
-          LATEST_TAG="${{ steps.current-version.outputs.tag }}"
+          ORIGINAL_TAG="${{ steps.current-version.outputs.original_tag }}"
+          NORMALIZED_TAG="${{ steps.current-version.outputs.tag }}"
 
-          # If no tags exist (LATEST_TAG is v0.0.0), count all commits
-          # Otherwise, count commits since the latest tag
-          if [ "$LATEST_TAG" = "v0.0.0" ]; then
+          # If no tags exist (ORIGINAL_TAG is v0.0.0), count all commits
+          # Otherwise, count commits since the latest tag (use original tag for git operations)
+          if [ "$ORIGINAL_TAG" = "v0.0.0" ]; then
             COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo "0")
             echo "No existing tags found. Counting all commits for first release."
           else
-            COMMIT_COUNT=$(git rev-list --count ${LATEST_TAG}..HEAD 2>/dev/null || echo "0")
+            COMMIT_COUNT=$(git rev-list --count ${ORIGINAL_TAG}..HEAD 2>/dev/null || echo "0")
           fi
 
           if [ "$COMMIT_COUNT" -eq 0 ]; then
             if [ "${{ inputs.dry_run }}" = "true" ]; then
               echo "[!] Warning: No commits to release (dry-run mode, continuing)"
-              if [ "$LATEST_TAG" != "v0.0.0" ]; then
-                echo "   No commits since $LATEST_TAG"
+              if [ "$ORIGINAL_TAG" != "v0.0.0" ]; then
+                echo "   No commits since $ORIGINAL_TAG"
               else
                 echo "   Repository has no commits"
               fi
@@ -197,8 +217,8 @@ jobs:
               echo "validation_would_fail=true" >> $GITHUB_OUTPUT
             else
               echo "[X] Error: No commits to release"
-              if [ "$LATEST_TAG" != "v0.0.0" ]; then
-                echo "   No commits since $LATEST_TAG"
+              if [ "$ORIGINAL_TAG" != "v0.0.0" ]; then
+                echo "   No commits since $ORIGINAL_TAG"
               else
                 echo "   Repository has no commits"
               fi
@@ -209,16 +229,17 @@ jobs:
             echo "validation_would_fail=false" >> $GITHUB_OUTPUT
           fi
 
-          if [ "$LATEST_TAG" = "v0.0.0" ]; then
+          if [ "$ORIGINAL_TAG" = "v0.0.0" ]; then
             echo "Commit count (all commits): $COMMIT_COUNT"
           else
-            echo "Commit count since $LATEST_TAG: $COMMIT_COUNT"
+            echo "Commit count since $ORIGINAL_TAG: $COMMIT_COUNT"
           fi
           echo "count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
 
           # Get commit types for preview (only from commits that match GitHub CLI's changelog filters)
           # Supports both scoped and unscoped Conventional Commits (e.g., feat: and feat(scope):)
-          if [ "$LATEST_TAG" = "v0.0.0" ]; then
+          # Use original tag for git operations
+          if [ "$ORIGINAL_TAG" = "v0.0.0" ]; then
             COMMIT_TYPES=$(git log --format="%s" HEAD | \
               grep -E '^(feat|fix|docs|refactor|perf|ci|chore)(\([^)]+\))?!?:' | \
               grep -vE '^docs(\([^)]+\))?!?:.*README' | \
@@ -228,7 +249,7 @@ jobs:
               tr '\n' ', ' | \
               sed 's/,$//')
           else
-            COMMIT_TYPES=$(git log --format="%s" ${LATEST_TAG}..HEAD | \
+            COMMIT_TYPES=$(git log --format="%s" ${ORIGINAL_TAG}..HEAD | \
               grep -E '^(feat|fix|docs|refactor|perf|ci|chore)(\([^)]+\))?!?:' | \
               grep -vE '^docs(\([^)]+\))?!?:.*README' | \
               grep -vE '^test(\([^)]+\))?!?:' | \
@@ -247,9 +268,10 @@ jobs:
       - name: Preview version and confirm
         if: ${{ inputs.dry_run != 'true' }}
         run: |
-          LATEST_TAG="${{ steps.current-version.outputs.tag }}"
+          ORIGINAL_TAG="${{ steps.current-version.outputs.original_tag }}"
+          NORMALIZED_TAG="${{ steps.current-version.outputs.tag }}"
           IS_FIRST_RELEASE=false
-          if [ "$LATEST_TAG" = "v0.0.0" ]; then
+          if [ "$ORIGINAL_TAG" = "v0.0.0" ]; then
             IS_FIRST_RELEASE=true
           fi
 
@@ -257,11 +279,12 @@ jobs:
           echo "[PKG] RELEASE PREVIEW"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
-          echo "Release Type:    ${{ inputs.release_type }}"
+          RELEASE_TYPE_DISPLAY="${{ inputs.release_type }}"
+          echo "Release Type:    $RELEASE_TYPE_DISPLAY"
           if [ "$IS_FIRST_RELEASE" = "true" ]; then
             echo "Current Version: (none - first release)"
           else
-            echo "Current Version: $LATEST_TAG"
+            echo "Current Version: $NORMALIZED_TAG"
           fi
           echo "Next Version:    ${{ steps.next-version.outputs.tag }}"
           if [ "$IS_FIRST_RELEASE" = "true" ]; then
@@ -274,7 +297,7 @@ jobs:
           if [ "$IS_FIRST_RELEASE" = "true" ]; then
             echo "Compare View:    (Initial release - no previous version to compare)"
           else
-            echo "Compare View:    https://github.com/${{ github.repository }}/compare/$LATEST_TAG...HEAD"
+            echo "Compare View:    https://github.com/${{ github.repository }}/compare/$ORIGINAL_TAG...HEAD"
           fi
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -295,9 +318,10 @@ jobs:
       - name: Display dry-run preview
         if: ${{ inputs.dry_run == 'true' }}
         run: |
-          LATEST_TAG="${{ steps.current-version.outputs.tag }}"
+          ORIGINAL_TAG="${{ steps.current-version.outputs.original_tag }}"
+          NORMALIZED_TAG="${{ steps.current-version.outputs.tag }}"
           IS_FIRST_RELEASE=false
-          if [ "$LATEST_TAG" = "v0.0.0" ]; then
+          if [ "$ORIGINAL_TAG" = "v0.0.0" ]; then
             IS_FIRST_RELEASE=true
           fi
 
@@ -305,11 +329,12 @@ jobs:
           echo "[?] DRY-RUN MODE - PREVIEW ONLY"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
-          echo "Release Type:    ${{ inputs.release_type }}"
+          RELEASE_TYPE_DISPLAY="${{ inputs.release_type }}"
+          echo "Release Type:    $RELEASE_TYPE_DISPLAY"
           if [ "$IS_FIRST_RELEASE" = "true" ]; then
             echo "Current Version: (none - first release)"
           else
-            echo "Current Version: $LATEST_TAG"
+            echo "Current Version: $NORMALIZED_TAG"
           fi
           echo "Next Version:    ${{ steps.next-version.outputs.tag }}"
           if [ "$IS_FIRST_RELEASE" = "true" ]; then
@@ -322,7 +347,7 @@ jobs:
           if [ "$IS_FIRST_RELEASE" = "true" ]; then
             echo "Compare View:    (Initial release - no previous version to compare)"
           else
-            echo "Compare View:    https://github.com/${{ github.repository }}/compare/$LATEST_TAG...HEAD"
+            echo "Compare View:    https://github.com/${{ github.repository }}/compare/$ORIGINAL_TAG...HEAD"
           fi
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -394,17 +419,19 @@ jobs:
           NEXT_TAG="${{ steps.next-version.outputs.tag }}"
           RELEASE_TYPE="${{ inputs.release_type }}"
           COMMIT_COUNT="${{ steps.commit-range.outputs.count }}"
-          LATEST_TAG="${{ steps.current-version.outputs.tag }}"
+          ORIGINAL_TAG="${{ steps.current-version.outputs.original_tag }}"
+          NORMALIZED_TAG="${{ steps.current-version.outputs.tag }}"
           CURRENT_DATE=$(date +%Y-%m-%d)
 
           # Create tag message with proper newlines using printf
           # Handle first release differently (no previous tag to reference)
-          if [ "$LATEST_TAG" = "v0.0.0" ]; then
+          # Use normalized tag for display in message (shows semantic version)
+          if [ "$ORIGINAL_TAG" = "v0.0.0" ]; then
             # First release - no previous tag to reference
             TAG_MESSAGE=$(printf "Release %s (%s) - %s\n\nAutomated release via GitHub Actions workflow.\nInitial release. Includes %s commits." "$NEXT_TAG" "$RELEASE_TYPE" "$CURRENT_DATE" "$COMMIT_COUNT")
           else
-            # Subsequent release - reference previous tag
-            TAG_MESSAGE=$(printf "Release %s (%s) - %s\n\nAutomated release via GitHub Actions workflow.\nIncludes %s commits since %s." "$NEXT_TAG" "$RELEASE_TYPE" "$CURRENT_DATE" "$COMMIT_COUNT" "$LATEST_TAG")
+            # Subsequent release - reference previous normalized tag for display
+            TAG_MESSAGE=$(printf "Release %s (%s) - %s\n\nAutomated release via GitHub Actions workflow.\nIncludes %s commits since %s." "$NEXT_TAG" "$RELEASE_TYPE" "$CURRENT_DATE" "$COMMIT_COUNT" "$NORMALIZED_TAG")
           fi
 
           # Validate tag message length (Git limit is ~64KB, use conservative 60KB)
