@@ -210,6 +210,12 @@ class MusicDLConfig(BaseModel):
                             )
                         else:
                             # Simple format: {name: url}
+                            # Validate that dict has exactly one key-value pair
+                            if len(item) != 1:
+                                raise ConfigError(
+                                    f"Invalid album format: dict with {len(item)} keys {list(item.keys())}. "
+                                    "Use extended format with 'name' and 'url' keys, or simple format with single key-value pair."
+                                )
                             for name, url in item.items():
                                 result.append(
                                     MusicSource(name=name, url=url, create_m3u=False)

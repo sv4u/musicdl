@@ -227,6 +227,15 @@ class Downloader:
                 logger.info("Embedding metadata...")
                 self.metadata.embed(downloaded_path, song, song.cover_url)
 
+                # Verify file exists after download and metadata embedding
+                if not downloaded_path.exists():
+                    # Set cache to False to reflect actual state
+                    cache_key = f"file_exists:{downloaded_path.resolve()}"
+                    self.file_existence_cache.set(cache_key, False)
+                    raise DownloadError(
+                        f"File not found after download and metadata embedding: {downloaded_path}"
+                    )
+
                 # Invalidate cache entry (file now exists)
                 self._invalidate_file_cache(downloaded_path)
 
@@ -260,12 +269,12 @@ class Downloader:
             album_data = self.spotify.get_album(album_url)
             tracks = []
 
-            # Get all tracks (handle pagination)
+            # Get all tracks (handle pagination with rate limiting)
             items = album_data["tracks"]["items"]
             tracks_obj = album_data["tracks"]
             while tracks_obj.get("next"):
-                # Get next page using spotipy's next() method
-                next_data = self.spotify.client.next(tracks_obj)
+                # Get next page with rate limiting
+                next_data = self.spotify._next_with_rate_limit(tracks_obj)
                 items.extend(next_data["items"])
                 tracks_obj = next_data
 
@@ -300,12 +309,13 @@ class Downloader:
             playlist_data = self.spotify.get_playlist(playlist_url)
             tracks = []
 
-            # Get all tracks (handle pagination)
+            # Get all tracks (handle pagination with rate limiting)
             # Note: playlist tracks structure is different - items contain track objects
             tracks_obj = playlist_data["tracks"]
             items = tracks_obj["items"]
             while tracks_obj.get("next"):
-                next_data = self.spotify.client.next(tracks_obj)
+                # Get next page with rate limiting
+                next_data = self.spotify._next_with_rate_limit(tracks_obj)
                 items.extend(next_data["items"])
                 tracks_obj = next_data
 
