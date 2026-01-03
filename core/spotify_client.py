@@ -149,6 +149,8 @@ class RateLimiter:
         # Track request timestamps
         self.request_times: deque = deque()
         self.lock = threading.RLock()
+        # Use condition variable for proper thread-safe waiting
+        self.condition = threading.Condition(self.lock)
 
     def acquire(self, timeout: Optional[float] = None) -> bool:
         """
@@ -162,7 +164,7 @@ class RateLimiter:
         """
         start_time = time.time()
 
-        with self.lock:
+        with self.condition:
             while True:
                 now = time.time()
 
@@ -194,8 +196,9 @@ class RateLimiter:
                     if elapsed + wait_time > timeout:
                         return False
 
-                # Wait before retrying
-                time.sleep(min(wait_time, 0.1))  # Sleep in small increments
+                # Wait with condition variable (releases lock, re-acquires on wake)
+                # This ensures thread-safe waiting without holding the lock
+                self.condition.wait(min(wait_time, 0.1))
 
     def wait_if_needed(self) -> None:
         """Wait if necessary to respect rate limits."""
@@ -245,10 +248,11 @@ class SpotifyClient:
         # Rate limiting
         self.rate_limit_enabled = rate_limit_enabled
         if rate_limit_enabled:
+            # Set burst_capacity to match max_requests to prevent exceeding Spotify limits
             self.rate_limiter = RateLimiter(
                 max_requests=rate_limit_requests,
                 window_seconds=rate_limit_window,
-                burst_capacity=100,
+                burst_capacity=rate_limit_requests,  # No burst beyond normal limit
             )
         else:
             self.rate_limiter = None
