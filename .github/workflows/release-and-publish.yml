@@ -415,48 +415,6 @@ jobs:
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-      - name: Create and push tag
-        if: ${{ inputs.dry_run != 'true' }}
-        id: create-tag
-        run: |
-          NEXT_TAG="${{ steps.next-version.outputs.tag }}"
-          RELEASE_TYPE="${{ inputs.release_type }}"
-          COMMIT_COUNT="${{ steps.commit-range.outputs.count }}"
-          ORIGINAL_TAG="${{ steps.current-version.outputs.original_tag }}"
-          NORMALIZED_TAG="${{ steps.current-version.outputs.tag }}"
-          CURRENT_DATE=$(date +%Y-%m-%d)
-
-          # Create tag message with proper newlines using printf
-          # Handle first release differently (no previous tag to reference)
-          # Use normalized tag for display in message (shows semantic version)
-          if [ "$ORIGINAL_TAG" = "v0.0.0" ]; then
-            # First release - no previous tag to reference
-            TAG_MESSAGE=$(printf "Release %s (%s) - %s\n\nAutomated release via GitHub Actions workflow.\nInitial release. Includes %s commits." "$NEXT_TAG" "$RELEASE_TYPE" "$CURRENT_DATE" "$COMMIT_COUNT")
-          else
-            # Subsequent release - reference previous normalized tag for display
-            TAG_MESSAGE=$(printf "Release %s (%s) - %s\n\nAutomated release via GitHub Actions workflow.\nIncludes %s commits since %s." "$NEXT_TAG" "$RELEASE_TYPE" "$CURRENT_DATE" "$COMMIT_COUNT" "$NORMALIZED_TAG")
-          fi
-
-          # Validate tag message length (Git limit is ~64KB, use conservative 60KB)
-          TAG_MESSAGE_LENGTH=$(printf '%s' "$TAG_MESSAGE" | wc -c)
-          MAX_TAG_MESSAGE_LENGTH=61440  # 60KB in bytes
-          if [ "$TAG_MESSAGE_LENGTH" -gt "$MAX_TAG_MESSAGE_LENGTH" ]; then
-            echo "[X] Error: Tag message exceeds maximum length ($TAG_MESSAGE_LENGTH > $MAX_TAG_MESSAGE_LENGTH bytes)"
-            echo "   This may occur with extremely large commit counts. Consider splitting the release."
-            exit 1
-          fi
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          echo "Creating tag: $NEXT_TAG"
-          git tag -a "$NEXT_TAG" -m "$TAG_MESSAGE"
-
-          echo "Pushing tag to remote..."
-          git push origin "$NEXT_TAG"
-
-          echo "[OK] Tag $NEXT_TAG created and pushed successfully"
-
       - name: Verify GitHub CLI
         if: ${{ inputs.dry_run != 'true' }}
         run: |
@@ -523,7 +481,7 @@ jobs:
         run: |
           # Install git-cliff using pre-built binary
           GIT_CLIFF_VERSION="1.4.1"
-          curl -L "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/git-cliff-${GIT_CLIFF_VERSION}-x86_64-unknown-linux-gnu.tar.gz" | tar -xz
+          curl -L "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/git-cliff-${GIT_CLIFF_VERSION}-x86_64-unknown-linux-gnu.tar.gz" | tar -xz --strip-components=1
           sudo mv git-cliff /usr/local/bin/
           git-cliff --version
 
@@ -546,18 +504,16 @@ jobs:
           # Check if git-cliff succeeded
           if [ $? -ne 0 ]; then
             echo "[!] Warning: git-cliff failed, falling back to basic changelog"
-            # Fallback: create basic changelog
+            # Fallback: create basic changelog (must match regex pattern /^## \[/)
             if [ "$ORIGINAL_TAG" = "v0.0.0" ]; then
               COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo "0")
-              CHANGELOG="## $NEXT_TAG - $(date +%Y-%m-%d)
+              CHANGELOG="## [$NEXT_TAG] - $(date +%Y-%m-%d)
 
 Initial release with $COMMIT_COUNT commits.
-
-**Full Changelog**: https://github.com/${{ github.repository }}/compare/HEAD...$NEXT_TAG
 "
             else
               COMMIT_COUNT=$(git rev-list --count ${ORIGINAL_TAG}..HEAD 2>/dev/null || echo "0")
-              CHANGELOG="## $NEXT_TAG - $(date +%Y-%m-%d)
+              CHANGELOG="## [$NEXT_TAG] - $(date +%Y-%m-%d)
 
 Release with $COMMIT_COUNT commits since $ORIGINAL_TAG.
 
@@ -632,15 +588,57 @@ EOF
             echo "[OK] CHANGELOG.md updated and committed"
           fi
 
+      - name: Create and push tag
+        if: ${{ inputs.dry_run != 'true' }}
+        id: create-tag
+        run: |
+          NEXT_TAG="${{ steps.next-version.outputs.tag }}"
+          RELEASE_TYPE="${{ inputs.release_type }}"
+          COMMIT_COUNT="${{ steps.commit-range.outputs.count }}"
+          ORIGINAL_TAG="${{ steps.current-version.outputs.original_tag }}"
+          NORMALIZED_TAG="${{ steps.current-version.outputs.tag }}"
+          CURRENT_DATE=$(date +%Y-%m-%d)
+
+          # Create tag message with proper newlines using printf
+          # Handle first release differently (no previous tag to reference)
+          # Use normalized tag for display in message (shows semantic version)
+          if [ "$ORIGINAL_TAG" = "v0.0.0" ]; then
+            # First release - no previous tag to reference
+            TAG_MESSAGE=$(printf "Release %s (%s) - %s\n\nAutomated release via GitHub Actions workflow.\nInitial release. Includes %s commits." "$NEXT_TAG" "$RELEASE_TYPE" "$CURRENT_DATE" "$COMMIT_COUNT")
+          else
+            # Subsequent release - reference previous normalized tag for display
+            TAG_MESSAGE=$(printf "Release %s (%s) - %s\n\nAutomated release via GitHub Actions workflow.\nIncludes %s commits since %s." "$NEXT_TAG" "$RELEASE_TYPE" "$CURRENT_DATE" "$COMMIT_COUNT" "$NORMALIZED_TAG")
+          fi
+
+          # Validate tag message length (Git limit is ~64KB, use conservative 60KB)
+          TAG_MESSAGE_LENGTH=$(printf '%s' "$TAG_MESSAGE" | wc -c)
+          MAX_TAG_MESSAGE_LENGTH=61440  # 60KB in bytes
+          if [ "$TAG_MESSAGE_LENGTH" -gt "$MAX_TAG_MESSAGE_LENGTH" ]; then
+            echo "[X] Error: Tag message exceeds maximum length ($TAG_MESSAGE_LENGTH > $MAX_TAG_MESSAGE_LENGTH bytes)"
+            echo "   This may occur with extremely large commit counts. Consider splitting the release."
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          echo "Creating tag: $NEXT_TAG"
+          git tag -a "$NEXT_TAG" -m "$TAG_MESSAGE"
+
+          echo "Pushing tag to remote..."
+          git push origin "$NEXT_TAG"
+
+          echo "[OK] Tag $NEXT_TAG created and pushed successfully"
+
       - name: Create GitHub release with changelog
         if: ${{ inputs.dry_run != 'true' }}
         id: create-release
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+          CHANGELOG: ${{ steps.changelog.outputs.changelog }}
         run: |
           NEXT_TAG="${{ steps.next-version.outputs.tag }}"
           RELEASE_TITLE="Release $NEXT_TAG"
-          CHANGELOG="${{ steps.changelog.outputs.changelog }}"
 
           if [ -z "${{ secrets.RELEASE_PAT }}" ]; then
             echo "[!] Warning: RELEASE_PAT secret not configured."

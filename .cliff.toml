@@ -24,7 +24,8 @@ body = """
 ## [Unreleased]
 
 {% endif %}\
-{% if breaking.len() > 0 %}
+{% set breaking = commits | filter(attribute="breaking", value=true) %}
+{% if breaking | length > 0 %}
 ### ⚠️ Breaking Changes
 
 {% for commit in breaking %}
@@ -32,7 +33,8 @@ body = """
 {% endfor %}
 
 {% endif %}\
-{% for group, commits in commits | group_by(attribute="group") %}
+{% set non_breaking_commits = commits | filter(attribute="breaking", value=false) %}
+{% for group, commits in non_breaking_commits | group_by(attribute="group") %}
 ### {{ group | upper_first }}
 
 {% for commit in commits %}
@@ -105,16 +107,14 @@ commit_parsers = [
 ]
 
 # Link parsing (for PR/issue references)
-[git.link_parsers]
-# Match PR references: (#123) or (PR #123)
-pattern = '\(#(\d+)\)|\(PR #(\d+)\)'
-href = "https://github.com/sv4u/musicdl/pull/$1"
-text = "#$1"
-
-# Match issue references: (#456) or (issue #456)
-pattern = '\(#(\d+)\)|\(issue #(\d+)\)'
-href = "https://github.com/sv4u/musicdl/issues/$1"
-text = "#$1"
+link_parsers = [
+    # Match PR references: (#123) or (PR #123)
+    # Use non-capturing groups for prefixes, single capture group for number
+    { pattern = '\((?:PR )?#(\d+)\)', href = "https://github.com/sv4u/musicdl/pull/$1", text = "#$1" },
+    # Match issue references: (#456) or (issue #456)
+    # Use non-capturing groups for prefixes, single capture group for number
+    { pattern = '\((?:issue )?#(\d+)\)', href = "https://github.com/sv4u/musicdl/issues/$1", text = "#$1" },
+]
 
 # Tag processing
 [git.tag_pattern]
