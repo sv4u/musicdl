@@ -304,10 +304,11 @@ jobs:
           echo ""
           echo "[!] This will:"
           echo "   1. Create and push tag: ${{ steps.next-version.outputs.tag }}"
-          echo "   2. Generate changelog from commits"
-          echo "   3. Create and publish GitHub release"
-          echo "   4. Build Docker image"
-          echo "   5. Publish Docker image to GHCR"
+          echo "   2. Generate structured changelog using git-cliff"
+          echo "   3. Update CHANGELOG.md in repository"
+          echo "   4. Create and publish GitHub release"
+          echo "   5. Build Docker image"
+          echo "   6. Publish Docker image to GHCR"
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo ""
@@ -406,9 +407,11 @@ jobs:
           echo ""
           echo "In a real release, this workflow would:"
           echo "  1. Create and push tag: ${{ steps.next-version.outputs.tag }}"
-          echo "  2. Create GitHub release with auto-generated changelog"
-          echo "  3. Build Docker image"
-          echo "  4. Publish Docker image to GHCR"
+          echo "  2. Generate structured changelog using git-cliff"
+          echo "  3. Update CHANGELOG.md in repository"
+          echo "  4. Create GitHub release with structured changelog"
+          echo "  5. Build Docker image"
+          echo "  6. Publish Docker image to GHCR"
           echo ""
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
@@ -515,6 +518,120 @@ jobs:
             org.opencontainers.image.created=${{ steps.build-timestamp.outputs.timestamp }}
             org.opencontainers.image.version=${{ steps.next-version.outputs.tag }}
 
+      - name: Install git-cliff
+        if: ${{ inputs.dry_run != 'true' }}
+        run: |
+          # Install git-cliff using pre-built binary
+          GIT_CLIFF_VERSION="1.4.1"
+          curl -L "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/git-cliff-${GIT_CLIFF_VERSION}-x86_64-unknown-linux-gnu.tar.gz" | tar -xz
+          sudo mv git-cliff /usr/local/bin/
+          git-cliff --version
+
+      - name: Generate changelog
+        if: ${{ inputs.dry_run != 'true' }}
+        id: changelog
+        run: |
+          ORIGINAL_TAG="${{ steps.current-version.outputs.original_tag }}"
+          NEXT_TAG="${{ steps.next-version.outputs.tag }}"
+          
+          # Generate changelog using git-cliff
+          if [ "$ORIGINAL_TAG" = "v0.0.0" ]; then
+            # First release - generate from all commits
+            CHANGELOG=$(git-cliff --tag "$NEXT_TAG" --output - 2>&1)
+          else
+            # Generate changelog from previous tag
+            CHANGELOG=$(git-cliff --tag "$NEXT_TAG" --latest --output - 2>&1)
+          fi
+          
+          # Check if git-cliff succeeded
+          if [ $? -ne 0 ]; then
+            echo "[!] Warning: git-cliff failed, falling back to basic changelog"
+            # Fallback: create basic changelog
+            if [ "$ORIGINAL_TAG" = "v0.0.0" ]; then
+              COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo "0")
+              CHANGELOG="## $NEXT_TAG - $(date +%Y-%m-%d)
+
+Initial release with $COMMIT_COUNT commits.
+
+**Full Changelog**: https://github.com/${{ github.repository }}/compare/HEAD...$NEXT_TAG
+"
+            else
+              COMMIT_COUNT=$(git rev-list --count ${ORIGINAL_TAG}..HEAD 2>/dev/null || echo "0")
+              CHANGELOG="## $NEXT_TAG - $(date +%Y-%m-%d)
+
+Release with $COMMIT_COUNT commits since $ORIGINAL_TAG.
+
+**Full Changelog**: https://github.com/${{ github.repository }}/compare/$ORIGINAL_TAG...$NEXT_TAG
+"
+            fi
+          fi
+          
+          # Save changelog to file for release
+          echo "$CHANGELOG" > CHANGELOG_RELEASE.md
+          
+          # Extract just the version section (without header/footer) for CHANGELOG.md
+          # git-cliff output includes header, version section, and footer
+          # We want to extract just the version section
+          VERSION_SECTION=$(echo "$CHANGELOG" | sed -n '/^## \[/,$p' | sed '/^---$/,$d')
+          
+          # Update CHANGELOG.md in repository
+          if [ -f CHANGELOG.md ]; then
+            # Prepend new version section to existing file
+            # Keep existing header, add new version section, then rest of file
+            if grep -q "^# Changelog" CHANGELOG.md; then
+              # File has header - keep it, add new version section, then rest
+              head -n 7 CHANGELOG.md > CHANGELOG_NEW.md
+              echo "" >> CHANGELOG_NEW.md
+              echo "$VERSION_SECTION" >> CHANGELOG_NEW.md
+              echo "" >> CHANGELOG_NEW.md
+              # Get rest of existing changelog (skip header)
+              tail -n +8 CHANGELOG.md >> CHANGELOG_NEW.md
+            else
+              # No header - just prepend version section
+              echo "$VERSION_SECTION" > CHANGELOG_NEW.md
+              echo "" >> CHANGELOG_NEW.md
+              cat CHANGELOG.md >> CHANGELOG_NEW.md
+            fi
+            mv CHANGELOG_NEW.md CHANGELOG.md
+          else
+            # Create new CHANGELOG.md with header and version section
+            cat > CHANGELOG.md << 'EOF'
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+EOF
+            echo "" >> CHANGELOG.md
+            echo "$VERSION_SECTION" >> CHANGELOG.md
+          fi
+          
+          # Output changelog for release
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          
+          echo "[OK] Changelog generated successfully"
+
+      - name: Commit CHANGELOG.md
+        if: ${{ inputs.dry_run != 'true' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Check if CHANGELOG.md has changes
+          if git diff --quiet CHANGELOG.md; then
+            echo "[i] No changes to CHANGELOG.md"
+          else
+            git add CHANGELOG.md
+            NEXT_TAG="${{ steps.next-version.outputs.tag }}"
+            git commit -m "docs: update CHANGELOG.md for $NEXT_TAG" || exit 0
+            git push origin main || exit 0
+            echo "[OK] CHANGELOG.md updated and committed"
+          fi
+
       - name: Create GitHub release with changelog
         if: ${{ inputs.dry_run != 'true' }}
         id: create-release
@@ -523,6 +640,7 @@ jobs:
         run: |
           NEXT_TAG="${{ steps.next-version.outputs.tag }}"
           RELEASE_TITLE="Release $NEXT_TAG"
+          CHANGELOG="${{ steps.changelog.outputs.changelog }}"
 
           if [ -z "${{ secrets.RELEASE_PAT }}" ]; then
             echo "[!] Warning: RELEASE_PAT secret not configured."
@@ -531,10 +649,10 @@ jobs:
             echo "   See workflow documentation for PAT setup instructions."
           fi
 
-          # Create release with auto-generated changelog
+          # Create release with structured changelog
           if gh release create "$NEXT_TAG" \
             --title "$RELEASE_TITLE" \
-            --generate-notes; then
+            --notes "$CHANGELOG"; then
             echo "[OK] Release $NEXT_TAG created successfully"
           else
             RELEASE_EXIT=$?

@@ -1,4 +1,22 @@
-FROM python:3.12-bookworm
+# Stage 1: Build dependencies and compile Python packages
+FROM python:3.12-slim AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+	g++ \
+	git \
+	python3-cffi \
+	libffi-dev \
+	zlib1g-dev \
+	&& rm -rf /var/lib/apt/lists/*
+
+# Copy requirements and install Python packages
+COPY ./requirements.txt /tmp/requirements.txt
+RUN python3 -m pip install --upgrade pip && \
+	python3 -m pip install --user --no-cache-dir -r /tmp/requirements.txt
+
+# Stage 2: Runtime image
+FROM python:3.12-slim
 
 # Add author/maintainer labels
 LABEL org.opencontainers.image.authors="sasank@vishnubhatlas.net"
@@ -19,14 +37,20 @@ ENV CONFIG_PATH=/scripts/config.yaml
 #   - Docker Compose environment section
 # Do NOT set these at build time - they should be injected at runtime for security
 
+# Install runtime dependencies only (no build tools)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-	ca-certificates curl ffmpeg openssl aria2 g++ \
-	git python3-cffi libffi-dev zlib1g-dev && \
-	rm -rf /var/lib/apt/lists/*
+	ca-certificates \
+	curl \
+	ffmpeg \
+	openssl \
+	aria2 \
+	&& rm -rf /var/lib/apt/lists/*
 
-COPY ./requirements.txt /tmp/requirements.txt
-RUN python3 -m pip install --upgrade pip && \
-	python3 -m pip install -r /tmp/requirements.txt
+# Copy Python packages from builder stage
+COPY --from=builder /root/.local /root/.local
+
+# Make sure scripts in .local are usable
+ENV PATH=/root/.local/bin:$PATH
 
 RUN mkdir -p /scripts /download && \
 	chmod 755 /download
