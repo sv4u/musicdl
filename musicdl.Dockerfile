@@ -38,12 +38,15 @@ ENV CONFIG_PATH=/scripts/config.yaml
 # Do NOT set these at build time - they should be injected at runtime for security
 
 # Install runtime dependencies only (no build tools)
+# Include runtime libraries for compiled Python packages (libffi8 for CFFI, zlib1g for compression)
 RUN apt-get update && apt-get install -y --no-install-recommends \
 	ca-certificates \
 	curl \
 	ffmpeg \
 	openssl \
 	aria2 \
+	libffi8 \
+	zlib1g \
 	&& rm -rf /var/lib/apt/lists/*
 
 # Copy Python packages from builder stage
@@ -62,7 +65,8 @@ COPY config.yaml /scripts/config.yaml
 
 # Create entrypoint script that respects CONFIG_PATH env var
 # Set PYTHONPATH to include /scripts so Python can find the core module
-RUN printf '#!/bin/sh\nexport PYTHONPATH=/scripts:$PYTHONPATH\npython3 /scripts/download.py "${CONFIG_PATH:-/scripts/config.yaml}"\n' > /scripts/entrypoint.sh && \
+# Use proper error handling and exit codes
+RUN printf '#!/bin/sh\nset -e\nexport PYTHONPATH=/scripts:$PYTHONPATH\nexec python3 /scripts/download.py "${CONFIG_PATH:-/scripts/config.yaml}"\n' > /scripts/entrypoint.sh && \
 	chmod +x /scripts/entrypoint.sh
 
 # Set working directory to download location
