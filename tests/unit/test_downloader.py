@@ -162,17 +162,36 @@ class TestDownloader:
     
     def test_download_track_success(self, mock_downloader_dependencies):
         """Test successful track download."""
+        import os
         downloader, mock_spotify, mock_audio, mock_metadata, config, tmp_dir = mock_downloader_dependencies
         
-        # Create output file
-        output_file = tmp_dir / "Rush" / "I Love My Computer" / "03 - YYZ.mp3"
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-        mock_audio.download.return_value = output_file
+        # Clear file existence cache to ensure fresh start
+        downloader.file_existence_cache.clear()
         
-        success, path = downloader.download_track("https://open.spotify.com/track/1RKbVxcm267VdsIzqY7msi")
+        # Create a side_effect that creates the file at the requested path
+        def download_side_effect(audio_url, output_path):
+            """Create file at requested path."""
+            output_path = Path(output_path)
+            # Resolve relative paths relative to current working directory
+            if not output_path.is_absolute():
+                output_path = Path.cwd() / output_path
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"fake audio content")
+            return output_path
+        
+        mock_audio.download.side_effect = download_side_effect
+        
+        # Change to tmp_dir so relative paths resolve correctly
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_dir)
+            success, path = downloader.download_track("https://open.spotify.com/track/1RKbVxcm267VdsIzqY7msi")
+        finally:
+            os.chdir(original_cwd)
         
         assert success is True
-        assert path == output_file
+        # Path should match the expected relative path structure
+        assert path.parts[-3:] == ("Rush", "I Love My Computer", "03 - YYZ.mp3")
         mock_spotify.get_track.assert_called_once()
         mock_spotify.get_album.assert_called_once()
         mock_audio.search.assert_called_once()
@@ -221,8 +240,12 @@ class TestDownloader:
     
     def test_download_track_retry_on_failure(self, mock_downloader_dependencies, mocker):
         """Test retry logic with exponential backoff."""
+        import os
         downloader, mock_spotify, mock_audio, mock_metadata, config, tmp_dir = mock_downloader_dependencies
         config.max_retries = 3
+        
+        # Clear file existence cache to ensure fresh start
+        downloader.file_existence_cache.clear()
         
         # First two attempts fail, third succeeds
         mock_audio.search.side_effect = [
@@ -231,11 +254,27 @@ class TestDownloader:
             "https://www.youtube.com/watch?v=test123",
         ]
         
-        output_file = tmp_dir / "test.mp3"
-        mock_audio.download.return_value = output_file
+        # Create a side_effect that creates the file at the requested path
+        def download_side_effect(audio_url, output_path):
+            """Create file at requested path."""
+            output_path = Path(output_path)
+            # Resolve relative paths relative to current working directory
+            if not output_path.is_absolute():
+                output_path = Path.cwd() / output_path
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"fake audio content")
+            return output_path
         
-        with patch("time.sleep"):  # Speed up test
-            success, path = downloader.download_track("https://open.spotify.com/track/1RKbVxcm267VdsIzqY7msi")
+        mock_audio.download.side_effect = download_side_effect
+        
+        # Change to tmp_dir so relative paths resolve correctly
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_dir)
+            with patch("time.sleep"):  # Speed up test
+                success, path = downloader.download_track("https://open.spotify.com/track/1RKbVxcm267VdsIzqY7msi")
+        finally:
+            os.chdir(original_cwd)
         
         assert success is True
         assert mock_audio.search.call_count == 3  # Retried 3 times
@@ -269,6 +308,7 @@ class TestDownloader:
     
     def test_download_album(self, mock_downloader_dependencies):
         """Test downloading entire album."""
+        import os
         downloader, mock_spotify, mock_audio, mock_metadata, config, tmp_dir = mock_downloader_dependencies
         
         # Mock album with multiple tracks
@@ -292,10 +332,26 @@ class TestDownloader:
         
         mock_spotify.get_track.side_effect = get_track_side_effect
         
-        output_file = tmp_dir / "test.mp3"
-        mock_audio.download.return_value = output_file
+        # Create a side_effect that creates the file at the requested path
+        def download_side_effect(audio_url, output_path):
+            """Create file at requested path."""
+            output_path = Path(output_path)
+            # Resolve relative paths relative to current working directory
+            if not output_path.is_absolute():
+                output_path = Path.cwd() / output_path
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"fake audio content")
+            return output_path
         
-        results = downloader.download_album("https://open.spotify.com/album/77CZUF57sYqgtznUe3OikQ")
+        mock_audio.download.side_effect = download_side_effect
+        
+        # Change to tmp_dir so relative paths resolve correctly
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_dir)
+            results = downloader.download_album("https://open.spotify.com/album/77CZUF57sYqgtznUe3OikQ")
+        finally:
+            os.chdir(original_cwd)
         
         assert len(results) == 2
         assert all(success for success, _ in results)
@@ -331,6 +387,7 @@ class TestDownloader:
         
         output_file = tmp_dir / "Rush" / "I Love My Computer" / "03 - YYZ.mp3"
         output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file.write_bytes(b"fake audio content")  # Create actual file
         mock_audio.download.return_value = output_file
         
         # Change to tmp_dir so M3U file is created there
@@ -349,6 +406,7 @@ class TestDownloader:
     
     def test_download_artist(self, mock_downloader_dependencies):
         """Test downloading artist discography."""
+        import os
         downloader, mock_spotify, mock_audio, mock_metadata, config, tmp_dir = mock_downloader_dependencies
         
         # Mock artist albums
@@ -362,10 +420,26 @@ class TestDownloader:
         mock_spotify.get_album.return_value = SAMPLE_ALBUM_DATA
         mock_spotify.get_track.return_value = SAMPLE_TRACK_DATA
         
-        output_file = tmp_dir / "test.mp3"
-        mock_audio.download.return_value = output_file
+        # Create a side_effect that creates the file at the requested path
+        def download_side_effect(audio_url, output_path):
+            """Create file at requested path."""
+            output_path = Path(output_path)
+            # Resolve relative paths relative to current working directory
+            if not output_path.is_absolute():
+                output_path = Path.cwd() / output_path
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"fake audio content")
+            return output_path
         
-        results = downloader.download_artist("3hOdow4ZPmrby7Q1wfPLEy")
+        mock_audio.download.side_effect = download_side_effect
+        
+        # Change to tmp_dir so relative paths resolve correctly
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_dir)
+            results = downloader.download_artist("3hOdow4ZPmrby7Q1wfPLEy")
+        finally:
+            os.chdir(original_cwd)
         
         # Should download tracks from both albums
         # Each album has 2 tracks, and download_track calls get_album for each track
@@ -489,15 +563,18 @@ class TestDownloader:
         # Create output file
         output_file = tmp_dir / "Rush" / "I Love My Computer" / "03 - YYZ.mp3"
         output_file.parent.mkdir(parents=True, exist_ok=True)
+        output_file.write_bytes(b"fake audio content")  # Create actual file
         mock_audio.download.return_value = output_file
         
         # Download track
         success, path = downloader.download_track("https://open.spotify.com/track/1RKbVxcm267VdsIzqY7msi")
         
         assert success is True
+        assert path is not None
         
         # Verify cache was updated (file now exists)
-        cache_key = f"file_exists:{output_file.resolve()}"
+        # Use the path returned by downloader (which is the resolved path)
+        cache_key = f"file_exists:{path.resolve()}"
         cached_value = downloader.file_existence_cache.get(cache_key)
         assert cached_value is True
 
