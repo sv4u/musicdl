@@ -357,6 +357,55 @@ When `plan_persistence_enabled` is true, plans are saved to:
 
 You can inspect these files to see what will be downloaded, or use them for debugging.
 
+### Rate Limiting
+
+musicdl includes comprehensive rate limiting to ensure reliable API interactions with Spotify:
+
+**Features:**
+
+- **Automatic Retry**: Detects HTTP 429 (rate limit) responses and automatically retries with exponential backoff
+- **Retry-After Support**: Respects Spotify's `Retry-After` header when provided
+- **Proactive Throttling**: Prevents hitting rate limits by throttling requests before they occur
+- **Configurable**: All rate limiting behavior can be customized via configuration
+
+**How It Works:**
+
+1. **Proactive Rate Limiting**: Before each API request, the rate limiter checks if the request would exceed the limit (default: 10 requests/second). If so, it waits until the window allows the request.
+2. **Reactive Retry**: If a rate limit error (HTTP 429) occurs, the client automatically retries with exponential backoff and jitter to prevent thundering herd problems.
+3. **Retry-After Header**: When Spotify provides a `Retry-After` header, the client uses that value instead of calculating backoff.
+
+**Configuration Options:**
+
+- `spotify_rate_limit_enabled`: Enable/disable proactive rate limiting (default: `true`)
+- `spotify_rate_limit_requests`: Maximum requests per time window (default: `10`)
+- `spotify_rate_limit_window`: Time window size in seconds (default: `1.0`)
+- `spotify_max_retries`: Maximum retry attempts for rate-limited requests (default: `3`)
+- `spotify_retry_base_delay`: Base delay in seconds for exponential backoff (default: `1.0`)
+- `spotify_retry_max_delay`: Maximum delay in seconds (default: `120.0`)
+
+**Example Configuration:**
+
+```yaml
+download:
+  # Conservative rate limiting (slower but safer)
+  spotify_rate_limit_enabled: true
+  spotify_rate_limit_requests: 8  # Stay below 10 req/sec limit
+  spotify_rate_limit_window: 1.0
+  spotify_max_retries: 5
+  spotify_retry_base_delay: 2.0
+  spotify_retry_max_delay: 60.0
+```
+
+**Disabling Rate Limiting:**
+If you want to disable rate limiting (not recommended), set:
+
+```yaml
+download:
+  spotify_rate_limit_enabled: false
+```
+
+Note: Even with rate limiting disabled, the client will still retry on rate limit errors, but won't proactively throttle requests.
+
 ## Usage
 
 Run the download script with your configuration file:
