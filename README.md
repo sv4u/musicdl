@@ -386,6 +386,10 @@ docker build -f musicdl.Dockerfile -t musicdl:latest .
 `ghcr.io/sv4u/musicdl`. See the [CI/CD](#cicd) section for details on automated
 builds and publishing.
 
+**Image Size**: The Docker image uses a multi-stage build with `python:3.12-slim`
+base image, resulting in a significantly smaller image size (approximately 50-70%
+reduction compared to full Debian images) while maintaining full functionality.
+
 ### Basic Usage
 
 Run the container with a volume mount for your music library and Spotify credentials:
@@ -517,7 +521,7 @@ image building, and publishing.
 
 1. **Test & Coverage** - Runs pytest with coverage on all pull requests and pushes to `main`. Generates and uploads coverage reports (HTML and XML)
 2. **Docker Build & Test** - Builds Docker images and runs comprehensive smoke and functional tests on pull requests and pushes to `main` (images are not published in this workflow)
-3. **Release & Publish** - Manually triggered workflow that creates GitHub releases with automatically generated changelogs and publishes Docker images to GHCR in a single workflow
+3. **Release & Publish** - Manually triggered workflow that creates GitHub releases with structured changelogs (generated using git-cliff) and publishes Docker images to GHCR in a single workflow
 4. **Security & SBOM** - Performs security scanning (Trivy, Grype) and generates SBOMs (Syft, Trivy) for source code and Docker images on pull requests, pushes to `main`, and release events
 
 ### Workflow Architecture
@@ -535,7 +539,7 @@ flowchart TD
     ManualDispatch["Manual Dispatch"] --> ReleasePublishWorkflow["Release & Publish Workflow"]
     ReleasePublishWorkflow --> VersionCalc["Version Calculation major/minor/hotfix"]
     VersionCalc --> TagCreation["Create Git Tag"]
-    TagCreation --> ChangelogGen["Generate Changelog via GitHub CLI"]
+    TagCreation --> ChangelogGen["Generate Structured Changelog via git-cliff"]
     ChangelogGen --> ReleaseCreate["Create GitHub Release"]
     ReleaseCreate --> DockerBuild["Build Docker Image"]
     DockerBuild --> GHCRPublish["Publish to GHCR ghcr.io/sv4u/musicdl"]
@@ -579,13 +583,14 @@ The Release & Publish workflow creates GitHub releases with automatically genera
 4. Displays a preview of the release (version, commit count, commit types)
 5. Checks if tag already exists (local and remote)
 6. Creates and pushes a git tag with the new version
-7. Generates changelog from Conventional Commits using GitHub CLI
-8. Creates and publishes GitHub release with changelog
-9. Verifies the release was created successfully
-10. Builds Docker image from `musicdl.Dockerfile`
-11. Publishes Docker image to GHCR with version tag and latest tag
-12. Verifies the image was published successfully
-13. Displays release summary with URLs
+7. Generates structured changelog from Conventional Commits using git-cliff
+8. Updates CHANGELOG.md in the repository
+9. Creates and publishes GitHub release with structured changelog
+10. Verifies the release was created successfully
+11. Builds Docker image from `musicdl.Dockerfile` (multi-stage slim build)
+12. Publishes Docker image to GHCR with version tag and latest tag
+13. Verifies the image was published successfully
+14. Displays release summary with URLs
 
 **Version Calculation**:
 
@@ -828,6 +833,22 @@ The Dependabot configuration (`.github/dependabot.yml`) includes:
 4. **In-Memory Caching**: Simple cache implementation (no file persistence)
 5. **Focused Features**: Only core download functionality (no web UI, sync,
    etc.)
+
+## Changelog
+
+This project maintains a structured changelog in `CHANGELOG.md` that is automatically
+updated during releases. The changelog is generated using [git-cliff](https://github.com/orhun/git-cliff)
+and follows the [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) format.
+
+**Changelog Features**:
+- Categorized by type (Features, Bug Fixes, Documentation, etc.)
+- Grouped by scope (Configuration, Downloader, Docker, etc.)
+- Breaking changes highlighted prominently
+- PR and issue links included
+- Maintained automatically during releases
+
+The changelog is updated automatically when creating releases via the Release & Publish
+workflow. See the [CI/CD](#cicd) section for details on the release process.
 
 ## License
 
