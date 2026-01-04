@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 # Footer
 footer = """
 ---
-**Full Changelog**: https://github.com/sv4u/musicdl/compare/{previous_tag}...{new_tag}
+{% if previous.version %}**Full Changelog**: https://github.com/sv4u/musicdl/compare/{{ previous.version }}...{{ version }}{% else %}**Full Changelog**: https://github.com/sv4u/musicdl/releases/tag/{{ version }}{% endif %}
 """
 
 # Template for changelog body
@@ -75,11 +75,11 @@ commit_parsers = [
     { message = "^fix\\(plan\\)", group = "Bug Fixes", scope = "Plan Architecture" },
     { message = "^fix\\(tests\\)", group = "Bug Fixes", scope = "Tests" },
     { message = "^fix\\(rate-limiter\\)", group = "Bug Fixes", scope = "Rate Limiter" },
-    { message = "^fix", group = "Bug Fixes", default_scope = "General" },
     
-    # Security fixes
+    # Security fixes (must come before catch-all ^fix pattern)
     { message = "^fix\\(security\\)", group = "Security", scope = "Security" },
-    { message = "security", group = "Security", scope = "Security", skip = false },
+    
+    { message = "^fix", group = "Bug Fixes", default_scope = "General" },
     
     # Documentation
     { message = "^docs", group = "Documentation", default_scope = "General" },
@@ -108,15 +108,14 @@ commit_parsers = [
 
 # Link parsing (for PR/issue references)
 link_parsers = [
-    # Match PR references: (#123) or (PR #123)
+    # Match PR references: (PR #123) or bare (#123) - bare references default to PRs
     # Use non-capturing groups for prefixes, single capture group for number
     { pattern = '\((?:PR )?#(\d+)\)', href = "https://github.com/sv4u/musicdl/pull/$1", text = "#$1" },
-    # Match issue references: (#456) or (issue #456)
-    # Use non-capturing groups for prefixes, single capture group for number
-    { pattern = '\((?:issue )?#(\d+)\)', href = "https://github.com/sv4u/musicdl/issues/$1", text = "#$1" },
+    # Match issue references: (issue #456) - requires explicit "issue" prefix
+    # This pattern only matches when "issue" is explicitly present to avoid conflicts with PR pattern
+    { pattern = '\(issue #(\d+)\)', href = "https://github.com/sv4u/musicdl/issues/$1", text = "#$1" },
 ]
 
-# Tag processing
-[git.tag_pattern]
-pattern = '^v(.*)$'
+# Tag pattern (must be directly under [git] section, not nested)
+tag_pattern = '^v(.*)$'
 
