@@ -11,6 +11,7 @@ import yt_dlp
 
 from core.cache import TTLCache
 from core.exceptions import DownloadError
+from core.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class AudioProvider:
         audio_providers: Optional[List[str]] = None,
         cache_max_size: int = 500,
         cache_ttl: int = 86400,  # 24 hours for search results
+        rate_limiter: Optional[RateLimiter] = None,
     ):
         """
         Initialize with format and bitrate settings.
@@ -38,6 +40,7 @@ class AudioProvider:
             audio_providers: List of providers to use (youtube, youtube-music, soundcloud)
             cache_max_size: Maximum number of cached search results (default: 500)
             cache_ttl: Cache TTL in seconds for search results (default: 86400 = 24 hours)
+            rate_limiter: Optional rate limiter for managing network impact
         """
         self.output_format = output_format
         self.bitrate = bitrate
@@ -70,6 +73,9 @@ class AudioProvider:
         self.temp_dir = Path(tempfile.gettempdir()) / "musicdl"
         self.temp_dir.mkdir(parents=True, exist_ok=True)
 
+        # Rate limiting
+        self.rate_limiter = rate_limiter
+
     def search(self, query: str) -> Optional[str]:
         """
         Search for audio URL matching query (cached).
@@ -93,6 +99,11 @@ class AudioProvider:
             return cached_result
         
         logger.debug(f"Cache miss for audio search: {query}")
+        
+        # Apply rate limiting for search requests
+        if self.rate_limiter:
+            with self.rate_limiter.request():
+                pass  # Rate limit check happens in context manager
         
         # Perform search
         audio_url = None
@@ -193,11 +204,34 @@ class AudioProvider:
         # Ensure output directory exists
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # Apply rate limiting for download requests
+        if self.rate_limiter:
+            with self.rate_limiter.request():
+                pass  # Rate limit check happens in context manager
+
         # Configure yt-dlp for download
         ytdl_opts = {
             **self.ytdl_opts,
             "outtmpl": str(output_path.with_suffix(f".%(ext)s")),
         }
+
+        # Add progress hook for bandwidth limiting if enabled
+        if self.rate_limiter and self.rate_limiter.bandwidth_limiter.enabled:
+            # Track previous downloaded bytes to calculate incremental transfer
+            previous_bytes = [0]
+            
+            def progress_hook(d):
+                """Progress hook to track and throttle bandwidth."""
+                if d.get("status") == "downloading":
+                    downloaded_bytes = d.get("downloaded_bytes", 0)
+                    # Calculate incremental bytes transferred
+                    if downloaded_bytes > previous_bytes[0]:
+                        incremental_bytes = downloaded_bytes - previous_bytes[0]
+                        previous_bytes[0] = downloaded_bytes
+                        # Throttle based on bandwidth limit
+                        self.rate_limiter.transfer_bytes(incremental_bytes)
+            
+            ytdl_opts["progress_hooks"] = [progress_hook]
 
         # Add postprocessor for format conversion if needed
         if self.output_format and self.bitrate != "disable":

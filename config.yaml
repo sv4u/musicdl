@@ -27,6 +27,19 @@ download:
   # File management
   overwrite: "skip"  # skip, overwrite, metadata
 
+  # Download rate limiting (for managing network impact)
+  # These settings help control the network bandwidth and request rate
+  # to avoid overwhelming your network or hitting rate limits
+  download_rate_limit_enabled: true  # Enable download rate limiting
+  download_rate_limit_requests: 2  # Maximum requests per window (conservative default)
+  download_rate_limit_window: 1.0  # Window size in seconds
+  download_bandwidth_limit: 1048576  # Bandwidth limit in bytes per second (1MB/sec default)
+  # Set download_bandwidth_limit to null or omit to disable bandwidth limiting
+  # Examples:
+  #   download_bandwidth_limit: 524288  # 512KB/sec
+  #   download_bandwidth_limit: 2097152  # 2MB/sec
+  #   download_bandwidth_limit: null  # Unlimited bandwidth
+
 songs: []
 
 artists:

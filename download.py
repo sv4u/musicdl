@@ -261,6 +261,32 @@ def main() -> None:
         help="Path to the YAML configuration file.",
     )
 
+    # Add rate limiting arguments
+    parser.add_argument(
+        "--download-rate-limit-enabled",
+        type=lambda x: x.lower() in ("true", "1", "yes"),
+        default=None,
+        help="Enable download rate limiting (overrides config file)",
+    )
+    parser.add_argument(
+        "--download-rate-limit-requests",
+        type=int,
+        default=None,
+        help="Maximum requests per window (overrides config file)",
+    )
+    parser.add_argument(
+        "--download-rate-limit-window",
+        type=float,
+        default=None,
+        help="Window size in seconds (overrides config file)",
+    )
+    parser.add_argument(
+        "--download-bandwidth-limit",
+        type=int,
+        default=None,
+        help="Bandwidth limit in bytes per second (overrides config file, 0 = unlimited)",
+    )
+
     # Parse arguments
     args = parser.parse_args()
 
@@ -275,6 +301,19 @@ def main() -> None:
         logger.error(f"Unexpected error loading config: {e}")
         sys.exit(1)
 
+    # Apply CLI overrides for rate limiting
+    if args.download_rate_limit_enabled is not None:
+        config.download.download_rate_limit_enabled = args.download_rate_limit_enabled
+    if args.download_rate_limit_requests is not None:
+        config.download.download_rate_limit_requests = args.download_rate_limit_requests
+    if args.download_rate_limit_window is not None:
+        config.download.download_rate_limit_window = args.download_rate_limit_window
+    if args.download_bandwidth_limit is not None:
+        # 0 means unlimited (None)
+        config.download.download_bandwidth_limit = (
+            None if args.download_bandwidth_limit == 0 else args.download_bandwidth_limit
+        )
+
     # Setup logging based on config (if log_level is available)
     if hasattr(config.download, "log_level"):
         setup_logging(config.download.log_level)
@@ -285,6 +324,18 @@ def main() -> None:
     logger.info(f"Max retries: {config.download.max_retries}")
     logger.info(f"Format: {config.download.format}")
     logger.info(f"Bitrate: {config.download.bitrate}")
+    if config.download.download_rate_limit_enabled:
+        logger.info(
+            f"Download rate limiting: {config.download.download_rate_limit_requests} "
+            f"requests per {config.download.download_rate_limit_window}s"
+        )
+        if config.download.download_bandwidth_limit:
+            bandwidth_mb = config.download.download_bandwidth_limit / (1024 * 1024)
+            logger.info(f"Bandwidth limit: {bandwidth_mb:.2f} MB/s")
+        else:
+            logger.info("Bandwidth limit: unlimited")
+    else:
+        logger.info("Download rate limiting: disabled")
 
     # Process downloads
     try:

@@ -17,6 +17,7 @@ from spotipy.oauth2 import SpotifyClientCredentials
 
 from core.cache import TTLCache
 from core.exceptions import SpotifyError, SpotifyRateLimitError
+from core.rate_limiter import RateLimiter as GeneralRateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +221,7 @@ class SpotifyClient:
         rate_limit_enabled: bool = True,
         rate_limit_requests: int = 10,
         rate_limit_window: float = 1.0,
+        general_rate_limiter: Optional[GeneralRateLimiter] = None,
     ):
         """
         Initialize with credentials and cache settings.
@@ -235,6 +237,7 @@ class SpotifyClient:
             rate_limit_enabled: Whether to enable proactive rate limiting
             rate_limit_requests: Maximum requests per window
             rate_limit_window: Window size in seconds
+            general_rate_limiter: Optional general rate limiter for managing network impact
         """
         credentials = SpotifyClientCredentials(
             client_id=client_id, client_secret=client_secret
@@ -245,7 +248,7 @@ class SpotifyClient:
         self.retry_base_delay = retry_base_delay
         self.retry_max_delay = retry_max_delay
 
-        # Rate limiting
+        # Rate limiting (Spotify-specific)
         self.rate_limit_enabled = rate_limit_enabled
         if rate_limit_enabled:
             # Set burst_capacity to match max_requests to prevent exceeding Spotify limits
@@ -256,6 +259,9 @@ class SpotifyClient:
             )
         else:
             self.rate_limiter = None
+
+        # General rate limiter for network impact management
+        self.general_rate_limiter = general_rate_limiter
 
     def _is_rate_limit_error(self, exception: Exception) -> bool:
         """
@@ -311,7 +317,11 @@ class SpotifyClient:
         if cached is not None:
             return cached
 
-        # Wait for rate limit if enabled
+        # Wait for general rate limit if enabled (applies to all network operations)
+        if self.general_rate_limiter:
+            self.general_rate_limiter.wait_for_request()
+
+        # Wait for Spotify-specific rate limit if enabled
         if self.rate_limiter:
             self.rate_limiter.wait_if_needed()
 
@@ -424,7 +434,11 @@ class SpotifyClient:
             SpotifyRateLimitError: If rate limited and max retries exceeded
             SpotifyError: For other Spotify API errors
         """
-        # Wait for rate limit if enabled
+        # Wait for general rate limit if enabled (applies to all network operations)
+        if self.general_rate_limiter:
+            self.general_rate_limiter.wait_for_request()
+
+        # Wait for Spotify-specific rate limit if enabled
         if self.rate_limiter:
             self.rate_limiter.wait_if_needed()
 
