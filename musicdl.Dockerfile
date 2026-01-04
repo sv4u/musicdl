@@ -11,9 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	&& rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python packages
+# Install to a dedicated directory to ensure all dependencies are preserved
 COPY ./requirements.txt /tmp/requirements.txt
 RUN python3 -m pip install --upgrade pip && \
-	python3 -m pip install --user --no-cache-dir -r /tmp/requirements.txt
+	python3 -m pip install --target /app/packages --no-cache-dir -r /tmp/requirements.txt
 
 # Stage 2: Runtime image
 FROM python:3.12-slim
@@ -50,10 +51,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 	&& rm -rf /var/lib/apt/lists/*
 
 # Copy Python packages from builder stage
-COPY --from=builder /root/.local /root/.local
+# Copy the entire packages directory to ensure all dependencies are available
+COPY --from=builder /app/packages /app/packages
 
-# Make sure scripts in .local are usable
-ENV PATH=/root/.local/bin:$PATH
+# Verify yt-dlp is available (helps catch issues early)
+# This ensures the package is properly installed and accessible
+RUN PYTHONPATH=/app/packages:$PYTHONPATH python3 -c "import yt_dlp; print(f'yt-dlp version: {yt_dlp.__version__}')" || \
+	(echo "ERROR: yt-dlp not found in container" && exit 1)
 
 RUN mkdir -p /scripts /download && \
 	chmod 755 /download
@@ -64,9 +68,10 @@ COPY core/ /scripts/core/
 COPY config.yaml /scripts/config.yaml
 
 # Create entrypoint script that respects CONFIG_PATH env var
-# Set PYTHONPATH to include /scripts so Python can find the core module
+# Set PYTHONPATH to include /scripts and /app/packages so Python can find all modules
+# Ensure Python can find all installed packages including yt-dlp
 # Use proper error handling and exit codes
-RUN printf '#!/bin/sh\nset -e\nexport PYTHONPATH=/scripts:$PYTHONPATH\nexec python3 /scripts/download.py "${CONFIG_PATH:-/scripts/config.yaml}"\n' > /scripts/entrypoint.sh && \
+RUN printf '#!/bin/sh\nset -e\nexport PYTHONPATH=/app/packages:/scripts:$PYTHONPATH\nexec python3 /scripts/download.py "${CONFIG_PATH:-/scripts/config.yaml}"\n' > /scripts/entrypoint.sh && \
 	chmod +x /scripts/entrypoint.sh
 
 # Set working directory to download location
