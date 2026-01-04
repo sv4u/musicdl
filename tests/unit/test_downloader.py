@@ -3,7 +3,7 @@ Unit tests for Downloader orchestrator with mocked dependencies.
 """
 import pytest
 from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch, call
+from unittest.mock import Mock, MagicMock, patch, call, ANY
 import time
 
 from core.downloader import Downloader, format_filename, spotify_track_to_song, _sanitize
@@ -145,6 +145,11 @@ class TestDownloader:
         config.spotify_rate_limit_enabled = True
         config.spotify_rate_limit_requests = 10
         config.spotify_rate_limit_window = 1.0
+        # Disable download rate limiting for tests (not the focus of these tests)
+        config.download_rate_limit_enabled = False
+        config.download_rate_limit_requests = 2
+        config.download_rate_limit_window = 1.0
+        config.download_bandwidth_limit = None
         
         with patch("core.downloader.SpotifyClient") as mock_spotify_class, \
              patch("core.downloader.AudioProvider") as mock_audio_class, \
@@ -619,6 +624,11 @@ class TestDownloader:
         config.spotify_rate_limit_enabled = True
         config.spotify_rate_limit_requests = 10
         config.spotify_rate_limit_window = 1.0
+        # Disable download rate limiting for this test (focus is on cache config)
+        config.download_rate_limit_enabled = False
+        config.download_rate_limit_requests = 2
+        config.download_rate_limit_window = 1.0
+        config.download_bandwidth_limit = None
         
         with patch("core.downloader.SpotifyClient") as mock_spotify_class, \
              patch("core.downloader.AudioProvider") as mock_audio_class, \
@@ -633,11 +643,13 @@ class TestDownloader:
             assert downloader.file_existence_cache.ttl_seconds == 1800
             
             # Verify AudioProvider was called with custom cache config
+            # rate_limiter should be None since download_rate_limit_enabled is False
             mock_audio_class.assert_called_once_with(
                 output_format="mp3",
                 bitrate="128k",
                 audio_providers=["youtube-music"],
                 cache_max_size=200,
                 cache_ttl=7200,
+                rate_limiter=None,
             )
 
