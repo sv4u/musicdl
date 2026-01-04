@@ -478,12 +478,7 @@ jobs:
 
       - name: Install git-cliff
         if: ${{ inputs.dry_run != 'true' }}
-        run: |
-          # Install git-cliff using pre-built binary
-          GIT_CLIFF_VERSION="1.4.1"
-          curl -L "https://github.com/orhun/git-cliff/releases/download/v${GIT_CLIFF_VERSION}/git-cliff-${GIT_CLIFF_VERSION}-x86_64-unknown-linux-gnu.tar.gz" | tar -xz --strip-components=1
-          sudo mv git-cliff /usr/local/bin/
-          git-cliff --version
+        uses: taiki-e/install-action@git-cliff
 
       - name: Generate changelog
         if: ${{ inputs.dry_run != 'true' }}
