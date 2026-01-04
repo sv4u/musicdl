@@ -507,18 +507,10 @@ jobs:
             # Fallback: create basic changelog (must match regex pattern /^## \[/)
             if [ "$ORIGINAL_TAG" = "v0.0.0" ]; then
               COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo "0")
-              CHANGELOG="## [$NEXT_TAG] - $(date +%Y-%m-%d)
-
-Initial release with $COMMIT_COUNT commits.
-"
+              CHANGELOG=$(printf "## [%s] - %s\n\nInitial release with %s commits.\n" "$NEXT_TAG" "$(date +%Y-%m-%d)" "$COMMIT_COUNT")
             else
               COMMIT_COUNT=$(git rev-list --count ${ORIGINAL_TAG}..HEAD 2>/dev/null || echo "0")
-              CHANGELOG="## [$NEXT_TAG] - $(date +%Y-%m-%d)
-
-Release with $COMMIT_COUNT commits since $ORIGINAL_TAG.
-
-**Full Changelog**: https://github.com/${{ github.repository }}/compare/$ORIGINAL_TAG...$NEXT_TAG
-"
+              CHANGELOG=$(printf "## [%s] - %s\n\nRelease with %s commits since %s.\n\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n" "$NEXT_TAG" "$(date +%Y-%m-%d)" "$COMMIT_COUNT" "$ORIGINAL_TAG" "${{ github.repository }}" "$ORIGINAL_TAG" "$NEXT_TAG")
             fi
           fi
           
@@ -551,15 +543,15 @@ Release with $COMMIT_COUNT commits since $ORIGINAL_TAG.
             mv CHANGELOG_NEW.md CHANGELOG.md
           else
             # Create new CHANGELOG.md with header and version section
-            cat > CHANGELOG.md << 'EOF'
-# Changelog
-
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-EOF
+            {
+              echo "# Changelog"
+              echo ""
+              echo "All notable changes to this project will be documented in this file."
+              echo ""
+              echo "The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),"
+              echo "and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)."
+              echo ""
+            } > CHANGELOG.md
             echo "" >> CHANGELOG.md
             echo "$VERSION_SECTION" >> CHANGELOG.md
           fi
