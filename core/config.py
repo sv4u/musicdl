@@ -40,6 +40,11 @@ class DownloadSettings(BaseModel):
     spotify_rate_limit_enabled: bool = True  # Enable proactive rate limiting
     spotify_rate_limit_requests: int = 10  # Maximum requests per window
     spotify_rate_limit_window: float = 1.0  # Window size in seconds
+    # Download rate limiting settings (for managing network impact)
+    download_rate_limit_enabled: bool = True  # Enable download rate limiting
+    download_rate_limit_requests: int = 2  # Maximum requests per window
+    download_rate_limit_window: float = 1.0  # Window size in seconds
+    download_bandwidth_limit: Optional[int] = 1048576  # Bytes per second (1MB/sec default, None = unlimited)
     # Plan architecture feature flags (Phase 3+)
     # Note: Plan-based architecture is now the only supported architecture
     plan_generation_enabled: bool = True  # Enable plan generation

@@ -14,6 +14,7 @@ from core.cache import TTLCache
 from core.exceptions import DownloadError, MetadataError, SpotifyError
 from core.metadata import MetadataEmbedder
 from core.models import Song
+from core.rate_limiter import RateLimiter
 from core.spotify_client import SpotifyClient
 
 logger = logging.getLogger(__name__)
@@ -154,6 +155,18 @@ class Downloader:
             config: DownloadSettings configuration object
         """
         self.config = config
+        
+        # Create general rate limiter for managing network impact
+        general_rate_limiter = None
+        if config.download_rate_limit_enabled:
+            general_rate_limiter = RateLimiter(
+                request_rate_enabled=config.download_rate_limit_enabled,
+                request_rate_requests=config.download_rate_limit_requests,
+                request_rate_window=config.download_rate_limit_window,
+                bandwidth_enabled=config.download_bandwidth_limit is not None,
+                bandwidth_limit=config.download_bandwidth_limit,
+            )
+        
         self.spotify = SpotifyClient(
             config.client_id,
             config.client_secret,
@@ -165,6 +178,7 @@ class Downloader:
             rate_limit_enabled=config.spotify_rate_limit_enabled,
             rate_limit_requests=config.spotify_rate_limit_requests,
             rate_limit_window=config.spotify_rate_limit_window,
+            general_rate_limiter=general_rate_limiter,
         )
         self.audio = AudioProvider(
             output_format=config.format,
@@ -172,6 +186,7 @@ class Downloader:
             audio_providers=config.audio_providers,
             cache_max_size=config.audio_search_cache_max_size,
             cache_ttl=config.audio_search_cache_ttl,
+            rate_limiter=general_rate_limiter,
         )
         self.metadata = MetadataEmbedder()
         
