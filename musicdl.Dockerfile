@@ -16,6 +16,23 @@ COPY ./requirements.txt /tmp/requirements.txt
 RUN python3 -m pip install --upgrade pip && \
 	python3 -m pip install --no-cache-dir -r /tmp/requirements.txt
 
+# Copy Git repository and version script to determine version from tags
+# We need .git directory to determine version from tags
+COPY ./.git /tmp/repo/.git
+COPY ./scripts/get_version.py /tmp/repo/scripts/get_version.py
+COPY ./__init__.py /tmp/repo/__init__.py
+
+# Reset Git state to match HEAD commit (ensures clean working tree)
+# This is needed because COPY creates files that Git sees as untracked
+# We only reset the index, not clean untracked files (we need the copied files)
+RUN cd /tmp/repo && git reset --hard HEAD
+
+# Run version script to update __init__.py with version from Git tags
+# This will use the latest tag (with v prefix) or commit hash for dirty trees
+RUN cd /tmp/repo && \
+	python3 scripts/get_version.py > /tmp/version.txt && \
+	cat /tmp/version.txt
+
 # Stage 2: Runtime image
 FROM python:3.12-slim
 
@@ -65,9 +82,10 @@ RUN mkdir -p /scripts /download && \
 	chmod 755 /download
 
 # Copy script, core module, default configuration, and version file
+# Use the __init__.py that was updated with version from Git tags in builder stage
 COPY download.py /scripts/download.py
 COPY core/ /scripts/core/
-COPY __init__.py /scripts/__init__.py
+COPY --from=builder /tmp/repo/__init__.py /scripts/__init__.py
 COPY config.yaml /scripts/config.yaml
 
 # Create entrypoint script that respects CONFIG_PATH env var
