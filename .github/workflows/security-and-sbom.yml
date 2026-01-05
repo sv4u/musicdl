@@ -143,7 +143,7 @@ jobs:
 
             - name: Generate SBOM from Source Code - Syft
               id: syft-source-sbom
-              uses: anchore/sbom-action@v0.15.0
+              uses: anchore/sbom-action@v0.21.0
               with:
                   path: "."
                   format: "cyclonedx-json"
@@ -152,7 +152,7 @@ jobs:
 
             - name: Generate SBOM from Source Code - Syft (SPDX)
               id: syft-source-sbom-spdx
-              uses: anchore/sbom-action@v0.15.0
+              uses: anchore/sbom-action@v0.21.0
               with:
                   path: "."
                   format: "spdx-json"
@@ -171,7 +171,7 @@ jobs:
 
             - name: Generate SBOM from Docker Image - Syft
               id: syft-image-sbom
-              uses: anchore/sbom-action@v0.15.0
+              uses: anchore/sbom-action@v0.21.0
               with:
                   image: "ghcr.io/sv4u/musicdl:security-scan"
                   format: "cyclonedx-json"
@@ -180,7 +180,7 @@ jobs:
 
             - name: Generate SBOM from Docker Image - Syft (SPDX)
               id: syft-image-sbom-spdx
-              uses: anchore/sbom-action@v0.15.0
+              uses: anchore/sbom-action@v0.21.0
               with:
                   image: "ghcr.io/sv4u/musicdl:security-scan"
                   format: "spdx-json"
