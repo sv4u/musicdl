@@ -1,5 +1,5 @@
 # Stage 1: Build dependencies and compile Python packages
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 
 # Accept VERSION as build argument (optional - if not provided, will use Git tags)
 ARG VERSION
@@ -44,7 +44,7 @@ RUN cd /tmp/repo && \
 	cat /tmp/version.txt
 
 # Stage 2: Runtime image
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 # Add author/maintainer labels
 LABEL org.opencontainers.image.authors="sasank@vishnubhatlas.net"
