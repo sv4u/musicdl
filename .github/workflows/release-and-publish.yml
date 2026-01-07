@@ -470,6 +470,8 @@ jobs:
           file: ./musicdl.Dockerfile
           tags: ${{ steps.docker-tags.outputs.tags_list }}
           push: true
+          build-args: |
+            VERSION=${{ steps.next-version.outputs.tag }}
           labels: |
             org.opencontainers.image.source=https://github.com/sv4u/musicdl
             org.opencontainers.image.revision=${{ github.sha }}

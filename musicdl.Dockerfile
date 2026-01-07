@@ -1,6 +1,9 @@
 # Stage 1: Build dependencies and compile Python packages
 FROM python:3.12-slim AS builder
 
+# Accept VERSION as build argument (optional - if not provided, will use Git tags)
+ARG VERSION
+
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
 	g++ \
@@ -16,8 +19,8 @@ COPY ./requirements.txt /tmp/requirements.txt
 RUN python3 -m pip install --upgrade pip && \
 	python3 -m pip install --no-cache-dir -r /tmp/requirements.txt
 
-# Copy Git repository and version script to determine version from tags
-# We need .git directory to determine version from tags
+# Copy Git repository, version script, and __init__.py
+# We need .git directory for Git tag detection (fallback when VERSION not provided)
 COPY ./.git /tmp/repo/.git
 COPY ./scripts/get_version.py /tmp/repo/scripts/get_version.py
 COPY ./__init__.py /tmp/repo/__init__.py
@@ -27,10 +30,17 @@ COPY ./__init__.py /tmp/repo/__init__.py
 # We only reset the index, not clean untracked files (we need the copied files)
 RUN cd /tmp/repo && git reset --hard HEAD
 
-# Run version script to update __init__.py with version from Git tags
-# This will use the latest tag (with v prefix) or commit hash for dirty trees
+# Set version in __init__.py
+# If VERSION build arg is provided, pass it to version script (for CI builds)
+# Otherwise, version script will determine from Git tags (for local builds)
 RUN cd /tmp/repo && \
-	python3 scripts/get_version.py > /tmp/version.txt && \
+	if [ -n "$VERSION" ]; then \
+	echo "[i] Using provided VERSION build arg: $VERSION"; \
+	python3 scripts/get_version.py "$VERSION" > /tmp/version.txt; \
+	else \
+	echo "[i] VERSION build arg not provided, using Git tags"; \
+	python3 scripts/get_version.py > /tmp/version.txt; \
+	fi && \
 	cat /tmp/version.txt
 
 # Stage 2: Runtime image

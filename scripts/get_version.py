@@ -207,14 +207,28 @@ def main() -> int:
     Returns:
         Exit code (0 for success, non-zero for error)
     """
+    # Check for version override argument (for CI builds)
+    version_override = None
+    if len(sys.argv) > 1:
+        version_override = sys.argv[1]
+        if version_override in ["-h", "--help"]:
+            print("Usage: get_version.py [VERSION_OVERRIDE]")
+            print("  If VERSION_OVERRIDE is provided, use it directly.")
+            print("  Otherwise, determine version from Git tags.")
+            return 0
+
     # Determine the repository root (where .git directory is)
     # Use absolute path to avoid issues with working directory
     script_dir = Path(__file__).resolve().parent
     repo_root = script_dir.parent.resolve()
 
-    # Determine version
-    version = determine_version(cwd=repo_root)
-    print(f"Determined version: {version}", file=sys.stderr)
+    # Use override if provided, otherwise determine from Git
+    if version_override:
+        version = version_override
+        print(f"Using provided version override: {version}", file=sys.stderr)
+    else:
+        version = determine_version(cwd=repo_root)
+        print(f"Determined version: {version}", file=sys.stderr)
 
     # Update __init__.py
     init_file = repo_root / "__init__.py"
