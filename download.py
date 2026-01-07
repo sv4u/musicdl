@@ -28,6 +28,7 @@ from core.plan_executor import PlanExecutor
 from core.plan_generator import PlanGenerator
 from core.plan_optimizer import PlanOptimizer
 from core.spotify_client import SpotifyClient
+from core.utils import get_plan_path
 
 # Configure logging
 logging.basicConfig(
@@ -93,7 +94,7 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
 
         # Save plan if persistence enabled
         if config.download.plan_persistence_enabled:
-            plan_path = Path("download_plan.json")
+            plan_path = get_plan_path() / "download_plan.json"
             try:
                 plan.save(plan_path)
                 logger.info(f"Saved plan to {plan_path}")
@@ -112,7 +113,7 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
 
         # Save optimized plan if persistence enabled
         if config.download.plan_persistence_enabled:
-            plan_path = Path("download_plan_optimized.json")
+            plan_path = get_plan_path() / "download_plan_optimized.json"
             try:
                 plan.save(plan_path)
                 logger.info(f"Saved optimized plan to {plan_path}")
