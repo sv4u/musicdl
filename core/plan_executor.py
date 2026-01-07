@@ -15,6 +15,7 @@ from typing import Callable, Dict, List, Optional
 
 from core.downloader import Downloader, format_filename, spotify_track_to_song
 from core.plan import DownloadPlan, PlanItem, PlanItemStatus, PlanItemType
+from core.utils import get_plan_path
 
 logger = logging.getLogger(__name__)
 
@@ -180,7 +181,7 @@ class PlanExecutor:
             )
             # Save plan progress on shutdown
             try:
-                plan_path = Path("download_plan_progress.json")
+                plan_path = get_plan_path() / "download_plan_progress.json"
                 plan.save(plan_path)
                 logger.info(f"Saved plan progress to {plan_path}")
             except Exception as e:

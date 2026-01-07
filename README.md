@@ -154,6 +154,12 @@ Spotify API credentials should be provided via environment variables for securit
 - `SPOTIFY_CLIENT_ID`: Spotify API client ID (required)
 - `SPOTIFY_CLIENT_SECRET`: Spotify API client secret (required)
 
+Additional environment variables:
+
+- `CONFIG_PATH`: Path to configuration file (default: `/scripts/config.yaml`)
+- `MUSICDL_PLAN_PATH`: Plan file directory path (default: `/var/lib/musicdl/plans`)
+- `HEALTHCHECK_PORT`: Healthcheck server port (default: `8080`)
+
 **Credential Resolution Order:**
 1. Environment variables (`SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`) - highest priority
 2. Configuration file (`download.client_id`, `download.client_secret`) - fallback for local development
@@ -354,6 +360,9 @@ download:
 When `plan_persistence_enabled` is true, plans are saved to:
 - `download_plan.json`: Initial plan after generation
 - `download_plan_optimized.json`: Optimized plan after optimization
+- `download_plan_progress.json`: Progress snapshot (updated during execution, saved on shutdown)
+
+By default, plan files are saved to `/var/lib/musicdl/plans` (configurable via `MUSICDL_PLAN_PATH` environment variable). This path is separate from the download output directory and will not be affected by volume mounts.
 
 You can inspect these files to see what will be downloaded, or use them for debugging.
 
@@ -502,6 +511,45 @@ docker run --rm \
 - Verify credentials are not empty strings
 - Check that credentials are correctly passed to the container (use `docker run -e` or `--env-file`)
 - For local development, you can still add credentials to `config.yaml` as a fallback
+
+### Healthcheck
+
+The Docker image includes a built-in HTTP healthcheck server that monitors plan execution status. This enables Docker HEALTHCHECK integration and provides monitoring endpoints.
+
+**Features:**
+- **Docker HEALTHCHECK Integration**: Automatic container health monitoring
+- **JSON API Endpoint** (`/health`): For programmatic health checks and monitoring systems
+- **HTML Status Page** (`/status`): Human-readable dashboard for debugging and monitoring
+- **Real-time Status**: Reflects current state of plan execution
+- **Robust Error Handling**: Gracefully handles missing files, corrupted JSON, and other edge cases
+
+**Endpoints:**
+- `http://localhost:8080/health` - JSON healthcheck endpoint (returns 200 for healthy, 503 for unhealthy)
+- `http://localhost:8080/status` - HTML status dashboard with detailed plan information
+
+**Configuration:**
+- `MUSICDL_PLAN_PATH`: Plan file directory path (default: `/var/lib/musicdl/plans`)
+- `HEALTHCHECK_PORT`: Healthcheck server port (default: `8080`)
+
+**Health Status Logic:**
+- **Healthy**: Plan exists with items that are `in_progress`, `completed`, `pending`, or `skipped` (work is happening or ready)
+- **Unhealthy**: No plan files found, all items `failed`, or plan file is corrupted
+
+**Accessing the Status Page:**
+If you need to access the status page from outside the container, you can publish the port:
+
+```bash
+docker run --rm \
+  -p 8080:8080 \
+  -e SPOTIFY_CLIENT_ID="your_client_id" \
+  -e SPOTIFY_CLIENT_SECRET="your_client_secret" \
+  -v /path/to/music/library:/download \
+  musicdl:latest
+```
+
+Then open `http://localhost:8080/status` in your browser.
+
+**Note**: The healthcheck server requires `plan_persistence_enabled: true` in your configuration to function properly. If plan persistence is disabled, the healthcheck will always return unhealthy (no plan files).
 
 ### Docker Compose
 
