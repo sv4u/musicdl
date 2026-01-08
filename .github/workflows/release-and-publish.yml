@@ -490,12 +490,13 @@ jobs:
           NEXT_TAG="${{ steps.next-version.outputs.tag }}"
           
           # Generate changelog using git-cliff
+          # Explicitly specify config file to ensure it's found
           if [ "$ORIGINAL_TAG" = "v0.0.0" ]; then
             # First release - generate from all commits
-            CHANGELOG=$(git-cliff --tag "$NEXT_TAG" --output - 2>&1)
+            CHANGELOG=$(git-cliff --config cliff.toml --tag "$NEXT_TAG" --output - 2>&1)
           else
             # Generate changelog from previous tag
-            CHANGELOG=$(git-cliff --tag "$NEXT_TAG" --latest --output - 2>&1)
+            CHANGELOG=$(git-cliff --config cliff.toml --tag "$NEXT_TAG" --latest --output - 2>&1)
           fi
           
           # Check if git-cliff succeeded
