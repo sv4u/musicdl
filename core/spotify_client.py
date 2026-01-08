@@ -263,6 +263,72 @@ class SpotifyClient:
         # General rate limiter for network impact management
         self.general_rate_limiter = general_rate_limiter
 
+        # Rate limit tracking for status reporting
+        self._rate_limit_info: Optional[Dict[str, Any]] = None
+        self._rate_limit_lock = threading.Lock()
+
+    def _update_rate_limit_info(self, retry_after: Optional[int]) -> None:
+        """
+        Update rate limit information when rate limiting occurs.
+
+        Args:
+            retry_after: Number of seconds to wait before retrying (from Retry-After header)
+        """
+        with self._rate_limit_lock:
+            current_time = time.time()
+            if retry_after is not None:
+                # Calculate expiry timestamp
+                # Note: retry_after can be 0 (retry immediately), which is valid
+                expires_at = current_time + retry_after
+                self._rate_limit_info = {
+                    "active": True,
+                    "retry_after_seconds": retry_after,
+                    "retry_after_timestamp": expires_at,
+                    "detected_at": current_time,
+                }
+            else:
+                # Rate limit detected but no retry_after provided
+                # Use a default estimate (conservative)
+                default_retry = 60  # Default to 60 seconds
+                expires_at = current_time + default_retry
+                self._rate_limit_info = {
+                    "active": True,
+                    "retry_after_seconds": default_retry,
+                    "retry_after_timestamp": expires_at,
+                    "detected_at": current_time,
+                }
+
+    def _clear_rate_limit_info(self) -> None:
+        """Clear rate limit information when rate limit expires."""
+        with self._rate_limit_lock:
+            self._rate_limit_info = None
+
+    def get_rate_limit_info(self) -> Optional[Dict[str, Any]]:
+        """
+        Get current rate limit information.
+
+        Returns:
+            Dictionary with rate limit info if active, None otherwise.
+            Contains:
+                - active: bool - Whether rate limiting is currently active
+                - retry_after_seconds: int - Seconds to wait before retrying
+                - retry_after_timestamp: float - Unix timestamp when rate limit expires
+                - detected_at: float - Unix timestamp when rate limit was detected
+        """
+        with self._rate_limit_lock:
+            if self._rate_limit_info is None:
+                return None
+
+            # Check if rate limit has expired
+            current_time = time.time()
+            if current_time >= self._rate_limit_info["retry_after_timestamp"]:
+                # Rate limit has expired, clear it
+                self._rate_limit_info = None
+                return None
+
+            # Return a copy to prevent external modification
+            return self._rate_limit_info.copy()
+
     def _is_rate_limit_error(self, exception: Exception) -> bool:
         """
         Check if exception is a rate limit error (HTTP 429).
@@ -338,6 +404,8 @@ class SpotifyClient:
                 # Convert to rate limit error if applicable
                 if self._is_rate_limit_error(e):
                     retry_after = self._extract_retry_after(e)
+                    # Update rate limit tracking
+                    self._update_rate_limit_info(retry_after)
                     raise SpotifyRateLimitError(
                         f"Spotify API rate limited: {e}",
                         retry_after=retry_after,
@@ -455,6 +523,8 @@ class SpotifyClient:
                 # Convert to rate limit error if applicable
                 if self._is_rate_limit_error(e):
                     retry_after = self._extract_retry_after(e)
+                    # Update rate limit tracking
+                    self._update_rate_limit_info(retry_after)
                     raise SpotifyRateLimitError(
                         f"Spotify API rate limited during pagination: {e}",
                         retry_after=retry_after,

@@ -106,6 +106,15 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
         generator = PlanGenerator(config, spotify_client)
         plan = generator.generate_plan()
 
+        # Check for rate limit info and store in plan metadata
+        rate_limit_info = spotify_client.get_rate_limit_info()
+        if rate_limit_info:
+            plan.metadata["rate_limit"] = rate_limit_info
+            logger.warning(
+                f"Spotify rate limit active: retry after {rate_limit_info['retry_after_seconds']}s "
+                f"(expires at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(rate_limit_info['retry_after_timestamp']))})"
+            )
+
         # Save plan after generation completes for status reporting (if enabled) or persistence (if enabled)
         if config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled:
             plan_path = get_plan_path() / "download_plan.json"
@@ -146,6 +155,15 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
             check_file_existence=True,
         )
         plan = optimizer.optimize(plan)
+
+        # Check for rate limit info and update in plan metadata
+        rate_limit_info = spotify_client.get_rate_limit_info()
+        if rate_limit_info:
+            plan.metadata["rate_limit"] = rate_limit_info
+            logger.warning(
+                f"Spotify rate limit active: retry after {rate_limit_info['retry_after_seconds']}s "
+                f"(expires at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(rate_limit_info['retry_after_timestamp']))})"
+            )
 
         # Save optimized plan after optimization completes for status reporting (if enabled) or persistence (if enabled)
         if config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled:
@@ -238,10 +256,11 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
             # Save plan periodically for status page updates (throttled to avoid excessive I/O)
             # Use lock to prevent concurrent writes from multiple worker threads
             if config.download.plan_persistence_enabled:
-                current_time = time.time()
                 # Check time outside lock for performance, but re-check inside lock to prevent race
-                if current_time - last_plan_save_time[0] >= PLAN_SAVE_INTERVAL:
+                if time.time() - last_plan_save_time[0] >= PLAN_SAVE_INTERVAL:
                     with plan_save_lock:
+                        # Capture time inside lock for precision
+                        current_time = time.time()
                         # Re-check time inside lock to handle race condition where multiple
                         # threads passed the initial check before any could update the timestamp
                         if current_time - last_plan_save_time[0] >= PLAN_SAVE_INTERVAL:

@@ -124,15 +124,31 @@ def spotify_track_to_song(track_data: Dict, album_data: Dict) -> Song:
         )
         disc_count = max_disc
 
+    # Validate artists list and extract artist name
+    artists = track_data.get("artists", [])
+    if not artists or len(artists) == 0:
+        artist_name = "Unknown Artist"
+    else:
+        artist_name = artists[0].get("name", "Unknown Artist")
+    
+    # Validate album artists list
+    album_artists = album_data.get("artists", [])
+    album_artist_name = None
+    if album_artists and len(album_artists) > 0:
+        album_artist_name = album_artists[0].get("name")
+    
+    # Validate external_urls
+    spotify_url = track_data.get("external_urls", {}).get("spotify", "")
+
     return Song(
-        title=track_data["name"],
-        artist=track_data["artists"][0]["name"],
+        title=track_data.get("name", "Unknown Title"),
+        artist=artist_name,
         album=album_data.get("name", ""),
         track_number=track_data.get("track_number", 1),
         duration=int(track_data.get("duration_ms", 0) / 1000),
-        spotify_url=track_data["external_urls"]["spotify"],
+        spotify_url=spotify_url,
         cover_url=cover_url,
-        album_artist=album_data["artists"][0]["name"] if album_data.get("artists") else None,
+        album_artist=album_artist_name,
         year=year,
         date=date,
         disc_number=track_data.get("disc_number", 1),

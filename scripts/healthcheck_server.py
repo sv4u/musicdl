@@ -100,6 +100,10 @@ def load_plan_file(filepath: Path) -> Optional[Dict]:
             with open(filepath, "r", encoding="utf-8") as f:
                 data = json.load(f)
             return data
+        except FileNotFoundError:
+            # File was deleted between existence check and open
+            logger.warning(f"Plan file {filepath} was deleted during read")
+            return None
         except json.JSONDecodeError as e:
             # If this is the last attempt, log and return None
             if attempt == max_retries - 1:
@@ -338,6 +342,54 @@ def generate_status_html(
             phase_display += f' (since {html.escape(format_timestamp(phase_updated_at))})'
         phase_display += "</div>"
 
+    # Get rate limit information from plan metadata
+    rate_limit_display = ""
+    if plan:
+        rate_limit_info = plan.metadata.get("rate_limit")
+        if rate_limit_info and rate_limit_info.get("active"):
+            current_time = time.time()
+            retry_after_seconds = rate_limit_info.get("retry_after_seconds", 0)
+            retry_after_timestamp = rate_limit_info.get("retry_after_timestamp", current_time)
+            detected_at = rate_limit_info.get("detected_at", current_time)
+            
+            # Check if rate limit has expired
+            if current_time < retry_after_timestamp:
+                # Calculate remaining time
+                remaining_seconds = int(retry_after_timestamp - current_time)
+                remaining_hours = remaining_seconds // 3600
+                remaining_minutes = (remaining_seconds % 3600) // 60
+                remaining_secs = remaining_seconds % 60
+                
+                if remaining_hours > 0:
+                    remaining_time_str = f"{remaining_hours}h {remaining_minutes}m {remaining_secs}s"
+                elif remaining_minutes > 0:
+                    remaining_time_str = f"{remaining_minutes}m {remaining_secs}s"
+                else:
+                    remaining_time_str = f"{remaining_secs}s"
+                
+                expires_at_str = format_timestamp(retry_after_timestamp)
+                detected_at_str = format_timestamp(detected_at)
+                
+                rate_limit_display = f'''
+        <div class="section rate-limit-section">
+            <h2>⚠️ Spotify Rate Limit</h2>
+            <div class="rate-limit-info">
+                <div class="rate-limit-status active">
+                    <strong>Status:</strong> <span class="rate-limit-active">Active</span>
+                </div>
+                <div class="rate-limit-details">
+                    <p><strong>Retry After:</strong> {html.escape(str(retry_after_seconds))} seconds</p>
+                    <p><strong>Time Remaining:</strong> {html.escape(remaining_time_str)}</p>
+                    <p><strong>Expires At:</strong> {html.escape(expires_at_str)}</p>
+                    <p><strong>Detected At:</strong> {html.escape(detected_at_str)}</p>
+                </div>
+                <div class="rate-limit-message">
+                    <p>Your application has reached Spotify's rate/request limit. Operations will resume automatically after the rate limit expires.</p>
+                </div>
+            </div>
+        </div>
+'''
+
     # Use html_content instead of html to avoid shadowing the html module
     html_content = f"""<!DOCTYPE html>
 <html lang="en">
@@ -481,6 +533,41 @@ def generate_status_html(
             color: #ffffff;
             font-size: 1.1em;
         }}
+        .rate-limit-section {{
+            border-left: 4px solid #ff9800;
+        }}
+        .rate-limit-info {{
+            background-color: #1a1a1a;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }}
+        .rate-limit-status {{
+            margin-bottom: 15px;
+            font-size: 1.1em;
+        }}
+        .rate-limit-active {{
+            color: #ff9800;
+            font-weight: bold;
+        }}
+        .rate-limit-details {{
+            margin: 15px 0;
+        }}
+        .rate-limit-details p {{
+            margin: 8px 0;
+            color: #e0e0e0;
+        }}
+        .rate-limit-details strong {{
+            color: #ffffff;
+        }}
+        .rate-limit-message {{
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #2a2a2a;
+            border-radius: 4px;
+            color: #b0b0b0;
+            font-style: italic;
+        }}
         .empty-state {{
             text-align: center;
             padding: 40px;
@@ -515,6 +602,7 @@ def generate_status_html(
                 Plan file: {html.escape(plan_file or "None")} | Plan path: {html.escape(plan_path)} | Last updated: {html.escape(format_timestamp(time.time()))} | Auto-refresh: {refresh_interval}s
             </div>
         </header>
+        {rate_limit_display}
 """
 
     if plan is None:
@@ -721,6 +809,21 @@ class HealthcheckHandler(http.server.BaseHTTPRequestHandler):
                         phase_updated_at = plan.metadata.get("phase_updated_at")
                         if phase_updated_at:
                             response_data["phase_updated_at"] = phase_updated_at
+                    
+                    # Add rate limit information if available
+                    rate_limit_info = plan.metadata.get("rate_limit")
+                    if rate_limit_info and rate_limit_info.get("active"):
+                        current_time = time.time()
+                        retry_after_timestamp = rate_limit_info.get("retry_after_timestamp", current_time)
+                        # Only include if rate limit hasn't expired
+                        if current_time < retry_after_timestamp:
+                            response_data["rate_limit"] = {
+                                "active": True,
+                                "retry_after_seconds": rate_limit_info.get("retry_after_seconds", 0),
+                                "retry_after_timestamp": retry_after_timestamp,
+                                "detected_at": rate_limit_info.get("detected_at", current_time),
+                                "remaining_seconds": int(retry_after_timestamp - current_time),
+                            }
 
                 # Set status code based on health
                 # 200 = healthy, 503 = unhealthy (service unavailable)

@@ -91,6 +91,10 @@ class PlanGenerator:
         try:
             track_id = extract_id_from_url(song.url)
             track_id = self._extract_track_id(track_id)
+            
+            # Validate track_id is not empty
+            if not track_id or not track_id.strip():
+                raise ValueError(f"Invalid or empty track ID extracted from URL: {song.url}")
 
             # Check for duplicates
             if track_id in self.seen_track_ids:
