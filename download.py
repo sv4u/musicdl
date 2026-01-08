@@ -91,21 +91,55 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
     # Generate plan
     plan = None
     if config.download.plan_generation_enabled:
-        generator = PlanGenerator(config, spotify_client)
-        plan = generator.generate_plan()
-
-        # Save plan if persistence enabled
-        if config.download.plan_persistence_enabled:
+        # Set phase BEFORE generation starts for accurate status reporting
+        if config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled:
+            # Create empty plan to indicate generation phase
+            plan = DownloadPlan(metadata={"phase": "generating", "phase_updated_at": time.time()})
             plan_path = get_plan_path() / "download_plan.json"
             try:
                 plan.save(plan_path)
-                logger.info(f"Saved plan to {plan_path}")
+                if config.download.plan_status_reporting_enabled:
+                    logger.info(f"Saved plan for status reporting (generation starting) to {plan_path}")
+            except Exception as e:
+                logger.warning(f"Failed to save plan before generation: {e}")
+        
+        generator = PlanGenerator(config, spotify_client)
+        plan = generator.generate_plan()
+
+        # Save plan after generation completes for status reporting (if enabled) or persistence (if enabled)
+        if config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled:
+            plan_path = get_plan_path() / "download_plan.json"
+            # Remove phase metadata after generation completes (will be set again before next phase)
+            # This prevents healthcheck from showing "generation in progress" when it's actually complete
+            if "phase" in plan.metadata:
+                del plan.metadata["phase"]
+            if "phase_updated_at" in plan.metadata:
+                del plan.metadata["phase_updated_at"]
+            try:
+                plan.save(plan_path)
+                if config.download.plan_status_reporting_enabled:
+                    logger.info(f"Saved plan for status reporting to {plan_path}")
+                if config.download.plan_persistence_enabled:
+                    logger.info(f"Saved plan to {plan_path}")
             except Exception as e:
                 logger.error(f"Failed to save plan to {plan_path}: {e}")
-                raise RuntimeError(f"Plan persistence failed: {e}") from e
+                if config.download.plan_persistence_enabled:
+                    raise RuntimeError(f"Plan persistence failed: {e}") from e
 
     # Optimize plan
     if plan and config.download.plan_optimization_enabled:
+        # Set phase BEFORE optimization starts for accurate status reporting
+        if config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled:
+            plan.metadata["phase"] = "optimizing"
+            plan.metadata["phase_updated_at"] = time.time()
+            plan_path = get_plan_path() / "download_plan_optimized.json"
+            try:
+                plan.save(plan_path)
+                if config.download.plan_status_reporting_enabled:
+                    logger.info(f"Saved plan for status reporting (optimization starting) to {plan_path}")
+            except Exception as e:
+                logger.warning(f"Failed to save plan before optimization: {e}")
+        
         optimizer = PlanOptimizer(
             config.download,
             spotify_client,
@@ -113,18 +147,45 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
         )
         plan = optimizer.optimize(plan)
 
-        # Save optimized plan if persistence enabled
-        if config.download.plan_persistence_enabled:
+        # Save optimized plan after optimization completes for status reporting (if enabled) or persistence (if enabled)
+        if config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled:
             plan_path = get_plan_path() / "download_plan_optimized.json"
+            # Remove phase metadata after optimization completes (will be set again before execution)
+            # This prevents healthcheck from showing "optimization in progress" when it's actually complete
+            if "phase" in plan.metadata:
+                del plan.metadata["phase"]
+            if "phase_updated_at" in plan.metadata:
+                del plan.metadata["phase_updated_at"]
             try:
                 plan.save(plan_path)
-                logger.info(f"Saved optimized plan to {plan_path}")
+                if config.download.plan_status_reporting_enabled:
+                    logger.info(f"Saved optimized plan for status reporting to {plan_path}")
+                if config.download.plan_persistence_enabled:
+                    logger.info(f"Saved optimized plan to {plan_path}")
             except Exception as e:
                 logger.error(f"Failed to save optimized plan to {plan_path}: {e}")
-                raise RuntimeError(f"Plan persistence failed: {e}") from e
+                if config.download.plan_persistence_enabled:
+                    raise RuntimeError(f"Plan persistence failed: {e}") from e
 
     # Execute plan
     if plan and config.download.plan_execution_enabled:
+        # Update phase metadata to indicate execution phase
+        if config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled:
+            plan.metadata["phase"] = "executing"
+            plan.metadata["phase_updated_at"] = time.time()
+            # Save plan with execution phase before starting execution
+            # Save for status reporting (if enabled) or persistence (if enabled)
+            if config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled:
+                try:
+                    plan_path = get_plan_path() / "download_plan_progress.json"
+                    plan.save(plan_path)
+                    if config.download.plan_status_reporting_enabled:
+                        logger.debug(f"Saved plan with execution phase for status reporting to {plan_path}")
+                    if config.download.plan_persistence_enabled:
+                        logger.debug(f"Saved plan with execution phase to {plan_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to save plan with execution phase: {e}")
+        
         executor = PlanExecutor(downloader, max_workers=config.download.threads)
 
         # Track last save time for throttling plan persistence

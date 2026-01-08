@@ -136,7 +136,8 @@ download:
   plan_generation_enabled: true  # Enable plan generation
   plan_optimization_enabled: true  # Enable plan optimization
   plan_execution_enabled: true  # Enable plan execution
-  plan_persistence_enabled: false  # Enable plan persistence (save/load plans to disk)
+  plan_persistence_enabled: true  # Enable plan persistence (save/load plans to disk)
+  plan_status_reporting_enabled: true  # Enable plan status reporting (saves plans during generation/optimization for status display)
   
   # File management
   overwrite: "skip"  # skip, overwrite, metadata
@@ -225,7 +226,8 @@ All download settings are configured under the `download` section:
 - `plan_generation_enabled`: Enable plan generation (default: true)
 - `plan_optimization_enabled`: Enable plan optimization (default: true)
 - `plan_execution_enabled`: Enable plan execution (default: true)
-- `plan_persistence_enabled`: Enable saving/loading plans to disk for resuming (default: false)
+- `plan_persistence_enabled`: Enable saving/loading plans to disk for resuming (default: true)
+- `plan_status_reporting_enabled`: Enable plan status reporting - saves plans during generation/optimization for status display (default: true)
 - `overwrite`: Behavior when file exists - "skip", "overwrite", or "metadata"
   (default: "skip")
 
@@ -353,6 +355,7 @@ download:
   plan_optimization_enabled: true # Optimize plan (remove duplicates, check files)
   plan_execution_enabled: true     # Execute downloads
   plan_persistence_enabled: true   # Save plans to disk
+  plan_status_reporting_enabled: true  # Save plans during generation/optimization for status display
 ```
 
 **Plan Persistence**:
@@ -549,7 +552,7 @@ docker run --rm \
 
 Then open `http://localhost:8080/status` in your browser.
 
-**Note**: The healthcheck server requires `plan_persistence_enabled: true` in your configuration to function properly. If plan persistence is disabled, the healthcheck will always return unhealthy (no plan files).
+**Note**: The healthcheck server requires either `plan_persistence_enabled: true` or `plan_status_reporting_enabled: true` in your configuration to function properly. These settings ensure that plan files are saved during generation, optimization, and execution phases, allowing the healthcheck server to report accurate status. If both are disabled, the healthcheck will always return unhealthy (no plan files).
 
 ### Docker Compose
 

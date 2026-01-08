@@ -213,6 +213,13 @@ def determine_health_status(plan: Optional[DownloadPlan]) -> Tuple[str, str]:
     if plan is None:
         return "unhealthy", "No plan files found"
 
+    # Check if plan is in generation or optimization phase
+    phase = plan.metadata.get("phase", "unknown")
+    if phase == "generating":
+        return "healthy", "Plan generation in progress"
+    if phase == "optimizing":
+        return "healthy", "Plan optimization in progress"
+
     if not plan.items:
         return "unhealthy", "Plan has no items"
 
@@ -310,6 +317,26 @@ def generate_status_html(
     """
     status_color = "#4caf50" if health_status == "healthy" else "#f44336"
     status_badge = "✓ Healthy" if health_status == "healthy" else "✗ Unhealthy"
+    
+    # Get phase information from plan metadata
+    phase = None
+    phase_updated_at = None
+    if plan:
+        phase = plan.metadata.get("phase")
+        phase_updated_at = plan.metadata.get("phase_updated_at")
+    
+    phase_display = ""
+    if phase:
+        phase_labels = {
+            "generating": "🔄 Generating Plan",
+            "optimizing": "⚙️ Optimizing Plan",
+            "executing": "▶️ Executing Plan",
+        }
+        phase_label = phase_labels.get(phase, phase.title())
+        phase_display = f'<div class="phase-info">Current Phase: <strong>{html.escape(phase_label)}</strong>'
+        if phase_updated_at:
+            phase_display += f' (since {html.escape(format_timestamp(phase_updated_at))})'
+        phase_display += "</div>"
 
     # Use html_content instead of html to avoid shadowing the html module
     html_content = f"""<!DOCTYPE html>
@@ -445,6 +472,15 @@ def generate_status_html(
             max-width: 300px;
             word-wrap: break-word;
         }}
+        .phase-info {{
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #1a1a1a;
+            border-radius: 4px;
+            border-left: 4px solid #2196f3;
+            color: #ffffff;
+            font-size: 1.1em;
+        }}
         .empty-state {{
             text-align: center;
             padding: 40px;
@@ -474,6 +510,7 @@ def generate_status_html(
         <header>
             <h1>musicdl Status Dashboard</h1>
             <div class="status-badge">{html.escape(status_badge)}</div>
+            {phase_display}
             <div class="info">
                 Plan file: {html.escape(plan_file or "None")} | Plan path: {html.escape(plan_path)} | Last updated: {html.escape(format_timestamp(time.time()))} | Auto-refresh: {refresh_interval}s
             </div>
@@ -676,6 +713,14 @@ class HealthcheckHandler(http.server.BaseHTTPRequestHandler):
                     "statistics": stats,
                     "server_health": "healthy",  # Server is responding (implicit check)
                 }
+                # Add phase information if available
+                if plan:
+                    phase = plan.metadata.get("phase")
+                    if phase:
+                        response_data["phase"] = phase
+                        phase_updated_at = plan.metadata.get("phase_updated_at")
+                        if phase_updated_at:
+                            response_data["phase_updated_at"] = phase_updated_at
 
                 # Set status code based on health
                 # 200 = healthy, 503 = unhealthy (service unavailable)

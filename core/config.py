@@ -50,7 +50,8 @@ class DownloadSettings(BaseModel):
     plan_generation_enabled: bool = True  # Enable plan generation
     plan_optimization_enabled: bool = True  # Enable plan optimization
     plan_execution_enabled: bool = True  # Enable plan execution
-    plan_persistence_enabled: bool = False  # Enable plan persistence (save/load to disk)
+    plan_persistence_enabled: bool = True  # Enable plan persistence (save/load to disk)
+    plan_status_reporting_enabled: bool = True  # Enable plan status reporting (saves plans during generation/optimization for status display)
 
     @staticmethod
     def _resolve_credential(
