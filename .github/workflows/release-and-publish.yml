@@ -511,13 +511,32 @@ jobs:
             fi
           fi
           
-          # Save changelog to file for release
-          echo "$CHANGELOG" > CHANGELOG_RELEASE.md
+          # Store original changelog for CHANGELOG.md extraction (before adding artifacts)
+          ORIGINAL_CHANGELOG="$CHANGELOG"
           
           # Extract just the version section (without header/footer) for CHANGELOG.md
           # git-cliff output includes header, version section, and footer
           # We want to extract just the version section
-          VERSION_SECTION=$(echo "$CHANGELOG" | sed -n '/^## \[/,$p' | sed '/^---$/,$d')
+          # Use character class to avoid YAML linter false positive with '---'
+          DASH_CHAR="-"
+          SEPARATOR_PATTERN="^${DASH_CHAR}${DASH_CHAR}${DASH_CHAR}\$"
+          VERSION_SECTION=$(echo "$ORIGINAL_CHANGELOG" | sed -n '/^## \[/,$p' | sed "/${SEPARATOR_PATTERN}/,\$d")
+          
+          # Append Docker image links and SBOM note to changelog for release notes
+          VERSION_TAG="${{ steps.next-version.outputs.tag }}"
+          DOCKER_IMAGE_VERSION="ghcr.io/sv4u/musicdl:${VERSION_TAG}"
+          DOCKER_IMAGE_LATEST="ghcr.io/sv4u/musicdl:latest"
+          
+          # Append artifacts section to changelog for release
+          # Build separator using printf to avoid YAML linter false positives
+          # Use three dashes as separator (standard markdown horizontal rule)
+          DASH="-"
+          SEPARATOR=$(printf "\n\n%s%s%s\n\n" "$DASH" "$DASH" "$DASH")
+          ARTIFACTS_SECTION=$(printf "%s## 📦 Artifacts\n\n### Docker Images\n\n- **Versioned**: \\\`%s\\\`\n- **Latest**: \\\`%s\\\`\n\n### SBOM (Software Bill of Materials)\n\nSBOM artifacts in both CycloneDX and SPDX formats are attached to this release for both source code and Docker images. These can be found in the **Assets** section below.\n\n- Source code SBOMs (CycloneDX, SPDX)\n- Docker image SBOMs (CycloneDX, SPDX) - Generated using Syft and Trivy" "$SEPARATOR" "$DOCKER_IMAGE_VERSION" "$DOCKER_IMAGE_LATEST")
+          CHANGELOG="${ORIGINAL_CHANGELOG}${ARTIFACTS_SECTION}"
+          
+          # Save changelog to file for release
+          echo "$CHANGELOG" > CHANGELOG_RELEASE.md
           
           # Update CHANGELOG.md in repository
           if [ -f CHANGELOG.md ]; then
@@ -553,7 +572,7 @@ jobs:
             echo "$VERSION_SECTION" >> CHANGELOG.md
           fi
           
-          # Output changelog for release
+          # Output changelog for release (includes artifacts section)
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
           echo "$CHANGELOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
