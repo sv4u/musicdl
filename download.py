@@ -17,6 +17,8 @@ COMMAND LINE ARGUMENT:
 import argparse
 import logging
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Dict
 
@@ -125,9 +127,16 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
     if plan and config.download.plan_execution_enabled:
         executor = PlanExecutor(downloader, max_workers=config.download.threads)
 
-        # Progress callback for detailed tracking
+        # Track last save time for throttling plan persistence
+        # Use list to allow modification in nested function
+        last_plan_save_time = [0.0]
+        PLAN_SAVE_INTERVAL = 2.0  # Save plan at most once every 2 seconds
+        # Lock to synchronize plan saving across multiple worker threads
+        plan_save_lock = threading.Lock()
+
+        # Progress callback for detailed tracking and plan persistence
         def progress_callback(item):
-            """Progress callback for detailed tracking."""
+            """Progress callback for detailed tracking and plan persistence."""
             # Only log items that are being processed (exclude SKIPPED)
             if item.status == PlanItemStatus.SKIPPED:
                 return  # Skip reporting for items that need no updates
@@ -165,7 +174,34 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
                     f"{status_emoji} {item.item_type.value.title()}: {item.name} - {item.status.value}"
                 )
 
+            # Save plan periodically for status page updates (throttled to avoid excessive I/O)
+            # Use lock to prevent concurrent writes from multiple worker threads
+            if config.download.plan_persistence_enabled:
+                current_time = time.time()
+                # Check time outside lock for performance, but re-check inside lock to prevent race
+                if current_time - last_plan_save_time[0] >= PLAN_SAVE_INTERVAL:
+                    with plan_save_lock:
+                        # Re-check time inside lock to handle race condition where multiple
+                        # threads passed the initial check before any could update the timestamp
+                        if current_time - last_plan_save_time[0] >= PLAN_SAVE_INTERVAL:
+                            try:
+                                plan_path = get_plan_path() / "download_plan_progress.json"
+                                plan.save(plan_path)
+                                last_plan_save_time[0] = current_time
+                                logger.debug(f"Saved plan progress to {plan_path}")
+                            except Exception as e:
+                                logger.warning(f"Failed to save plan progress: {e}")
+
         stats = executor.execute(plan, progress_callback=progress_callback)
+
+        # Save final plan state after execution completes (if persistence enabled)
+        if config.download.plan_persistence_enabled:
+            try:
+                plan_path = get_plan_path() / "download_plan_progress.json"
+                plan.save(plan_path)
+                logger.info(f"Saved final plan state to {plan_path}")
+            except Exception as e:
+                logger.warning(f"Failed to save final plan state: {e}")
 
         # Convert plan stats to legacy format
         # SKIPPED items are excluded from stats (they need no updates)
