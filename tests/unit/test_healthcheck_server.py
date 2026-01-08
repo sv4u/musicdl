@@ -331,3 +331,77 @@ class TestHealthcheckFunctions:
         assert track3 is not None
         assert track3.name == "Track 3 Initial"
 
+    def test_determine_health_status_excludes_skipped(self):
+        """Test that determine_health_status() excludes SKIPPED items from health calculations."""
+        items = [
+            PlanItem(
+                item_id="track1",
+                item_type=PlanItemType.TRACK,
+                name="Track 1",
+            ),
+            PlanItem(
+                item_id="track2",
+                item_type=PlanItemType.TRACK,
+                name="Track 2",
+            ),
+        ]
+        items[0].mark_skipped("File already exists")
+        items[1].mark_completed()
+        plan = DownloadPlan(items=items)
+        
+        status, reason = healthcheck_server.determine_health_status(plan)
+        # Should be healthy because track2 is completed (track1 is skipped and excluded)
+        assert status == "healthy"
+        assert "completed" in reason.lower()
+
+    def test_determine_health_status_all_skipped(self):
+        """Test that determine_health_status() handles all items being skipped."""
+        items = [
+            PlanItem(
+                item_id="track1",
+                item_type=PlanItemType.TRACK,
+                name="Track 1",
+            ),
+            PlanItem(
+                item_id="track2",
+                item_type=PlanItemType.TRACK,
+                name="Track 2",
+            ),
+        ]
+        items[0].mark_skipped("File already exists")
+        items[1].mark_skipped("File already exists")
+        plan = DownloadPlan(items=items)
+        
+        status, reason = healthcheck_server.determine_health_status(plan)
+        # Should be healthy because all items are skipped (no updates needed)
+        assert status == "healthy"
+        assert "skipped" in reason.lower() or "no updates" in reason.lower()
+
+    def test_determine_health_status_skipped_with_failed(self):
+        """Test that determine_health_status() excludes SKIPPED items when calculating failures."""
+        items = [
+            PlanItem(
+                item_id="track1",
+                item_type=PlanItemType.TRACK,
+                name="Track 1",
+            ),
+            PlanItem(
+                item_id="track2",
+                item_type=PlanItemType.TRACK,
+                name="Track 2",
+            ),
+            PlanItem(
+                item_id="track3",
+                item_type=PlanItemType.TRACK,
+                name="Track 3",
+            ),
+        ]
+        items[0].mark_skipped("File already exists")
+        items[1].mark_failed("Error")
+        items[2].mark_completed()
+        plan = DownloadPlan(items=items)
+        
+        status, reason = healthcheck_server.determine_health_status(plan)
+        # Should be healthy because track3 is completed (track1 is skipped, track2 failed)
+        # Not all non-skipped items failed
+        assert status == "healthy"

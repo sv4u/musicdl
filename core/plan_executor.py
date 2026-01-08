@@ -176,7 +176,6 @@ class PlanExecutor:
                 f"Plan execution interrupted after {elapsed:.1f}s: "
                 f"{stats['completed']} completed, "
                 f"{stats['failed']} failed, "
-                f"{stats['skipped']} skipped, "
                 f"{stats['pending']} pending"
             )
             # Save plan progress on shutdown
@@ -190,8 +189,7 @@ class PlanExecutor:
             logger.info(
                 f"Plan execution complete in {elapsed:.1f}s: "
                 f"{stats['completed']} completed, "
-                f"{stats['failed']} failed, "
-                f"{stats['skipped']} skipped"
+                f"{stats['failed']} failed"
             )
 
         return stats
@@ -575,25 +573,31 @@ class PlanExecutor:
         """
         Get execution statistics.
 
+        Excludes SKIPPED items from statistics since they require no updates.
+
         Args:
             plan: DownloadPlan to analyze
 
         Returns:
-            Dictionary with statistics for TRACK items only
+            Dictionary with statistics for TRACK items only (excluding SKIPPED)
         """
         # Get statistics for TRACK items only (exclude containers and M3U)
-        track_items = plan.get_items_by_type(PlanItemType.TRACK)
+        # Filter out SKIPPED items - they don't need updates and shouldn't be counted
+        track_items = [
+            item for item in plan.get_items_by_type(PlanItemType.TRACK)
+            if item.status != PlanItemStatus.SKIPPED
+        ]
         
         completed = sum(1 for item in track_items if item.status == PlanItemStatus.COMPLETED)
         failed = sum(1 for item in track_items if item.status == PlanItemStatus.FAILED)
-        skipped = sum(1 for item in track_items if item.status == PlanItemStatus.SKIPPED)
         pending = sum(1 for item in track_items if item.status == PlanItemStatus.PENDING)
+        in_progress = sum(1 for item in track_items if item.status == PlanItemStatus.IN_PROGRESS)
         
         return {
             "completed": completed,
             "failed": failed,
-            "skipped": skipped,
             "pending": pending,
+            "in_progress": in_progress,
             "total": len(track_items),
         }
 

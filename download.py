@@ -128,25 +128,50 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
         # Progress callback for detailed tracking
         def progress_callback(item):
             """Progress callback for detailed tracking."""
+            # Only log items that are being processed (exclude SKIPPED)
+            if item.status == PlanItemStatus.SKIPPED:
+                return  # Skip reporting for items that need no updates
+            
             if item.item_type.value == "track":
                 status_emoji = {
                     "pending": "⏳",
                     "in_progress": "🔄",
                     "completed": "✅",
                     "failed": "❌",
-                    "skipped": "⏭️",
+                }.get(item.status.value, "❓")
+                
+                # Check if this is a metadata-only update
+                # (file exists and overwrite mode is metadata)
+                is_metadata_only = (
+                    item.file_path and 
+                    item.file_path.exists() and 
+                    downloader.config.overwrite == "metadata"
+                )
+                
+                status_msg = f"{status_emoji} {item.name} - {item.status.value}"
+                if is_metadata_only:
+                    status_msg += " (metadata update)"
+                
+                logger.info(status_msg)
+            elif item.item_type.value in ["album", "artist", "playlist"]:
+                # Log container status updates
+                status_emoji = {
+                    "pending": "⏳",
+                    "in_progress": "🔄",
+                    "completed": "✅",
+                    "failed": "❌",
                 }.get(item.status.value, "❓")
                 logger.info(
-                    f"{status_emoji} {item.name} - {item.status.value}"
+                    f"{status_emoji} {item.item_type.value.title()}: {item.name} - {item.status.value}"
                 )
 
         stats = executor.execute(plan, progress_callback=progress_callback)
 
         # Convert plan stats to legacy format
-        # Include both completed and skipped as success
+        # SKIPPED items are excluded from stats (they need no updates)
         results = {
             "songs": {
-                "success": stats["completed"] + stats["skipped"],
+                "success": stats["completed"],
                 "failed": stats["failed"],
             },
             "artists": {"success": 0, "failed": 0},

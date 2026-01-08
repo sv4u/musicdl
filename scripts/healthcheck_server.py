@@ -200,6 +200,10 @@ def determine_health_status(plan: Optional[DownloadPlan]) -> Tuple[str, str]:
     """
     Determine overall health status based on plan state.
 
+    Excludes SKIPPED items from health calculations since they require no updates.
+    The HTTP server health is implicit - if the server cannot respond, Docker will
+    mark the container as unhealthy.
+
     Args:
         plan: DownloadPlan instance or None
 
@@ -212,29 +216,34 @@ def determine_health_status(plan: Optional[DownloadPlan]) -> Tuple[str, str]:
     if not plan.items:
         return "unhealthy", "Plan has no items"
 
-    # Count items by status
+    # Filter out SKIPPED items - they don't need updates and shouldn't affect health
+    items_to_check = [item for item in plan.items if item.status != PlanItemStatus.SKIPPED]
+    
+    if not items_to_check:
+        # All items are skipped - this is healthy (no work needed)
+        return "healthy", "All items skipped (no updates needed)"
+
+    # Count items by status (excluding SKIPPED)
     by_status = {
-        status.value: len(plan.get_items_by_status(status))
+        status.value: len([item for item in items_to_check if item.status == status])
         for status in PlanItemStatus
     }
 
-    total_items = len(plan.items)
+    total_items = len(items_to_check)
     completed = by_status.get("completed", 0)
     failed = by_status.get("failed", 0)
     in_progress = by_status.get("in_progress", 0)
     pending = by_status.get("pending", 0)
-    skipped = by_status.get("skipped", 0)
 
     # Healthy conditions:
     # 1. Has items with in_progress or completed status (work is happening or done)
     # 2. At least one item is not failed
     # 3. All pending is healthy (plan ready to execute)
-    # 4. All skipped is healthy (plan completed, items skipped intentionally)
 
     if failed == total_items and total_items > 0:
         return "unhealthy", f"All {total_items} items failed"
 
-    if in_progress > 0 or completed > 0 or skipped > 0:
+    if in_progress > 0 or completed > 0:
         return "healthy", f"{completed} completed, {in_progress} in progress, {failed} failed"
 
     if pending == total_items:
@@ -656,6 +665,8 @@ class HealthcheckHandler(http.server.BaseHTTPRequestHandler):
 
             if path == "/health":
                 # JSON healthcheck endpoint
+                # Note: HTTP server health is implicit - if server cannot respond,
+                # Docker will automatically mark container as unhealthy
                 stats = aggregate_plan_status(plan) if plan else {}
                 response_data = {
                     "status": health_status,
@@ -663,9 +674,11 @@ class HealthcheckHandler(http.server.BaseHTTPRequestHandler):
                     "timestamp": time.time(),
                     "plan_file": plan_file,
                     "statistics": stats,
+                    "server_health": "healthy",  # Server is responding (implicit check)
                 }
 
                 # Set status code based on health
+                # 200 = healthy, 503 = unhealthy (service unavailable)
                 status_code = 200 if health_status == "healthy" else 503
 
                 self.send_response(status_code)

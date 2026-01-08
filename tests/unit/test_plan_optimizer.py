@@ -184,8 +184,53 @@ class TestPlanOptimizer:
         optimizer = PlanOptimizer(config, mock_spotify_client, check_file_existence=True)
         optimized_plan = optimizer.optimize(plan)
 
-        # Should not check file existence when overwrite != "skip"
+        # Should not check file existence when overwrite != "skip" or "metadata"
         assert optimized_plan.items[0].status == PlanItemStatus.PENDING
+
+    def test_optimize_handles_metadata_mode(self, mock_spotify_client):
+        """Test that optimizer keeps items PENDING when overwrite=metadata and file exists."""
+        config = DownloadSettings(
+            client_id="test_id",
+            client_secret="test_secret",
+            overwrite="metadata",  # Update metadata for existing files
+            output="{artist}/{album}/{title}.{output-ext}",
+            format="mp3",
+        )
+
+        plan = DownloadPlan()
+        track = PlanItem(
+            item_id="track:1",
+            item_type=PlanItemType.TRACK,
+            spotify_id="123",
+            name="Track 1",
+        )
+        plan.items = [track]
+
+        # Mock track and album data
+        mock_spotify_client.get_track.return_value = {
+            "id": "123",
+            "name": "Track 1",
+            "artists": [{"name": "Artist 1"}],
+            "album": {"id": "album1"},
+            "external_urls": {"spotify": "https://open.spotify.com/track/123"},
+        }
+
+        mock_spotify_client.get_album.return_value = {
+            "id": "album1",
+            "name": "Album 1",
+            "artists": [{"name": "Artist 1"}],
+            "release_date": "2023-01-01",
+            "tracks": {"items": []},
+        }
+
+        # Mock file exists
+        with patch("pathlib.Path.exists", return_value=True):
+            optimizer = PlanOptimizer(config, mock_spotify_client, check_file_existence=True)
+            optimized_plan = optimizer.optimize(plan)
+
+            # Track should remain PENDING (not SKIPPED) for metadata update
+            assert optimized_plan.items[0].status == PlanItemStatus.PENDING
+            assert optimized_plan.items[0].file_path is not None
 
     def test_optimize_handles_missing_spotify_id(self, mock_spotify_client, sample_config):
         """Test that optimizer handles items without Spotify ID."""

@@ -134,15 +134,17 @@ class PlanOptimizer:
     def _check_existing_files(self, plan: DownloadPlan) -> None:
         """
         Check if files already exist and mark as skipped if overwrite == "skip".
+        If overwrite == "metadata", leave items as PENDING so they can be processed for metadata updates.
 
         Args:
             plan: DownloadPlan to check
         """
-        if self.config.overwrite != "skip":
-            return  # Only check if we're skipping existing files
+        if self.config.overwrite not in ["skip", "metadata"]:
+            return  # Only check if we're skipping or updating metadata for existing files
 
         logger.info("Checking for existing files...")
         skipped_count = 0
+        metadata_update_count = 0
 
         # Only check track items (they're the ones that create files)
         track_items = plan.get_items_by_type(PlanItemType.TRACK)
@@ -172,10 +174,17 @@ class PlanOptimizer:
 
                 # Check if file exists
                 if file_path.exists():
-                    item.mark_skipped("File already exists")
-                    item.file_path = file_path
-                    skipped_count += 1
-                    logger.debug(f"File exists, skipping: {file_path}")
+                    if self.config.overwrite == "skip":
+                        # Mark as skipped - no processing needed
+                        item.mark_skipped("File already exists")
+                        item.file_path = file_path
+                        skipped_count += 1
+                        logger.debug(f"File exists, skipping: {file_path}")
+                    elif self.config.overwrite == "metadata":
+                        # Leave as PENDING - will be processed for metadata update only
+                        item.file_path = file_path
+                        metadata_update_count += 1
+                        logger.debug(f"File exists, will update metadata: {file_path}")
 
             except Exception as e:
                 # If we can't check, leave item as pending
@@ -183,6 +192,8 @@ class PlanOptimizer:
 
         if skipped_count > 0:
             logger.info(f"Marked {skipped_count} items as skipped (files already exist)")
+        if metadata_update_count > 0:
+            logger.info(f"Found {metadata_update_count} items that need metadata updates")
 
     def _sort_items(self, plan: DownloadPlan) -> None:
         """

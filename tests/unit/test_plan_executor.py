@@ -337,7 +337,42 @@ class TestPlanExecutor:
 
         assert "completed" in stats
         assert "failed" in stats
-        assert "skipped" in stats
         assert "pending" in stats
+        assert "in_progress" in stats
         assert "total" in stats
+        # SKIPPED items are excluded from statistics
+        assert "skipped" not in stats
+
+    def test_execute_excludes_skipped_from_statistics(self, mock_downloader):
+        """Test that executor excludes SKIPPED items from statistics."""
+        plan = DownloadPlan()
+        
+        # Add a completed track
+        track1 = PlanItem(
+            item_id="track:1",
+            item_type=PlanItemType.TRACK,
+            spotify_url="https://open.spotify.com/track/1",
+            name="Track 1",
+        )
+        track1.mark_completed(Path("test1.mp3"))
+        
+        # Add a skipped track (should be excluded from stats)
+        track2 = PlanItem(
+            item_id="track:2",
+            item_type=PlanItemType.TRACK,
+            spotify_url="https://open.spotify.com/track/2",
+            name="Track 2",
+        )
+        track2.mark_skipped("File already exists")
+        
+        plan.items = [track1, track2]
+        
+        executor = PlanExecutor(mock_downloader, max_workers=2)
+        stats = executor.execute(plan)
+        
+        # Should only count track1 (completed), not track2 (skipped)
+        assert stats["total"] == 1
+        assert stats["completed"] == 1
+        assert stats["failed"] == 0
+        assert stats["pending"] == 0
 

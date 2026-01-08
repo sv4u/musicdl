@@ -220,8 +220,17 @@ class Downloader:
 
                 # 2. Check if file already exists (cached)
                 output_path = self._get_output_path(song)
-                if self._file_exists_cached(output_path) and self.config.overwrite == "skip":
+                file_exists = self._file_exists_cached(output_path)
+                
+                if file_exists and self.config.overwrite == "skip":
                     logger.info(f"Skipping (already exists): {output_path}")
+                    return True, output_path
+                
+                if file_exists and self.config.overwrite == "metadata":
+                    # File exists, update metadata only (skip download)
+                    logger.info(f"File exists, updating metadata only: {output_path}")
+                    self.metadata.embed(output_path, song, song.cover_url)
+                    logger.info(f"Successfully updated metadata: {output_path}")
                     return True, output_path
 
                 # 3. Search for audio using audio provider

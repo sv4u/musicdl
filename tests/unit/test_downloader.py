@@ -242,6 +242,51 @@ class TestDownloader:
             mock_metadata.embed.assert_not_called()
         finally:
             os.chdir(original_cwd)
+
+    def test_download_track_file_exists_metadata(self, mock_downloader_dependencies):
+        """Test updating metadata only when overwrite=metadata and file exists."""
+        import os
+        downloader, mock_spotify, mock_audio, mock_metadata, config, tmp_dir = mock_downloader_dependencies
+        config.overwrite = "metadata"
+        
+        # Calculate the expected output path the same way the downloader does
+        track_data = SAMPLE_TRACK_DATA.copy()
+        album_data = SAMPLE_ALBUM_DATA.copy()
+        song = spotify_track_to_song(track_data, album_data)
+        expected_path = downloader._get_output_path(song)
+        
+        # Change to tmp_dir so relative paths work correctly
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_dir)
+            
+            # Create existing file at the expected path (relative to tmp_dir)
+            if expected_path.is_absolute():
+                # If absolute, make it relative to tmp_dir
+                expected_path = expected_path.relative_to(expected_path.anchor)
+            file_path = tmp_dir / expected_path
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_bytes(b"existing content")
+            
+            success, path = downloader.download_track("https://open.spotify.com/track/1RKbVxcm267VdsIzqY7msi")
+            
+            assert success is True
+            # Path should match (normalize to absolute for comparison)
+            if not path.is_absolute():
+                path = tmp_dir / path
+            if not expected_path.is_absolute():
+                expected_path = tmp_dir / expected_path
+            assert path.resolve() == expected_path.resolve()
+            # Should not download audio, but should embed metadata
+            mock_audio.download.assert_not_called()
+            mock_audio.search.assert_not_called()
+            mock_metadata.embed.assert_called_once()
+            # Verify metadata embed was called with correct arguments
+            call_args = mock_metadata.embed.call_args
+            assert call_args[0][0] == path or call_args[0][0].resolve() == expected_path.resolve()
+            assert call_args[0][1].title == song.title
+        finally:
+            os.chdir(original_cwd)
     
     def test_download_track_retry_on_failure(self, mock_downloader_dependencies, mocker):
         """Test retry logic with exponential backoff."""
