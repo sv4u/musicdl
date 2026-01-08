@@ -491,17 +491,22 @@ jobs:
           
           # Generate changelog using git-cliff
           # Explicitly specify config file to ensure it's found
+          # Use temporary file to capture both output and exit code properly
+          TEMP_CHANGELOG=$(mktemp)
+          GIT_CLIFF_EXIT=0
+          
           if [ "$ORIGINAL_TAG" = "v0.0.0" ]; then
             # First release - generate from all commits
-            CHANGELOG=$(git-cliff --config cliff.toml --tag "$NEXT_TAG" --output - 2>&1)
+            git-cliff --config cliff.toml --tag "$NEXT_TAG" --output - > "$TEMP_CHANGELOG" 2>&1 || GIT_CLIFF_EXIT=$?
           else
             # Generate changelog from previous tag
-            CHANGELOG=$(git-cliff --config cliff.toml --tag "$NEXT_TAG" --latest --output - 2>&1)
+            git-cliff --config cliff.toml --tag "$NEXT_TAG" --latest --output - > "$TEMP_CHANGELOG" 2>&1 || GIT_CLIFF_EXIT=$?
           fi
           
           # Check if git-cliff succeeded
-          if [ $? -ne 0 ]; then
-            echo "[!] Warning: git-cliff failed, falling back to basic changelog"
+          if [ $GIT_CLIFF_EXIT -ne 0 ]; then
+            echo "[!] Warning: git-cliff failed (exit code: $GIT_CLIFF_EXIT), falling back to basic changelog"
+            echo "[!] git-cliff output: $(cat "$TEMP_CHANGELOG")"
             # Fallback: create basic changelog (must match regex pattern /^## \[/)
             if [ "$ORIGINAL_TAG" = "v0.0.0" ]; then
               COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo "0")
@@ -510,7 +515,13 @@ jobs:
               COMMIT_COUNT=$(git rev-list --count ${ORIGINAL_TAG}..HEAD 2>/dev/null || echo "0")
               CHANGELOG=$(printf "## [%s] - %s\n\nRelease with %s commits since %s.\n\n**Full Changelog**: https://github.com/%s/compare/%s...%s\n" "$NEXT_TAG" "$(date +%Y-%m-%d)" "$COMMIT_COUNT" "$ORIGINAL_TAG" "${{ github.repository }}" "$ORIGINAL_TAG" "$NEXT_TAG")
             fi
+          else
+            # git-cliff succeeded, use its output
+            CHANGELOG=$(cat "$TEMP_CHANGELOG")
           fi
+          
+          # Clean up temporary file
+          rm -f "$TEMP_CHANGELOG"
           
           # Store original changelog for CHANGELOG.md extraction (before adding artifacts)
           ORIGINAL_CHANGELOG="$CHANGELOG"
