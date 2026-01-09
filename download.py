@@ -198,188 +198,188 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
 
         # Optimize plan
         if plan and config.download.plan_optimization_enabled:
-        # Update rate limit handler callback to use optimized plan path
-        if spotipy_rate_limit_handler and (config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled):
-            callback = create_rate_limit_callback(
-                lambda: plan,
+            # Update rate limit handler callback to use optimized plan path
+            if spotipy_rate_limit_handler and (config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled):
+                callback = create_rate_limit_callback(
+                    lambda: plan,
+                    spotify_client,
+                    lambda: get_plan_path() / "download_plan_optimized.json"
+                )
+                spotipy_rate_limit_handler.callback = callback
+            
+            # Set phase BEFORE optimization starts for accurate status reporting
+            if config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled:
+                plan.metadata["phase"] = "optimizing"
+                plan.metadata["phase_updated_at"] = time.time()
+                plan_path = get_plan_path() / "download_plan_optimized.json"
+                try:
+                    plan.save(plan_path)
+                    if config.download.plan_status_reporting_enabled:
+                        logger.info(f"Saved plan for status reporting (optimization starting) to {plan_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to save plan before optimization: {e}")
+            
+            optimizer = PlanOptimizer(
+                config.download,
                 spotify_client,
-                lambda: get_plan_path() / "download_plan_optimized.json"
+                check_file_existence=True,
             )
-            spotipy_rate_limit_handler.callback = callback
-        
-        # Set phase BEFORE optimization starts for accurate status reporting
-        if config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled:
-            plan.metadata["phase"] = "optimizing"
-            plan.metadata["phase_updated_at"] = time.time()
-            plan_path = get_plan_path() / "download_plan_optimized.json"
-            try:
-                plan.save(plan_path)
-                if config.download.plan_status_reporting_enabled:
-                    logger.info(f"Saved plan for status reporting (optimization starting) to {plan_path}")
-            except Exception as e:
-                logger.warning(f"Failed to save plan before optimization: {e}")
-        
-        optimizer = PlanOptimizer(
-            config.download,
-            spotify_client,
-            check_file_existence=True,
-        )
-        plan = optimizer.optimize(plan)
+            plan = optimizer.optimize(plan)
 
-        # Check for rate limit info and update in plan metadata
-        rate_limit_info = spotify_client.get_rate_limit_info()
-        if rate_limit_info:
-            plan.metadata["rate_limit"] = rate_limit_info
-            logger.warning(
-                f"Spotify rate limit active: retry after {rate_limit_info['retry_after_seconds']}s "
-                f"(expires at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(rate_limit_info['retry_after_timestamp']))})"
-            )
+            # Check for rate limit info and update in plan metadata
+            rate_limit_info = spotify_client.get_rate_limit_info()
+            if rate_limit_info:
+                plan.metadata["rate_limit"] = rate_limit_info
+                logger.warning(
+                    f"Spotify rate limit active: retry after {rate_limit_info['retry_after_seconds']}s "
+                    f"(expires at {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(rate_limit_info['retry_after_timestamp']))})"
+                )
 
-        # Save optimized plan after optimization completes for status reporting (if enabled) or persistence (if enabled)
-        if config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled:
-            plan_path = get_plan_path() / "download_plan_optimized.json"
-            # Remove phase metadata after optimization completes (will be set again before execution)
-            # This prevents healthcheck from showing "optimization in progress" when it's actually complete
-            if "phase" in plan.metadata:
-                del plan.metadata["phase"]
-            if "phase_updated_at" in plan.metadata:
-                del plan.metadata["phase_updated_at"]
-            try:
-                plan.save(plan_path)
-                if config.download.plan_status_reporting_enabled:
-                    logger.info(f"Saved optimized plan for status reporting to {plan_path}")
-                if config.download.plan_persistence_enabled:
-                    logger.info(f"Saved optimized plan to {plan_path}")
-            except Exception as e:
-                logger.error(f"Failed to save optimized plan to {plan_path}: {e}")
-                if config.download.plan_persistence_enabled:
-                    raise RuntimeError(f"Plan persistence failed: {e}") from e
+            # Save optimized plan after optimization completes for status reporting (if enabled) or persistence (if enabled)
+            if config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled:
+                plan_path = get_plan_path() / "download_plan_optimized.json"
+                # Remove phase metadata after optimization completes (will be set again before execution)
+                # This prevents healthcheck from showing "optimization in progress" when it's actually complete
+                if "phase" in plan.metadata:
+                    del plan.metadata["phase"]
+                if "phase_updated_at" in plan.metadata:
+                    del plan.metadata["phase_updated_at"]
+                try:
+                    plan.save(plan_path)
+                    if config.download.plan_status_reporting_enabled:
+                        logger.info(f"Saved optimized plan for status reporting to {plan_path}")
+                    if config.download.plan_persistence_enabled:
+                        logger.info(f"Saved optimized plan to {plan_path}")
+                except Exception as e:
+                    logger.error(f"Failed to save optimized plan to {plan_path}: {e}")
+                    if config.download.plan_persistence_enabled:
+                        raise RuntimeError(f"Plan persistence failed: {e}") from e
 
         # Execute plan
         if plan and config.download.plan_execution_enabled:
-        # Update rate limit handler callback to use progress plan path
-        if spotipy_rate_limit_handler and (config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled):
-            callback = create_rate_limit_callback(
-                lambda: plan,
-                spotify_client,
-                lambda: get_plan_path() / "download_plan_progress.json"
-            )
-            spotipy_rate_limit_handler.callback = callback
-        
-        # Update phase metadata to indicate execution phase
-        if config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled:
-            plan.metadata["phase"] = "executing"
-            plan.metadata["phase_updated_at"] = time.time()
-            # Save plan with execution phase before starting execution
-            # Save for status reporting (if enabled) or persistence (if enabled)
+            # Update rate limit handler callback to use progress plan path
+            if spotipy_rate_limit_handler and (config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled):
+                callback = create_rate_limit_callback(
+                    lambda: plan,
+                    spotify_client,
+                    lambda: get_plan_path() / "download_plan_progress.json"
+                )
+                spotipy_rate_limit_handler.callback = callback
+            
+            # Update phase metadata to indicate execution phase
             if config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled:
+                plan.metadata["phase"] = "executing"
+                plan.metadata["phase_updated_at"] = time.time()
+                # Save plan with execution phase before starting execution
+                # Save for status reporting (if enabled) or persistence (if enabled)
+                if config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled:
+                    try:
+                        plan_path = get_plan_path() / "download_plan_progress.json"
+                        plan.save(plan_path)
+                        if config.download.plan_status_reporting_enabled:
+                            logger.debug(f"Saved plan with execution phase for status reporting to {plan_path}")
+                        if config.download.plan_persistence_enabled:
+                            logger.debug(f"Saved plan with execution phase to {plan_path}")
+                    except Exception as e:
+                        logger.warning(f"Failed to save plan with execution phase: {e}")
+            
+            executor = PlanExecutor(downloader, max_workers=config.download.threads)
+
+            # Track last save time for throttling plan persistence
+            # Use list to allow modification in nested function
+            last_plan_save_time = [0.0]
+            PLAN_SAVE_INTERVAL = 2.0  # Save plan at most once every 2 seconds
+            # Lock to synchronize plan saving across multiple worker threads
+            plan_save_lock = threading.Lock()
+
+            # Progress callback for detailed tracking and plan persistence
+            def progress_callback(item):
+                """Progress callback for detailed tracking and plan persistence."""
+                # Only log items that are being processed (exclude SKIPPED)
+                if item.status == PlanItemStatus.SKIPPED:
+                    return  # Skip reporting for items that need no updates
+                
+                if item.item_type.value == "track":
+                    status_emoji = {
+                        "pending": "⏳",
+                        "in_progress": "🔄",
+                        "completed": "✅",
+                        "failed": "❌",
+                    }.get(item.status.value, "❓")
+                    
+                    # Check if this is a metadata-only update
+                    # (file exists and overwrite mode is metadata)
+                    is_metadata_only = (
+                        item.file_path and 
+                        item.file_path.exists() and 
+                        downloader.config.overwrite == "metadata"
+                    )
+                    
+                    status_msg = f"{status_emoji} {item.name} - {item.status.value}"
+                    if is_metadata_only:
+                        status_msg += " (metadata update)"
+                    
+                    logger.info(status_msg)
+                elif item.item_type.value in ["album", "artist", "playlist"]:
+                    # Log container status updates
+                    status_emoji = {
+                        "pending": "⏳",
+                        "in_progress": "🔄",
+                        "completed": "✅",
+                        "failed": "❌",
+                    }.get(item.status.value, "❓")
+                    logger.info(
+                        f"{status_emoji} {item.item_type.value.title()}: {item.name} - {item.status.value}"
+                    )
+
+                # Save plan periodically for status page updates (throttled to avoid excessive I/O)
+                # Use lock to prevent concurrent writes from multiple worker threads
+                if config.download.plan_persistence_enabled:
+                    # Check time outside lock for performance, but re-check inside lock to prevent race
+                    if time.time() - last_plan_save_time[0] >= PLAN_SAVE_INTERVAL:
+                        with plan_save_lock:
+                            # Capture time inside lock for precision
+                            current_time = time.time()
+                            # Re-check time inside lock to handle race condition where multiple
+                            # threads passed the initial check before any could update the timestamp
+                            if current_time - last_plan_save_time[0] >= PLAN_SAVE_INTERVAL:
+                                try:
+                                    plan_path = get_plan_path() / "download_plan_progress.json"
+                                    plan.save(plan_path)
+                                    last_plan_save_time[0] = current_time
+                                    logger.debug(f"Saved plan progress to {plan_path}")
+                                except Exception as e:
+                                    logger.warning(f"Failed to save plan progress: {e}")
+
+            stats = executor.execute(plan, progress_callback=progress_callback)
+
+            # Save final plan state after execution completes (if persistence enabled)
+            if config.download.plan_persistence_enabled:
                 try:
                     plan_path = get_plan_path() / "download_plan_progress.json"
                     plan.save(plan_path)
-                    if config.download.plan_status_reporting_enabled:
-                        logger.debug(f"Saved plan with execution phase for status reporting to {plan_path}")
-                    if config.download.plan_persistence_enabled:
-                        logger.debug(f"Saved plan with execution phase to {plan_path}")
+                    logger.info(f"Saved final plan state to {plan_path}")
                 except Exception as e:
-                    logger.warning(f"Failed to save plan with execution phase: {e}")
-        
-        executor = PlanExecutor(downloader, max_workers=config.download.threads)
+                    logger.warning(f"Failed to save final plan state: {e}")
 
-        # Track last save time for throttling plan persistence
-        # Use list to allow modification in nested function
-        last_plan_save_time = [0.0]
-        PLAN_SAVE_INTERVAL = 2.0  # Save plan at most once every 2 seconds
-        # Lock to synchronize plan saving across multiple worker threads
-        plan_save_lock = threading.Lock()
+            # Convert plan stats to legacy format
+            # SKIPPED items are excluded from stats (they need no updates)
+            results = {
+                "songs": {
+                    "success": stats["completed"],
+                    "failed": stats["failed"],
+                },
+                "artists": {"success": 0, "failed": 0},
+                "playlists": {"success": 0, "failed": 0},
+                "albums": {"success": 0, "failed": 0},
+            }
 
-        # Progress callback for detailed tracking and plan persistence
-        def progress_callback(item):
-            """Progress callback for detailed tracking and plan persistence."""
-            # Only log items that are being processed (exclude SKIPPED)
-            if item.status == PlanItemStatus.SKIPPED:
-                return  # Skip reporting for items that need no updates
-            
-            if item.item_type.value == "track":
-                status_emoji = {
-                    "pending": "⏳",
-                    "in_progress": "🔄",
-                    "completed": "✅",
-                    "failed": "❌",
-                }.get(item.status.value, "❓")
-                
-                # Check if this is a metadata-only update
-                # (file exists and overwrite mode is metadata)
-                is_metadata_only = (
-                    item.file_path and 
-                    item.file_path.exists() and 
-                    downloader.config.overwrite == "metadata"
-                )
-                
-                status_msg = f"{status_emoji} {item.name} - {item.status.value}"
-                if is_metadata_only:
-                    status_msg += " (metadata update)"
-                
-                logger.info(status_msg)
-            elif item.item_type.value in ["album", "artist", "playlist"]:
-                # Log container status updates
-                status_emoji = {
-                    "pending": "⏳",
-                    "in_progress": "🔄",
-                    "completed": "✅",
-                    "failed": "❌",
-                }.get(item.status.value, "❓")
-                logger.info(
-                    f"{status_emoji} {item.item_type.value.title()}: {item.name} - {item.status.value}"
-                )
+            # Count by type for better reporting
+            plan_stats = plan.get_statistics()
+            logger.info(f"Plan execution complete: {plan_stats}")
 
-            # Save plan periodically for status page updates (throttled to avoid excessive I/O)
-            # Use lock to prevent concurrent writes from multiple worker threads
-            if config.download.plan_persistence_enabled:
-                # Check time outside lock for performance, but re-check inside lock to prevent race
-                if time.time() - last_plan_save_time[0] >= PLAN_SAVE_INTERVAL:
-                    with plan_save_lock:
-                        # Capture time inside lock for precision
-                        current_time = time.time()
-                        # Re-check time inside lock to handle race condition where multiple
-                        # threads passed the initial check before any could update the timestamp
-                        if current_time - last_plan_save_time[0] >= PLAN_SAVE_INTERVAL:
-                            try:
-                                plan_path = get_plan_path() / "download_plan_progress.json"
-                                plan.save(plan_path)
-                                last_plan_save_time[0] = current_time
-                                logger.debug(f"Saved plan progress to {plan_path}")
-                            except Exception as e:
-                                logger.warning(f"Failed to save plan progress: {e}")
-
-        stats = executor.execute(plan, progress_callback=progress_callback)
-
-        # Save final plan state after execution completes (if persistence enabled)
-        if config.download.plan_persistence_enabled:
-            try:
-                plan_path = get_plan_path() / "download_plan_progress.json"
-                plan.save(plan_path)
-                logger.info(f"Saved final plan state to {plan_path}")
-            except Exception as e:
-                logger.warning(f"Failed to save final plan state: {e}")
-
-        # Convert plan stats to legacy format
-        # SKIPPED items are excluded from stats (they need no updates)
-        results = {
-            "songs": {
-                "success": stats["completed"],
-                "failed": stats["failed"],
-            },
-            "artists": {"success": 0, "failed": 0},
-            "playlists": {"success": 0, "failed": 0},
-            "albums": {"success": 0, "failed": 0},
-        }
-
-        # Count by type for better reporting
-        plan_stats = plan.get_statistics()
-        logger.info(f"Plan execution complete: {plan_stats}")
-
-        # Print cache statistics
-        print_cache_stats(downloader, spotify_client)
+            # Print cache statistics
+            print_cache_stats(downloader, spotify_client)
 
             return results
         else:

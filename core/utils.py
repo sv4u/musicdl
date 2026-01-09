@@ -64,7 +64,29 @@ def get_log_path() -> Path:
         # Only create directory if using default path (not when env var is set)
         if not is_custom_path:
             # Create directory if it doesn't exist (with parents if needed)
-            log_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+            except PermissionError as e:
+                # If we can't create the directory, check if it exists and is writable
+                if log_path.parent.exists():
+                    # Directory exists, check if it's writable
+                    try:
+                        test_file = log_path.parent / ".musicdl_write_test"
+                        test_file.touch()
+                        test_file.unlink()
+                    except (OSError, PermissionError) as write_error:
+                        logger.warning(
+                            f"Cannot write to log directory {log_path.parent}: {write_error}. "
+                            "File logging may be disabled."
+                        )
+                        raise OSError(f"Cannot write to log directory {log_path.parent}: {write_error}") from write_error
+                else:
+                    # Directory doesn't exist and we can't create it
+                    logger.warning(
+                        f"Cannot create log directory {log_path.parent}: {e}. "
+                        "File logging may be disabled."
+                    )
+                    raise OSError(f"Cannot create log directory {log_path.parent}: {e}") from e
         elif not log_path.parent.exists():
             # For custom paths, directory must exist
             raise OSError(f"Log directory {log_path.parent} does not exist")
