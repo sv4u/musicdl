@@ -207,6 +207,9 @@ albums:
   - `download_plan.json` - Initial plan after generation
   - `download_plan_optimized.json` - Optimized plan after optimization
   - `download_plan_progress.json` - Progress snapshot during execution
+- `/var/lib/musicdl/logs/musicdl.log` - Application log file (default, configurable via `MUSICDL_LOG_PATH`)
+  - Used by `/logs` endpoint for log viewing
+  - Contains all application logs with timestamps, log levels, and messages
 
 ## ENVIRONMENT
 
@@ -219,6 +222,7 @@ albums:
 
 - `CONFIG_PATH` - Path to configuration file (default: `/scripts/config.yaml`)
 - `MUSICDL_PLAN_PATH` - Plan file directory path (default: `/var/lib/musicdl/plans`)
+- `MUSICDL_LOG_PATH` - Log file path (default: `/var/lib/musicdl/logs/musicdl.log`)
 - `HEALTHCHECK_PORT` - Healthcheck server port (default: `8080`)
 
 **Credential Resolution Order:**
@@ -259,10 +263,28 @@ docker run --rm \
 
 Docker image includes HTTP healthcheck server. Publish port 8080:
 
-- `http://localhost:8080/health` - JSON healthcheck endpoint
-- `http://localhost:8080/status` - HTML status dashboard
+- `http://localhost:8080/health` - JSON healthcheck endpoint for monitoring systems
+- `http://localhost:8080/status` - HTML status dashboard with real-time progress
+- `http://localhost:8080/logs` - HTML log viewer with filtering and search
 
 Requires `plan_persistence_enabled: true` or `plan_status_reporting_enabled: true` in configuration.
+
+**Status Dashboard Features:**
+
+- Real-time download progress and statistics
+- Plan phase tracking (generating, optimizing, executing)
+- Spotify rate limit warnings with countdown timer
+- Plan item status (pending, in progress, completed, failed, skipped)
+- Auto-refresh capability
+
+**Log Viewer Features:**
+
+- View all application logs in styled console format
+- Filter by log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+- Search logs by keyword (case-insensitive)
+- Filter by time range (start time and end time)
+- Auto-refresh capability
+- Search result highlighting
 
 **Docker Compose:**
 

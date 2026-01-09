@@ -7,7 +7,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch
 
-from core.utils import get_plan_path
+from core.utils import get_plan_path, get_log_path
 
 
 class TestGetPlanPath:
@@ -66,4 +66,62 @@ class TestGetPlanPath:
             # Should raise OSError
             with pytest.raises(OSError):
                 get_plan_path()
+
+
+class TestGetLogPath:
+    """Test get_log_path() function."""
+
+    def test_get_log_path_default(self, tmp_test_dir, monkeypatch):
+        """Test get_log_path() with default path."""
+        # Remove MUSICDL_LOG_PATH if set
+        monkeypatch.delenv("MUSICDL_LOG_PATH", raising=False)
+        
+        # Test default path behavior by using a test directory
+        # The actual default path /var/lib/musicdl/logs requires root permissions,
+        # so we test the default behavior using a custom path that simulates the default
+        # In integration tests, the actual default path would be tested with proper permissions
+        test_default_path = tmp_test_dir / "default_logs" / "musicdl.log"
+        monkeypatch.setenv("MUSICDL_LOG_PATH", str(test_default_path))
+        
+        result = get_log_path()
+        assert result is not None
+        assert result == test_default_path
+        assert test_default_path.parent.exists()
+
+    def test_get_log_path_custom_env(self, tmp_test_dir, monkeypatch):
+        """Test get_log_path() with custom environment variable."""
+        custom_path = tmp_test_dir / "custom_logs" / "musicdl.log"
+        custom_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        monkeypatch.setenv("MUSICDL_LOG_PATH", str(custom_path))
+        
+        result = get_log_path()
+        assert result == custom_path
+        assert custom_path.parent.exists()
+
+    def test_get_log_path_creates_directory(self, tmp_test_dir, monkeypatch):
+        """Test that get_log_path() creates directory if it doesn't exist."""
+        new_path = tmp_test_dir / "new_logs" / "musicdl.log"
+        monkeypatch.setenv("MUSICDL_LOG_PATH", str(new_path))
+        
+        # Directory shouldn't exist yet
+        assert not new_path.parent.exists()
+        
+        # Should create directory
+        result = get_log_path()
+        assert result == new_path
+        assert new_path.parent.exists()
+
+    def test_get_log_path_handles_permission_error(self, tmp_test_dir, monkeypatch):
+        """Test that get_log_path() handles permission errors."""
+        # Mock mkdir to raise OSError to simulate permission error
+        # This is more reliable than using /root which may not fail on all systems
+        with patch('pathlib.Path.mkdir') as mock_mkdir:
+            mock_mkdir.side_effect = OSError("Permission denied")
+            invalid_path = tmp_test_dir / "invalid_logs" / "musicdl.log"
+            monkeypatch.setenv("MUSICDL_LOG_PATH", str(invalid_path))
+            
+            # Should raise OSError
+            with pytest.raises(OSError):
+                get_log_path()
 

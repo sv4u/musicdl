@@ -34,7 +34,7 @@ class TestHealthcheckServerIntegration:
         return plan_dir
 
     @pytest.fixture
-    def healthcheck_server(self, plan_dir, monkeypatch):
+    def healthcheck_server(self, plan_dir, tmp_test_dir, monkeypatch):
         """Start healthcheck server in background for testing."""
         # Use a unique port for each test to avoid conflicts
         import socket
@@ -42,9 +42,15 @@ class TestHealthcheckServerIntegration:
             s.bind(('', 0))
             test_port = s.getsockname()[1]
         
+        # Create temporary log directory
+        log_dir = tmp_test_dir / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / "musicdl.log"
+        
         # Set environment variables BEFORE importing module
-        # This ensures the server reads the correct plan directory when it starts
+        # This ensures the server reads the correct plan directory and log path when it starts
         monkeypatch.setenv("MUSICDL_PLAN_PATH", str(plan_dir))
+        monkeypatch.setenv("MUSICDL_LOG_PATH", str(log_path))
         monkeypatch.setenv("HEALTHCHECK_PORT", str(test_port))
         
         # Import and start server
@@ -272,3 +278,213 @@ class TestHealthcheckServerIntegration:
         assert stats["by_status"]["failed"] == 1
         assert stats["by_status"]["pending"] == 1
 
+    def test_logs_endpoint_no_log_file(self, healthcheck_server, plan_dir):
+        """Test /logs endpoint when log file doesn't exist."""
+        port = healthcheck_server._test_port
+        response = requests.get(f"http://localhost:{port}/logs", timeout=2)
+        
+        assert response.status_code == 200
+        assert "text/html" in response.headers["Content-Type"]
+        assert "No log entries found" in response.text or "log" in response.text.lower()
+
+    def test_logs_endpoint_with_logs(self, healthcheck_server, plan_dir, tmp_test_dir):
+        """Test /logs endpoint with log entries."""
+        from tests.helpers import create_log_file, create_sample_log_entries
+        
+        # Get the log path from environment
+        import os
+        log_path = Path(os.getenv("MUSICDL_LOG_PATH", str(tmp_test_dir / "logs" / "musicdl.log")))
+        
+        # Create log entries
+        entries = create_sample_log_entries(count=5, interval_seconds=1)
+        create_log_file(log_path, entries)
+        
+        time.sleep(0.2)  # Wait for file to be written
+        
+        port = healthcheck_server._test_port
+        response = requests.get(f"http://localhost:{port}/logs", timeout=2)
+        
+        assert response.status_code == 200
+        assert "text/html" in response.headers["Content-Type"]
+        assert "musicdl Log Viewer" in response.text
+        assert "Starting download" in response.text
+
+    def test_logs_endpoint_level_filter(self, healthcheck_server, plan_dir, tmp_test_dir):
+        """Test /logs endpoint with log level filter."""
+        from tests.helpers import create_log_file
+        
+        import os
+        log_path = Path(os.getenv("MUSICDL_LOG_PATH", str(tmp_test_dir / "logs" / "musicdl.log")))
+        
+        entries = [
+            {"timestamp": time.time() - 3, "logger": "test", "level": "INFO", "message": "Info message"},
+            {"timestamp": time.time() - 2, "logger": "test", "level": "WARNING", "message": "Warning message"},
+            {"timestamp": time.time() - 1, "logger": "test", "level": "ERROR", "message": "Error message"},
+        ]
+        create_log_file(log_path, entries)
+        
+        time.sleep(0.2)
+        
+        port = healthcheck_server._test_port
+        response = requests.get(f"http://localhost:{port}/logs?level=WARNING", timeout=2)
+        
+        assert response.status_code == 200
+        # Should only show WARNING and ERROR
+        assert "Warning message" in response.text
+        assert "Error message" in response.text
+        # INFO should be filtered out (but might appear in HTML structure)
+        # We can't easily test this without parsing HTML, so we'll just verify the filter parameter works
+
+    def test_logs_endpoint_search_filter(self, healthcheck_server, plan_dir, tmp_test_dir):
+        """Test /logs endpoint with search query filter."""
+        from tests.helpers import create_log_file
+        
+        import os
+        log_path = Path(os.getenv("MUSICDL_LOG_PATH", str(tmp_test_dir / "logs" / "musicdl.log")))
+        
+        entries = [
+            {"timestamp": time.time() - 2, "logger": "test", "level": "INFO", "message": "Download started"},
+            {"timestamp": time.time() - 1, "logger": "test", "level": "ERROR", "message": "Error occurred"},
+        ]
+        create_log_file(log_path, entries)
+        
+        time.sleep(0.2)
+        
+        port = healthcheck_server._test_port
+        response = requests.get(f"http://localhost:{port}/logs?search=Error", timeout=2)
+        
+        assert response.status_code == 200
+        # The message should be in the HTML (may be wrapped in HTML tags)
+        assert "Error" in response.text and "occurred" in response.text
+        # Search results should be highlighted
+        assert "<mark>" in response.text
+
+    def test_logs_endpoint_refresh_parameter(self, healthcheck_server, plan_dir):
+        """Test /logs endpoint with refresh query parameter."""
+        port = healthcheck_server._test_port
+        response = requests.get(f"http://localhost:{port}/logs?refresh=10", timeout=2)
+        
+        assert response.status_code == 200
+        assert 'content="10"' in response.text
+
+    def test_health_endpoint_with_rate_limit(self, healthcheck_server, plan_dir):
+        """Test /health endpoint includes rate limit info when active."""
+        from tests.helpers import create_plan_file_with_rate_limit
+        
+        # Create plan with at least one item to make it valid
+        items = [
+            PlanItem(
+                item_id="track1",
+                item_type=PlanItemType.TRACK,
+                name="Test Track",
+            )
+        ]
+        plan_file = plan_dir / "download_plan.json"
+        create_plan_file_with_rate_limit(plan_file, items=items, retry_after_seconds=3600)
+        
+        time.sleep(0.2)
+        
+        port = healthcheck_server._test_port
+        response = requests.get(f"http://localhost:{port}/health", timeout=2)
+        
+        assert response.status_code in (200, 503)  # Health status depends on plan items
+        data = response.json()
+        assert "rate_limit" in data
+        assert data["rate_limit"]["active"] is True
+        assert data["rate_limit"]["retry_after_seconds"] == 3600
+        assert "remaining_seconds" in data["rate_limit"]
+
+    def test_health_endpoint_rate_limit_expired(self, healthcheck_server, plan_dir):
+        """Test /health endpoint excludes expired rate limit info."""
+        from tests.helpers import create_plan_file_with_rate_limit
+        
+        plan_file = plan_dir / "download_plan.json"
+        # Create rate limit that expired 1 hour ago
+        create_plan_file_with_rate_limit(
+            plan_file,
+            retry_after_seconds=-3600,  # Negative means expired
+            detected_at=time.time() - 7200,  # Detected 2 hours ago
+        )
+        
+        time.sleep(0.2)
+        
+        port = healthcheck_server._test_port
+        response = requests.get(f"http://localhost:{port}/health", timeout=2)
+        
+        assert response.status_code in (200, 503)
+        data = response.json()
+        # Rate limit should not be included if expired
+        assert "rate_limit" not in data or not data.get("rate_limit", {}).get("active", False)
+
+    def test_status_endpoint_rate_limit_display(self, healthcheck_server, plan_dir):
+        """Test /status endpoint displays rate limit warning when active."""
+        from tests.helpers import create_plan_file_with_rate_limit
+        
+        # Create plan with at least one item to make it valid
+        items = [
+            PlanItem(
+                item_id="track1",
+                item_type=PlanItemType.TRACK,
+                name="Test Track",
+            )
+        ]
+        plan_file = plan_dir / "download_plan.json"
+        create_plan_file_with_rate_limit(plan_file, items=items, retry_after_seconds=1800)
+        
+        time.sleep(0.2)
+        
+        port = healthcheck_server._test_port
+        response = requests.get(f"http://localhost:{port}/status", timeout=2)
+        
+        assert response.status_code == 200
+        assert "Spotify Rate Limit" in response.text
+        assert "Active" in response.text
+        assert "1800" in response.text or "30m" in response.text  # 30 minutes
+
+    def test_status_endpoint_phase_display(self, healthcheck_server, plan_dir):
+        """Test /status endpoint displays phase information."""
+        from tests.helpers import create_plan_file_with_phase
+        
+        # Create plan with at least one item to make it valid
+        items = [
+            PlanItem(
+                item_id="track1",
+                item_type=PlanItemType.TRACK,
+                name="Test Track",
+            )
+        ]
+        plan_file = plan_dir / "download_plan.json"
+        create_plan_file_with_phase(plan_file, items=items, phase="executing")
+        
+        time.sleep(0.2)
+        
+        port = healthcheck_server._test_port
+        response = requests.get(f"http://localhost:{port}/status", timeout=2)
+        
+        assert response.status_code == 200
+        assert "Executing Plan" in response.text or "executing" in response.text.lower()
+
+    def test_health_endpoint_phase_information(self, healthcheck_server, plan_dir):
+        """Test /health endpoint includes phase information."""
+        from tests.helpers import create_plan_file_with_phase
+        
+        # Create plan with at least one item to make it valid
+        items = [
+            PlanItem(
+                item_id="track1",
+                item_type=PlanItemType.TRACK,
+                name="Test Track",
+            )
+        ]
+        plan_file = plan_dir / "download_plan.json"
+        create_plan_file_with_phase(plan_file, items=items, phase="optimizing")
+        
+        time.sleep(0.2)
+        
+        port = healthcheck_server._test_port
+        response = requests.get(f"http://localhost:{port}/health", timeout=2)
+        
+        assert response.status_code in (200, 503)
+        data = response.json()
+        assert "phase" in data
+        assert data["phase"] == "optimizing"

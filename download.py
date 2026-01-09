@@ -25,12 +25,13 @@ from typing import Dict
 from core.config import ConfigError, load_config
 from core.downloader import Downloader
 from core.exceptions import DownloadError, SpotifyError
+from core.logging_handler import SpotipyRateLimitHandler, create_rate_limit_callback
 from core.plan import DownloadPlan, PlanItemStatus
 from core.plan_executor import PlanExecutor
 from core.plan_generator import PlanGenerator
 from core.plan_optimizer import PlanOptimizer
 from core.spotify_client import SpotifyClient
-from core.utils import get_plan_path
+from core.utils import get_plan_path, get_log_path
 
 # Configure logging
 logging.basicConfig(
@@ -42,10 +43,44 @@ logger = logging.getLogger(__name__)
 
 
 def setup_logging(log_level: str) -> None:
-    """Configure structured logging based on config."""
+    """
+    Configure structured logging based on config.
+    
+    Sets up both console and file logging. File logs are written to
+    a location accessible by the healthcheck server.
+    """
     level = getattr(logging, log_level.upper(), logging.INFO)
-    logging.getLogger().setLevel(level)
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
     logger.setLevel(level)
+    
+    # Remove existing handlers to avoid duplicates
+    root_logger.handlers.clear()
+    
+    # Console handler (stderr) - for Docker logs
+    console_handler = logging.StreamHandler(sys.stderr)
+    console_handler.setLevel(level)
+    console_formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    console_handler.setFormatter(console_formatter)
+    root_logger.addHandler(console_handler)
+    
+    # File handler - for /logs endpoint
+    try:
+        log_path = get_log_path()
+        file_handler = logging.FileHandler(log_path, encoding="utf-8")
+        file_handler.setLevel(level)
+        file_formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+        file_handler.setFormatter(file_formatter)
+        root_logger.addHandler(file_handler)
+        logger.info(f"File logging enabled: {log_path}")
+    except Exception as e:
+        logger.warning(f"Failed to set up file logging: {e}")
 
 
 def process_downloads(config) -> Dict[str, Dict[str, int]]:
@@ -88,9 +123,24 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
         rate_limit_window=config.download.spotify_rate_limit_window,
     )
 
-    # Generate plan
-    plan = None
-    if config.download.plan_generation_enabled:
+    # Set up spotipy rate limit handler to intercept warnings
+    # This needs to be done early, before any spotipy calls
+    spotipy_rate_limit_handler = None
+    spotipy_logger = None
+    if config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled:
+        # Create a temporary callback that will be updated when plan is available
+        # For now, we'll set up the handler without a callback, then update it
+        spotipy_rate_limit_handler = SpotipyRateLimitHandler(callback=None)
+        # Add handler to spotipy.util logger specifically
+        spotipy_logger = logging.getLogger("spotipy.util")
+        spotipy_logger.addHandler(spotipy_rate_limit_handler)
+        spotipy_logger.setLevel(logging.WARNING)  # Ensure it captures warnings
+        logger.debug("Spotipy rate limit handler installed (will be configured with plan)")
+
+    try:
+        # Generate plan
+        plan = None
+        if config.download.plan_generation_enabled:
         # Set phase BEFORE generation starts for accurate status reporting
         if config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled:
             # Create empty plan to indicate generation phase
@@ -105,6 +155,17 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
         
         generator = PlanGenerator(config, spotify_client)
         plan = generator.generate_plan()
+        
+        # Update handler callback with the generated plan
+        if spotipy_rate_limit_handler and plan:
+            plan_path = get_plan_path() / "download_plan.json"
+            # Use getters to avoid stale references
+            callback = create_rate_limit_callback(
+                lambda: plan,
+                spotify_client,
+                lambda: get_plan_path() / "download_plan.json"
+            )
+            spotipy_rate_limit_handler.callback = callback
 
         # Check for rate limit info and store in plan metadata
         rate_limit_info = spotify_client.get_rate_limit_info()
@@ -135,8 +196,17 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
                 if config.download.plan_persistence_enabled:
                     raise RuntimeError(f"Plan persistence failed: {e}") from e
 
-    # Optimize plan
-    if plan and config.download.plan_optimization_enabled:
+        # Optimize plan
+        if plan and config.download.plan_optimization_enabled:
+        # Update rate limit handler callback to use optimized plan path
+        if spotipy_rate_limit_handler and (config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled):
+            callback = create_rate_limit_callback(
+                lambda: plan,
+                spotify_client,
+                lambda: get_plan_path() / "download_plan_optimized.json"
+            )
+            spotipy_rate_limit_handler.callback = callback
+        
         # Set phase BEFORE optimization starts for accurate status reporting
         if config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled:
             plan.metadata["phase"] = "optimizing"
@@ -185,8 +255,17 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
                 if config.download.plan_persistence_enabled:
                     raise RuntimeError(f"Plan persistence failed: {e}") from e
 
-    # Execute plan
-    if plan and config.download.plan_execution_enabled:
+        # Execute plan
+        if plan and config.download.plan_execution_enabled:
+        # Update rate limit handler callback to use progress plan path
+        if spotipy_rate_limit_handler and (config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled):
+            callback = create_rate_limit_callback(
+                lambda: plan,
+                spotify_client,
+                lambda: get_plan_path() / "download_plan_progress.json"
+            )
+            spotipy_rate_limit_handler.callback = callback
+        
         # Update phase metadata to indicate execution phase
         if config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled:
             plan.metadata["phase"] = "executing"
@@ -302,16 +381,24 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
         # Print cache statistics
         print_cache_stats(downloader, spotify_client)
 
-        return results
-    else:
-        # Plan generation/execution disabled, return empty results
-        logger.warning("Plan execution disabled, no downloads performed")
-        return {
-            "songs": {"success": 0, "failed": 0},
-            "artists": {"success": 0, "failed": 0},
-            "playlists": {"success": 0, "failed": 0},
-            "albums": {"success": 0, "failed": 0},
-        }
+            return results
+        else:
+            # Plan generation/execution disabled, return empty results
+            logger.warning("Plan execution disabled, no downloads performed")
+            return {
+                "songs": {"success": 0, "failed": 0},
+                "artists": {"success": 0, "failed": 0},
+                "playlists": {"success": 0, "failed": 0},
+                "albums": {"success": 0, "failed": 0},
+            }
+    finally:
+        # Clean up handler after execution completes
+        if spotipy_rate_limit_handler and spotipy_logger:
+            try:
+                spotipy_logger.removeHandler(spotipy_rate_limit_handler)
+                logger.debug("Spotipy rate limit handler removed")
+            except Exception as e:
+                logger.warning(f"Failed to remove rate limit handler: {e}")
 
 
 

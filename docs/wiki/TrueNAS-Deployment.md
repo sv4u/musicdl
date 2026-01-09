@@ -605,7 +605,63 @@ Example:
 - **TrueNAS UI**: Apps → musicdl → Logs tab
 - **Docker CLI**: `docker logs musicdl`
 - **Host filesystem**: `/var/lib/docker/containers/{container-id}/{container-id}-json.log`
+- **Application Log File**: `/var/lib/musicdl/logs/musicdl.log` (inside container, configurable via `MUSICDL_LOG_PATH`)
+- **Web Log Viewer**: `http://your-truenas-ip:30024/logs` (if healthcheck server port is published)
 - **Cron Job Logs**: Check TrueNAS system logs (System → Logs → System Logs) for cron execution
+
+### Healthcheck Server
+
+The healthcheck server provides HTTP endpoints for monitoring and status display. To access it, publish port 8080 (or your configured `HEALTHCHECK_PORT`) in your Docker Compose configuration.
+
+**Add to compose.yaml:**
+
+```yaml
+ports:
+  - "30024:8080"  # Map host port 30024 to container port 8080
+```
+
+**Available Endpoints:**
+
+- **`http://your-truenas-ip:30024/health`** - JSON healthcheck endpoint
+  - Returns HTTP 200 (healthy) or 503 (unhealthy)
+  - Used by monitoring systems and Docker HEALTHCHECK
+  - Response includes status, statistics, phase, and rate limit information
+
+- **`http://your-truenas-ip:30024/status`** - HTML status dashboard
+  - Real-time download progress and statistics
+  - Plan phase tracking (generating, optimizing, executing)
+  - Spotify rate limit warnings with countdown timer
+  - Detailed plan item status table
+  - Auto-refresh capability
+  - Link to log viewer
+
+- **`http://your-truenas-ip:30024/logs`** - HTML log viewer
+  - View all application logs in styled console format
+  - Filter by log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+  - Search logs by keyword (case-insensitive)
+  - Filter by time range (start time and end time)
+  - Search result highlighting
+  - Auto-refresh capability
+
+**Rate Limit Warning Detection:**
+
+The healthcheck server automatically detects and displays Spotify rate limit warnings:
+
+- Warnings are automatically intercepted from spotipy logs
+- Displayed on the `/status` page with countdown timer
+- Visible in the `/logs` viewer with WARNING level highlighting
+- Shows retry after time, expiration timestamp, and detection time
+
+**Configuration:**
+
+- **Port**: Set via `HEALTHCHECK_PORT` environment variable (default: 8080)
+- **Plan Directory**: Set via `MUSICDL_PLAN_PATH` environment variable (default: `/var/lib/musicdl/plans`)
+- **Log File**: Set via `MUSICDL_LOG_PATH` environment variable (default: `/var/lib/musicdl/logs/musicdl.log`)
+
+**Requirements:**
+
+- `plan_persistence_enabled: true` or `plan_status_reporting_enabled: true` in configuration
+- Healthcheck server runs automatically when container starts
 
 ### Useful Commands
 
