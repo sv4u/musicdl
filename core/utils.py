@@ -46,7 +46,9 @@ def get_log_path() -> Path:
 
     Reads the MUSICDL_LOG_PATH environment variable and returns a Path object
     for the log file. If the environment variable is not set, defaults to
-    `/var/lib/musicdl/logs/musicdl.log`. The directory is created if it doesn't exist.
+    `/var/lib/musicdl/logs/musicdl.log`. The directory is only created if using
+    the default path. If an environment variable is set, the directory is
+    expected to already exist.
 
     Returns:
         Path object pointing to the log file
@@ -56,12 +58,19 @@ def get_log_path() -> Path:
     """
     log_path_str = os.getenv("MUSICDL_LOG_PATH", "/var/lib/musicdl/logs/musicdl.log")
     log_path = Path(log_path_str)
+    is_custom_path = "MUSICDL_LOG_PATH" in os.environ
 
     try:
-        # Create directory if it doesn't exist (with parents if needed)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
+        # Only create directory if using default path (not when env var is set)
+        if not is_custom_path:
+            # Create directory if it doesn't exist (with parents if needed)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+        elif not log_path.parent.exists():
+            # For custom paths, directory must exist
+            raise OSError(f"Log directory {log_path.parent} does not exist")
         
         # Test file writability by creating a temporary test file
+        # Directory should exist at this point (either created or pre-existing)
         try:
             test_file = log_path.parent / ".musicdl_write_test"
             test_file.touch()
@@ -72,7 +81,10 @@ def get_log_path() -> Path:
         
         logger.debug(f"Log file: {log_path}")
     except OSError as e:
-        logger.error(f"Failed to create log directory {log_path.parent}: {e}")
+        if is_custom_path:
+            logger.error(f"Log directory {log_path.parent} does not exist or is not accessible: {e}")
+        else:
+            logger.error(f"Failed to create log directory {log_path.parent}: {e}")
         raise
 
     return log_path

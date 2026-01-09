@@ -141,17 +141,17 @@ def _process_downloads_plan(config) -> Dict[str, Dict[str, int]]:
         # Generate plan
         plan = None
         if config.download.plan_generation_enabled:
-        # Set phase BEFORE generation starts for accurate status reporting
-        if config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled:
-            # Create empty plan to indicate generation phase
-            plan = DownloadPlan(metadata={"phase": "generating", "phase_updated_at": time.time()})
-            plan_path = get_plan_path() / "download_plan.json"
-            try:
-                plan.save(plan_path)
-                if config.download.plan_status_reporting_enabled:
-                    logger.info(f"Saved plan for status reporting (generation starting) to {plan_path}")
-            except Exception as e:
-                logger.warning(f"Failed to save plan before generation: {e}")
+            # Set phase BEFORE generation starts for accurate status reporting
+            if config.download.plan_status_reporting_enabled or config.download.plan_persistence_enabled:
+                # Create empty plan to indicate generation phase
+                plan = DownloadPlan(metadata={"phase": "generating", "phase_updated_at": time.time()})
+                plan_path = get_plan_path() / "download_plan.json"
+                try:
+                    plan.save(plan_path)
+                    if config.download.plan_status_reporting_enabled:
+                        logger.info(f"Saved plan for status reporting (generation starting) to {plan_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to save plan before generation: {e}")
         
         generator = PlanGenerator(config, spotify_client)
         plan = generator.generate_plan()
