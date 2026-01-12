@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 )
@@ -24,8 +25,11 @@ func (h *Handlers) DownloadStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Start download service
-	ctx := r.Context()
+	// Start download service with background context
+	// Use context.Background() instead of r.Context() because the HTTP request
+	// context is canceled when the response is sent, which would immediately
+	// cancel long-running downloads. The service runs independently of the HTTP request.
+	ctx := context.Background()
 	if err := service.Start(ctx); err != nil {
 		h.logError("DownloadStart", err)
 		response := map[string]interface{}{

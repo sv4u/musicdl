@@ -173,69 +173,79 @@ func (h *Handlers) LogsStream(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 
-				// Ensure file is always closed
-				defer file.Close()
+				// Read file content (extracted to ensure file is closed properly)
+				// Returns true if reading was successful, false otherwise
+				readSuccess := func() bool {
+					defer file.Close() // Close file when this function returns
 
-				// Seek to last known position
-				if _, err := file.Seek(lastPos, io.SeekStart); err != nil {
-					log.Printf("WARN: failed_to_seek_log_file pos=%d error=%v", lastPos, err)
-					continue
-				}
-
-				scanner := bufio.NewScanner(file)
-
-				// Read new lines
-				for scanner.Scan() {
-					line := scanner.Text()
-					if line == "" {
-						continue
+					// Seek to last known position
+					if _, err := file.Seek(lastPos, io.SeekStart); err != nil {
+						log.Printf("WARN: failed_to_seek_log_file pos=%d error=%v", lastPos, err)
+						return false // Failed to seek, don't update lastPos
 					}
 
-					entry := reader.parseLogLine(line)
-					if entry == nil {
-						continue
-					}
+					scanner := bufio.NewScanner(file)
 
-					// Apply filters
-					if logLevel != "" && !strings.EqualFold(entry.Level, logLevel) {
-						continue
-					}
-
-					if searchQuery != "" {
-						if !strings.Contains(strings.ToLower(entry.Message), strings.ToLower(searchQuery)) &&
-							!strings.Contains(strings.ToLower(entry.Raw), strings.ToLower(searchQuery)) {
+					// Read new lines
+					for scanner.Scan() {
+						line := scanner.Text()
+						if line == "" {
 							continue
 						}
+
+						entry := reader.parseLogLine(line)
+						if entry == nil {
+							continue
+						}
+
+						// Apply filters
+						if logLevel != "" && !strings.EqualFold(entry.Level, logLevel) {
+							continue
+						}
+
+						if searchQuery != "" {
+							if !strings.Contains(strings.ToLower(entry.Message), strings.ToLower(searchQuery)) &&
+								!strings.Contains(strings.ToLower(entry.Raw), strings.ToLower(searchQuery)) {
+								continue
+							}
+						}
+
+						// Send log entry via SSE
+						logMsg := map[string]interface{}{
+							"type":      "log",
+							"timestamp": entry.Timestamp.Unix(),
+							"level":     entry.Level,
+							"message":   entry.Message,
+							"fields":    entry.Fields,
+							"raw":       entry.Raw,
+						}
+						data, err := json.Marshal(logMsg)
+						if err != nil {
+							continue
+						}
+
+						mu.Lock()
+						if !closed {
+							fmt.Fprintf(w, "data: %s\n\n", data)
+							flusher.Flush()
+						}
+						mu.Unlock()
 					}
 
-					// Send log entry via SSE
-					logMsg := map[string]interface{}{
-						"type":      "log",
-						"timestamp": entry.Timestamp.Unix(),
-						"level":     entry.Level,
-						"message":   entry.Message,
-						"fields":    entry.Fields,
-						"raw":       entry.Raw,
-					}
-					data, err := json.Marshal(logMsg)
-					if err != nil {
-						continue
+					// Check for scanner errors
+					if err := scanner.Err(); err != nil {
+						log.Printf("WARN: error_reading_log_file error=%v", err)
+						return false // Scanner error, don't update lastPos
 					}
 
-					mu.Lock()
-					if !closed {
-						fmt.Fprintf(w, "data: %s\n\n", data)
-						flusher.Flush()
-					}
-					mu.Unlock()
+					return true // Successfully read content
+				}()
+
+				// Only update lastPos if reading was successful
+				// This prevents skipping log entries when seek fails
+				if readSuccess {
+					lastPos = currentSize
 				}
-
-				// Check for scanner errors
-				if err := scanner.Err(); err != nil {
-					log.Printf("WARN: error_reading_log_file error=%v", err)
-				}
-
-				lastPos = currentSize
 			}
 		}
 	}
