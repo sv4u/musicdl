@@ -1,3 +1,0 @@
-[submodule "spotdl"]
-	path = spotdl
-	url = git@github.com:spotDL/spotify-downloader.git
