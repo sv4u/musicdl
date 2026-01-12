@@ -16,6 +16,9 @@ WORKDIR /build
 COPY go.mod go.sum ./
 
 # Download dependencies
+# Note: spotigo requires go >= 1.24, but we use 1.23
+# Set GOTOOLCHAIN to allow automatic toolchain download if needed
+ENV GOTOOLCHAIN=auto
 RUN go mod download
 
 # Copy source code
