@@ -36,6 +36,7 @@ type PlanItem struct {
 	ItemType   PlanItemType `json:"item_type"`
 	SpotifyID  string       `json:"spotify_id,omitempty"`
 	SpotifyURL string       `json:"spotify_url,omitempty"`
+	YouTubeURL string       `json:"youtube_url,omitempty"`
 
 	// Hierarchy
 	ParentID string   `json:"parent_id,omitempty"`

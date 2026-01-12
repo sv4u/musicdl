@@ -436,3 +436,35 @@ func (c *SpotifyClient) GetPlaylistTracks(ctx context.Context, playlistID string
 
 	return tracks, nil
 }
+
+// Search searches for tracks, artists, albums, etc. on Spotify (cached).
+// searchType should be one of: "track", "artist", "album", "playlist", "show", "episode", "audiobook"
+// or a comma-separated list like "track,album"
+func (c *SpotifyClient) Search(ctx context.Context, query, searchType string, opts *spotigo.SearchOptions) (*spotigo.SearchResponse, error) {
+	// Create cache key from query and search type
+	cacheKey := fmt.Sprintf("search:%s:%s", searchType, query)
+	if cached := c.cache.Get(cacheKey); cached != nil {
+		if response, ok := cached.(*spotigo.SearchResponse); ok {
+			return response, nil
+		}
+	}
+
+	// Apply rate limiting
+	if err := c.applyRateLimiting(ctx); err != nil {
+		return nil, err
+	}
+
+	// Call spotigo
+	response, err := c.client.Search(ctx, query, searchType, opts)
+	if err != nil {
+		return nil, c.handleError(err)
+	}
+
+	// Cache result
+	c.cache.Set(cacheKey, response)
+
+	// Clear rate limit state on success
+	c.rateLimitTracker.Clear()
+
+	return response, nil
+}

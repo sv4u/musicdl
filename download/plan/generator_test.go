@@ -3,8 +3,10 @@ package plan
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
+	"github.com/sv4u/musicdl/download/audio"
 	"github.com/sv4u/musicdl/download/config"
 	"github.com/sv4u/spotigo"
 )
@@ -18,6 +20,7 @@ type mockSpotifyClient struct {
 	artistAlbums map[string][]spotigo.SimplifiedAlbum
 	albumTracks map[string]*spotigo.Paging[spotigo.SimplifiedTrack]
 	playlistTracks map[string]*spotigo.Paging[spotigo.PlaylistTrack]
+	searchResults map[string]*spotigo.SearchResponse
 	
 	// Error injection
 	trackErrors      map[string]error
@@ -25,6 +28,7 @@ type mockSpotifyClient struct {
 	artistErrors     map[string]error
 	playlistErrors   map[string]error
 	artistAlbumsErrors map[string]error
+	searchErrors     map[string]error
 }
 
 func newMockSpotifyClient() *mockSpotifyClient {
@@ -36,11 +40,13 @@ func newMockSpotifyClient() *mockSpotifyClient {
 		artistAlbums:   make(map[string][]spotigo.SimplifiedAlbum),
 		albumTracks:    make(map[string]*spotigo.Paging[spotigo.SimplifiedTrack]),
 		playlistTracks: make(map[string]*spotigo.Paging[spotigo.PlaylistTrack]),
+		searchResults:  make(map[string]*spotigo.SearchResponse),
 		trackErrors:    make(map[string]error),
 		albumErrors:    make(map[string]error),
 		artistErrors:   make(map[string]error),
 		playlistErrors: make(map[string]error),
 		artistAlbumsErrors: make(map[string]error),
+		searchErrors:   make(map[string]error),
 	}
 }
 
@@ -114,6 +120,23 @@ func (m *mockSpotifyClient) NextPlaylistTracks(ctx context.Context, paging inter
 	return nil, nil
 }
 
+func (m *mockSpotifyClient) Search(ctx context.Context, query, searchType string, opts *spotigo.SearchOptions) (*spotigo.SearchResponse, error) {
+	// Create cache key from query and search type
+	cacheKey := fmt.Sprintf("%s:%s", searchType, query)
+	if err, ok := m.searchErrors[cacheKey]; ok {
+		return nil, err
+	}
+	if response, ok := m.searchResults[cacheKey]; ok {
+		return response, nil
+	}
+	// Return empty response if not found
+	return &spotigo.SearchResponse{
+		Tracks: &spotigo.Paging[spotigo.Track]{
+			Items: []spotigo.Track{},
+		},
+	}, nil
+}
+
 // Helper functions to create mock data
 func createMockTrack(id, name string, artistName string) *spotigo.Track {
 	spotifyURL := fmt.Sprintf("https://open.spotify.com/track/%s", id)
@@ -155,10 +178,10 @@ func createMockSimplifiedAlbum(id, name string, artistName string) spotigo.Simpl
 		ID:   id,
 		Name: name,
 		Artists: []spotigo.Artist{
-			{ID: "artist1", Name: artistName, Href: fmt.Sprintf("https://api.spotify.com/v1/artists/artist1"), Type: "artist", URI: "spotify:artist:artist1"},
+			{ID: "artist1", Name: artistName, Href: "https://api.spotify.com/v1/artists/artist1", Type: "artist", URI: "spotify:artist:artist1"},
 		},
 		ExternalURLs: &spotigo.ExternalURLs{
-			Spotify: fmt.Sprintf("https://open.spotify.com/album/%s", id),
+			Spotify: "https://open.spotify.com/album/" + id,
 		},
 		AlbumType: "album",
 		Type:      "album",
@@ -228,7 +251,7 @@ func TestNewGenerator(t *testing.T) {
 		return nil, nil
 	}
 	
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc)
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
 	if generator == nil {
 		t.Fatal("NewGenerator() returned nil")
 	}
@@ -259,7 +282,7 @@ func TestGeneratePlan_WithSongs_Single(t *testing.T) {
 		return nil, nil
 	}
 	
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc)
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 	
 	if err != nil {
@@ -312,7 +335,7 @@ func TestGeneratePlan_WithSongs_Multiple(t *testing.T) {
 		return nil, nil
 	}
 	
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc)
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 	
 	if err != nil {
@@ -355,7 +378,7 @@ func TestGeneratePlan_WithSongs_Duplicate(t *testing.T) {
 		return nil, nil
 	}
 	
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc)
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 	
 	if err != nil {
@@ -392,7 +415,7 @@ func TestGeneratePlan_WithSongs_InvalidURL(t *testing.T) {
 		return nil, nil
 	}
 	
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc)
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 	
 	// Should not error, but should create failed item
@@ -439,7 +462,7 @@ func TestGeneratePlan_WithSongs_APIError(t *testing.T) {
 		return nil, nil
 	}
 	
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc)
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 	
 	// Should not error, but should create failed item
@@ -499,7 +522,7 @@ func TestGeneratePlan_WithArtists_SingleAlbum(t *testing.T) {
 		return nil, nil
 	}
 	
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc)
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 	
 	if err != nil {
@@ -607,7 +630,7 @@ func TestGeneratePlan_WithArtists_MultipleAlbums(t *testing.T) {
 		return nil, nil
 	}
 	
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc)
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 	
 	if err != nil {
@@ -667,7 +690,7 @@ func TestGeneratePlan_WithArtists_DuplicateAlbums(t *testing.T) {
 		return nil, nil
 	}
 	
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc)
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 	
 	if err != nil {
@@ -711,7 +734,7 @@ func TestGeneratePlan_WithArtists_NoAlbums(t *testing.T) {
 		return nil, nil
 	}
 	
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc)
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 	
 	if err != nil {
@@ -755,7 +778,7 @@ func TestGeneratePlan_WithPlaylists_WithTracks(t *testing.T) {
 		return nil, nil
 	}
 	
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc)
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 	
 	if err != nil {
@@ -821,7 +844,7 @@ func TestGeneratePlan_WithPlaylists_NoTracks(t *testing.T) {
 		}, nil
 	}
 	
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc)
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 	
 	if err != nil {
@@ -874,7 +897,7 @@ func TestGeneratePlan_WithAlbums_WithTracks(t *testing.T) {
 		return nil, nil
 	}
 	
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc)
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 	
 	if err != nil {
@@ -952,7 +975,7 @@ func TestGeneratePlan_WithAlbums_WithM3U(t *testing.T) {
 		return nil, nil
 	}
 	
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc)
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 	
 	if err != nil {
@@ -1037,7 +1060,7 @@ func TestGeneratePlan_DuplicateRemoval(t *testing.T) {
 		return nil, nil
 	}
 	
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc)
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 	
 	if err != nil {
@@ -1070,5 +1093,441 @@ func TestGeneratePlan_DuplicateRemoval(t *testing.T) {
 	// Album should still have track in child_ids (even though it's a duplicate)
 	if len(albumItem.ChildIDs) != 1 {
 		t.Errorf("Expected album to have 1 track in child_ids, got %d", len(albumItem.ChildIDs))
+	}
+}
+
+// mockAudioProvider is a mock implementation of audio.Provider for testing YouTube functionality.
+type mockAudioProvider struct {
+	videoMetadata  map[string]*audio.YouTubeVideoMetadata
+	playlistInfo   map[string]*audio.YouTubePlaylistInfo
+	videoErrors    map[string]error
+	playlistErrors map[string]error
+}
+
+func newMockAudioProvider() *mockAudioProvider {
+	return &mockAudioProvider{
+		videoMetadata:  make(map[string]*audio.YouTubeVideoMetadata),
+		playlistInfo:   make(map[string]*audio.YouTubePlaylistInfo),
+		videoErrors:    make(map[string]error),
+		playlistErrors: make(map[string]error),
+	}
+}
+
+func (m *mockAudioProvider) GetVideoMetadata(ctx context.Context, videoURL string) (*audio.YouTubeVideoMetadata, error) {
+	if err, ok := m.videoErrors[videoURL]; ok {
+		return nil, err
+	}
+	if meta, ok := m.videoMetadata[videoURL]; ok {
+		return meta, nil
+	}
+	return nil, fmt.Errorf("video metadata not found: %s", videoURL)
+}
+
+func (m *mockAudioProvider) GetPlaylistInfo(ctx context.Context, playlistURL string) (*audio.YouTubePlaylistInfo, error) {
+	if err, ok := m.playlistErrors[playlistURL]; ok {
+		return nil, err
+	}
+	if info, ok := m.playlistInfo[playlistURL]; ok {
+		return info, nil
+	}
+	return nil, fmt.Errorf("playlist info not found: %s", playlistURL)
+}
+
+// Note: Full YouTube video and playlist processing tests require a real audio.Provider
+// with yt-dlp installed. These are better suited for integration tests.
+// Here we test the URL detection and rejection logic.
+
+func TestGeneratePlan_RejectYouTubeURL_InAlbum(t *testing.T) {
+	cfg := &config.MusicDLConfig{
+		Version: "1.2",
+		Download: config.DownloadSettings{
+			ClientID:     "test_id",
+			ClientSecret: "test_secret",
+		},
+		Albums: []config.MusicSource{
+			{Name: "Test Album", URL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+		},
+	}
+
+	mockClient := newMockSpotifyClient()
+	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
+		return nil, nil
+	}
+
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	ctx := context.Background()
+
+	plan, err := generator.GeneratePlan(ctx)
+	if err != nil {
+		t.Fatalf("GeneratePlan() should not return error, got: %v", err)
+	}
+
+	// Should have a failed item with the error message
+	if len(plan.Items) != 1 {
+		t.Fatalf("Expected 1 failed item, got %d", len(plan.Items))
+	}
+
+	item := plan.Items[0]
+	if item.Status != PlanItemStatusFailed {
+		t.Errorf("Expected item status to be PlanItemStatusFailed, got %v", item.Status)
+	}
+	if !strings.Contains(item.Error, "YouTube URLs are not supported for albums") {
+		t.Errorf("Expected error message about YouTube URLs not supported, got: %s", item.Error)
+	}
+}
+
+func TestGeneratePlan_RejectYouTubeURL_InArtist(t *testing.T) {
+	cfg := &config.MusicDLConfig{
+		Version: "1.2",
+		Download: config.DownloadSettings{
+			ClientID:     "test_id",
+			ClientSecret: "test_secret",
+		},
+		Artists: []config.MusicSource{
+			{Name: "Test Artist", URL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+		},
+	}
+
+	mockClient := newMockSpotifyClient()
+	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
+		return nil, nil
+	}
+
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	ctx := context.Background()
+
+	plan, err := generator.GeneratePlan(ctx)
+	if err != nil {
+		t.Fatalf("GeneratePlan() should not return error, got: %v", err)
+	}
+
+	// Should have a failed item with the error message
+	if len(plan.Items) != 1 {
+		t.Fatalf("Expected 1 failed item, got %d", len(plan.Items))
+	}
+
+	item := plan.Items[0]
+	if item.Status != PlanItemStatusFailed {
+		t.Errorf("Expected item status to be PlanItemStatusFailed, got %v", item.Status)
+	}
+	if !strings.Contains(item.Error, "YouTube URLs are not supported for artists") {
+		t.Errorf("Expected error message about YouTube URLs not supported, got: %s", item.Error)
+	}
+}
+
+func TestGeneratePlan_WithYouTubeVideo_Unit(t *testing.T) {
+	cfg := &config.MusicDLConfig{
+		Version: "1.2",
+		Download: config.DownloadSettings{
+			ClientID:     "test_id",
+			ClientSecret: "test_secret",
+		},
+		Songs: []config.MusicSource{
+			{Name: "Test Video", URL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+		},
+	}
+
+	mockClient := newMockSpotifyClient()
+	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
+		return nil, nil
+	}
+
+	mockAudioProvider := newMockAudioProvider()
+	mockAudioProvider.videoMetadata["https://www.youtube.com/watch?v=dQw4w9WgXcQ"] = &audio.YouTubeVideoMetadata{
+		VideoID:   "dQw4w9WgXcQ",
+		Title:     "Test Video Title",
+		Uploader:  "Test Artist",
+		Duration:  200,
+		UploadDate: "2024-01-15",
+	}
+
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, mockAudioProvider)
+	ctx := context.Background()
+
+	plan, err := generator.GeneratePlan(ctx)
+	if err != nil {
+		t.Fatalf("GeneratePlan() failed: %v", err)
+	}
+
+	if len(plan.Items) != 1 {
+		t.Fatalf("Expected 1 item, got %d", len(plan.Items))
+	}
+
+	item := plan.Items[0]
+	if item.ItemType != PlanItemTypeTrack {
+		t.Errorf("Expected ItemType to be PlanItemTypeTrack, got %v", item.ItemType)
+	}
+	if item.YouTubeURL != "https://www.youtube.com/watch?v=dQw4w9WgXcQ" {
+		t.Errorf("Expected YouTubeURL to be set, got %s", item.YouTubeURL)
+	}
+	if item.Name != "Test Video Title" {
+		t.Errorf("Expected Name to be 'Test Video Title', got %s", item.Name)
+	}
+	if item.SpotifyURL != "" {
+		t.Errorf("Expected SpotifyURL to be empty, got %s", item.SpotifyURL)
+	}
+	if item.Metadata["artist"] != "Test Artist" {
+		t.Errorf("Expected artist metadata to be 'Test Artist', got %v", item.Metadata["artist"])
+	}
+	
+	// Verify YouTube metadata is stored
+	if item.Metadata["youtube_metadata"] == nil {
+		t.Error("Expected youtube_metadata to be stored in item metadata")
+	}
+}
+
+func TestGeneratePlan_WithYouTubeVideo_Duplicate(t *testing.T) {
+	cfg := &config.MusicDLConfig{
+		Version: "1.2",
+		Download: config.DownloadSettings{
+			ClientID:     "test_id",
+			ClientSecret: "test_secret",
+		},
+		Songs: []config.MusicSource{
+			{Name: "Test Video 1", URL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+			{Name: "Test Video 2", URL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"}, // Duplicate
+		},
+	}
+
+	mockClient := newMockSpotifyClient()
+	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
+		return nil, nil
+	}
+
+	mockAudioProvider := newMockAudioProvider()
+	mockAudioProvider.videoMetadata["https://www.youtube.com/watch?v=dQw4w9WgXcQ"] = &audio.YouTubeVideoMetadata{
+		VideoID:  "dQw4w9WgXcQ",
+		Title:    "Test Video Title",
+		Uploader: "Test Artist",
+		Duration: 200,
+	}
+
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, mockAudioProvider)
+	ctx := context.Background()
+
+	plan, err := generator.GeneratePlan(ctx)
+	if err != nil {
+		t.Fatalf("GeneratePlan() failed: %v", err)
+	}
+
+	// Should only have 1 item (duplicate skipped)
+	if len(plan.Items) != 1 {
+		t.Fatalf("Expected 1 item (duplicate skipped), got %d", len(plan.Items))
+	}
+}
+
+func TestGeneratePlan_WithYouTubeVideo_MetadataExtractionError(t *testing.T) {
+	cfg := &config.MusicDLConfig{
+		Version: "1.2",
+		Download: config.DownloadSettings{
+			ClientID:     "test_id",
+			ClientSecret: "test_secret",
+		},
+		Songs: []config.MusicSource{
+			{Name: "Test Video", URL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+		},
+	}
+
+	mockClient := newMockSpotifyClient()
+	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
+		return nil, nil
+	}
+
+	mockAudioProvider := newMockAudioProvider()
+	mockAudioProvider.videoErrors["https://www.youtube.com/watch?v=dQw4w9WgXcQ"] = fmt.Errorf("metadata extraction failed")
+
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, mockAudioProvider)
+	ctx := context.Background()
+
+	plan, err := generator.GeneratePlan(ctx)
+	if err != nil {
+		t.Fatalf("GeneratePlan() should not return error, got: %v", err)
+	}
+
+	// Should have 1 failed item
+	if len(plan.Items) != 1 {
+		t.Fatalf("Expected 1 failed item, got %d", len(plan.Items))
+	}
+
+	item := plan.Items[0]
+	if item.Status != PlanItemStatusFailed {
+		t.Errorf("Expected item status to be PlanItemStatusFailed, got %v", item.Status)
+	}
+	if !strings.Contains(item.Error, "metadata extraction failed") {
+		t.Errorf("Expected error message about metadata extraction, got: %s", item.Error)
+	}
+}
+
+func TestGeneratePlan_WithYouTubePlaylist_Unit(t *testing.T) {
+	cfg := &config.MusicDLConfig{
+		Version: "1.2",
+		Download: config.DownloadSettings{
+			ClientID:     "test_id",
+			ClientSecret: "test_secret",
+		},
+		Playlists: []config.MusicSource{
+			{Name: "Test Playlist", URL: "https://www.youtube.com/playlist?list=PLtest123"},
+		},
+	}
+
+	mockClient := newMockSpotifyClient()
+	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
+		return nil, nil
+	}
+
+	mockAudioProvider := newMockAudioProvider()
+	mockAudioProvider.playlistInfo["https://www.youtube.com/playlist?list=PLtest123"] = &audio.YouTubePlaylistInfo{
+		PlaylistID: "PLtest123",
+		Title:      "Test Playlist Title",
+		Entries: []audio.YouTubeVideoMetadata{
+			{
+				VideoID:  "video1",
+				Title:    "Video 1",
+				Uploader: "Artist 1",
+			},
+			{
+				VideoID:  "video2",
+				Title:    "Video 2",
+				Uploader: "Artist 2",
+			},
+		},
+	}
+
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, mockAudioProvider)
+	ctx := context.Background()
+
+	plan, err := generator.GeneratePlan(ctx)
+	if err != nil {
+		t.Fatalf("GeneratePlan() failed: %v", err)
+	}
+
+	// Should have 1 playlist + 2 tracks + 1 M3U = 4 items
+	if len(plan.Items) != 4 {
+		t.Fatalf("Expected 4 items, got %d", len(plan.Items))
+	}
+
+	var playlistItem *PlanItem
+	for _, item := range plan.Items {
+		if item.ItemType == PlanItemTypePlaylist {
+			playlistItem = item
+			break
+		}
+	}
+	if playlistItem == nil {
+		t.Fatal("Expected playlist item")
+	}
+	if playlistItem.YouTubeURL != "https://www.youtube.com/playlist?list=PLtest123" {
+		t.Errorf("Expected YouTubeURL to be set, got %s", playlistItem.YouTubeURL)
+	}
+	if len(playlistItem.ChildIDs) != 3 { // 2 tracks + 1 M3U
+		t.Errorf("Expected playlist to have 3 children, got %d", len(playlistItem.ChildIDs))
+	}
+
+	// Verify M3U item exists
+	var m3uItem *PlanItem
+	for _, item := range plan.Items {
+		if item.ItemType == PlanItemTypeM3U {
+			m3uItem = item
+			break
+		}
+	}
+	if m3uItem == nil {
+		t.Fatal("Expected M3U item")
+	}
+	if m3uItem.ParentID != playlistItem.ItemID {
+		t.Errorf("Expected M3U parent to be playlist, got %s", m3uItem.ParentID)
+	}
+}
+
+func TestGeneratePlan_WithYouTubeVideo_SpotifyEnhancement(t *testing.T) {
+	cfg := &config.MusicDLConfig{
+		Version: "1.2",
+		Download: config.DownloadSettings{
+			ClientID:     "test_id",
+			ClientSecret: "test_secret",
+		},
+		Songs: []config.MusicSource{
+			{Name: "Test Video", URL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+		},
+	}
+
+	mockClient := newMockSpotifyClient()
+	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
+		return nil, nil
+	}
+
+	// Setup mock audio provider
+	mockAudioProvider := newMockAudioProvider()
+	mockAudioProvider.videoMetadata["https://www.youtube.com/watch?v=dQw4w9WgXcQ"] = &audio.YouTubeVideoMetadata{
+		VideoID:  "dQw4w9WgXcQ",
+		Title:    "Never Gonna Give You Up",
+		Uploader: "Rick Astley",
+		Duration: 213,
+	}
+
+	// Setup mock Spotify search result
+	mockTrack := createMockTrack("spotify123", "Never Gonna Give You Up", "Rick Astley")
+	mockAlbum := createMockAlbum("album123", "Whenever You Need Somebody", "Rick Astley", 10)
+	
+	// Set album reference on track
+	mockTrack.Album = &spotigo.SimplifiedAlbum{
+		ID:   "album123",
+		Name: "Whenever You Need Somebody",
+		Artists: []spotigo.Artist{
+			{ID: "artist1", Name: "Rick Astley"},
+		},
+		ExternalURLs: &spotigo.ExternalURLs{
+			Spotify: "https://open.spotify.com/album/album123",
+		},
+	}
+	
+	mockClient.tracks["spotify123"] = mockTrack
+	mockClient.albums["album123"] = mockAlbum
+
+	// Setup search response
+	// The search query is "track:Never Gonna Give You Up artist:Rick Astley" with searchType "track"
+	// So the cache key is "track:track:Never Gonna Give You Up artist:Rick Astley"
+	searchQuery := "track:Never Gonna Give You Up artist:Rick Astley"
+	searchKey := fmt.Sprintf("track:%s", searchQuery)
+	mockClient.searchResults[searchKey] = &spotigo.SearchResponse{
+		Tracks: &spotigo.Paging[spotigo.Track]{
+			Items: []spotigo.Track{*mockTrack},
+		},
+	}
+
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, mockAudioProvider)
+	ctx := context.Background()
+
+	plan, err := generator.GeneratePlan(ctx)
+	if err != nil {
+		t.Fatalf("GeneratePlan() failed: %v", err)
+	}
+
+	if len(plan.Items) != 1 {
+		t.Fatalf("Expected 1 item, got %d", len(plan.Items))
+	}
+
+	item := plan.Items[0]
+	
+	// Verify Spotify enhancement is stored
+	enhancement, ok := item.Metadata["spotify_enhancement"]
+	if !ok {
+		t.Fatal("Expected spotify_enhancement to be stored in item metadata")
+	}
+
+	enhancementMap, ok := enhancement.(map[string]interface{})
+	if !ok {
+		t.Fatal("Expected spotify_enhancement to be a map")
+	}
+
+	// Verify enhancement fields
+	if enhancementMap["album"] != "Whenever You Need Somebody" {
+		t.Errorf("Expected album in enhancement, got %v", enhancementMap["album"])
+	}
+	if enhancementMap["artist"] != "Rick Astley" {
+		t.Errorf("Expected artist in enhancement, got %v", enhancementMap["artist"])
+	}
+	if enhancementMap["spotify_url"] == "" {
+		t.Error("Expected spotify_url in enhancement")
 	}
 }

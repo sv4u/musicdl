@@ -9,6 +9,7 @@ import (
 	"github.com/sv4u/musicdl/download/audio"
 	"github.com/sv4u/musicdl/download/config"
 	"github.com/sv4u/musicdl/download/metadata"
+	"github.com/sv4u/musicdl/download/plan"
 	"github.com/sv4u/musicdl/download/spotify"
 )
 
@@ -334,6 +335,179 @@ func TestDownloader_ExtractYear_EdgeCases(t *testing.T) {
 	}
 }
 
-// Note: Full DownloadTrack behavioral tests with retries, API calls, etc.
-// should be integration tests (see integration tests section).
-// These unit tests focus on testable behaviors without external dependencies.
+func TestYoutubeMetadataToSong(t *testing.T) {
+	ytMetadata := &audio.YouTubeVideoMetadata{
+		VideoID:   "dQw4w9WgXcQ",
+		Title:     "Test Video Title",
+		Uploader:  "Test Artist",
+		Duration:  200,
+		UploadDate: "2024-01-15",
+	}
+
+	item := &plan.PlanItem{
+		ItemID:     "track:youtube:dQw4w9WgXcQ",
+		ItemType:   plan.PlanItemTypeTrack,
+		YouTubeURL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+		Name:       "Test Video",
+		Metadata:   make(map[string]interface{}),
+	}
+
+	song := youtubeMetadataToSong(ytMetadata, item)
+
+	if song.Title != "Test Video Title" {
+		t.Errorf("Expected Title to be 'Test Video Title', got '%s'", song.Title)
+	}
+	if song.Artist != "Test Artist" {
+		t.Errorf("Expected Artist to be 'Test Artist', got '%s'", song.Artist)
+	}
+	if song.Album != "YouTube" {
+		t.Errorf("Expected Album to be 'YouTube', got '%s'", song.Album)
+	}
+	if song.Duration != 200 {
+		t.Errorf("Expected Duration to be 200, got %d", song.Duration)
+	}
+	if song.Year != 2024 {
+		t.Errorf("Expected Year to be 2024, got %d", song.Year)
+	}
+	if song.Date != "2024-01-15" {
+		t.Errorf("Expected Date to be '2024-01-15', got '%s'", song.Date)
+	}
+}
+
+func TestYoutubeMetadataToSong_WithItemNameFallback(t *testing.T) {
+	ytMetadata := &audio.YouTubeVideoMetadata{
+		VideoID:  "dQw4w9WgXcQ",
+		Title:    "", // Empty title
+		Uploader: "Test Artist",
+		Duration: 200,
+	}
+
+	item := &plan.PlanItem{
+		ItemID:     "track:youtube:dQw4w9WgXcQ",
+		ItemType:   plan.PlanItemTypeTrack,
+		YouTubeURL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+		Name:       "Test Video Name", // Should be used as fallback
+		Metadata:   make(map[string]interface{}),
+	}
+
+	song := youtubeMetadataToSong(ytMetadata, item)
+
+	if song.Title != "Test Video Name" {
+		t.Errorf("Expected Title to fallback to item name 'Test Video Name', got '%s'", song.Title)
+	}
+}
+
+func TestYoutubeMetadataToSong_WithMetadataArtist(t *testing.T) {
+	ytMetadata := &audio.YouTubeVideoMetadata{
+		VideoID:  "dQw4w9WgXcQ",
+		Title:    "Test Video",
+		Uploader: "Uploader Name",
+		Duration: 200,
+	}
+
+	item := &plan.PlanItem{
+		ItemID:     "track:youtube:dQw4w9WgXcQ",
+		ItemType:   plan.PlanItemTypeTrack,
+		YouTubeURL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+		Name:       "Test Video",
+		Metadata: map[string]interface{}{
+			"artist": "Metadata Artist", // Should override uploader
+		},
+	}
+
+	song := youtubeMetadataToSong(ytMetadata, item)
+
+	if song.Artist != "Metadata Artist" {
+		t.Errorf("Expected Artist to be 'Metadata Artist' from metadata, got '%s'", song.Artist)
+	}
+}
+
+func TestApplySpotifyEnhancement(t *testing.T) {
+	song := &metadata.Song{
+		Title:    "Test Song",
+		Artist:   "YouTube Artist",
+		Album:    "YouTube",
+		Duration: 200,
+	}
+
+	item := &plan.PlanItem{
+		Metadata: map[string]interface{}{
+			"spotify_enhancement": map[string]interface{}{
+				"album":        "Enhanced Album",
+				"artist":       "Enhanced Artist",
+				"track_number": 5,
+				"disc_number":  1,
+				"year":         2023,
+				"date":         "2023-06-15",
+				"isrc":         "USRC12345678",
+				"cover_url":    "https://example.com/cover.jpg",
+				"spotify_url":  "https://open.spotify.com/track/123",
+				"explicit":     true,
+				"tracks_count": 12,
+			},
+		},
+	}
+
+	applySpotifyEnhancement(song, item)
+
+	if song.Album != "Enhanced Album" {
+		t.Errorf("Expected Album to be 'Enhanced Album', got '%s'", song.Album)
+	}
+	if song.Artist != "Enhanced Artist" {
+		t.Errorf("Expected Artist to be 'Enhanced Artist', got '%s'", song.Artist)
+	}
+	if song.TrackNumber != 5 {
+		t.Errorf("Expected TrackNumber to be 5, got %d", song.TrackNumber)
+	}
+	if song.DiscNumber != 1 {
+		t.Errorf("Expected DiscNumber to be 1, got %d", song.DiscNumber)
+	}
+	if song.Year != 2023 {
+		t.Errorf("Expected Year to be 2023, got %d", song.Year)
+	}
+	if song.Date != "2023-06-15" {
+		t.Errorf("Expected Date to be '2023-06-15', got '%s'", song.Date)
+	}
+	if song.ISRC != "USRC12345678" {
+		t.Errorf("Expected ISRC to be 'USRC12345678', got '%s'", song.ISRC)
+	}
+	if song.CoverURL != "https://example.com/cover.jpg" {
+		t.Errorf("Expected CoverURL to be 'https://example.com/cover.jpg', got '%s'", song.CoverURL)
+	}
+	if song.SpotifyURL != "https://open.spotify.com/track/123" {
+		t.Errorf("Expected SpotifyURL to be 'https://open.spotify.com/track/123', got '%s'", song.SpotifyURL)
+	}
+	if !song.Explicit {
+		t.Error("Expected Explicit to be true")
+	}
+	if song.TracksCount != 12 {
+		t.Errorf("Expected TracksCount to be 12, got %d", song.TracksCount)
+	}
+}
+
+func TestApplySpotifyEnhancement_NoEnhancement(t *testing.T) {
+	song := &metadata.Song{
+		Title:    "Test Song",
+		Artist:   "YouTube Artist",
+		Album:    "YouTube",
+		Duration: 200,
+	}
+
+	item := &plan.PlanItem{
+		Metadata: make(map[string]interface{}), // No enhancement
+	}
+
+	applySpotifyEnhancement(song, item)
+
+	// Song should remain unchanged
+	if song.Album != "YouTube" {
+		t.Errorf("Expected Album to remain 'YouTube', got '%s'", song.Album)
+	}
+	if song.Artist != "YouTube Artist" {
+		t.Errorf("Expected Artist to remain 'YouTube Artist', got '%s'", song.Artist)
+	}
+}
+
+// Note: Unit tests for downloadYouTubeTrack are limited because Downloader uses concrete types.
+// The helper functions (youtubeMetadataToSong, applySpotifyEnhancement) are already tested above.
+// Full download flow tests are integration tests in youtube_integration_test.go.

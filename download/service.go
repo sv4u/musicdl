@@ -85,7 +85,8 @@ func NewService(cfg *config.MusicDLConfig, spotifyClient *spotify.SpotifyClient,
 	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
 		return spotifyClient.GetPlaylistTracks(ctx, playlistID, opts)
 	}
-	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc)
+	// audioProvider implements YouTubeMetadataProvider interface
+	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc, audioProvider)
 
 	// Create optimizer
 	optimizer := plan.NewOptimizer(true) // Check file existence

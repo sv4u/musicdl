@@ -29,7 +29,7 @@ func TestPlanWorkflow_GenerateOptimizeExecute_SingleSong(t *testing.T) {
 		return nil, nil
 	}
 
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc)
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
 	
 	// Step 1: Generate plan
 	plan, err := generator.GeneratePlan(context.Background())
@@ -109,7 +109,7 @@ func TestPlanWorkflow_GenerateOptimizeExecute_WithDuplicates(t *testing.T) {
 		return nil, nil
 	}
 
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc)
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
 	
 	// Step 1: Generate plan
 	plan, err := generator.GeneratePlan(context.Background())
@@ -186,7 +186,7 @@ func TestPlanWorkflow_GenerateOptimizeExecute_WithArtist(t *testing.T) {
 		return nil, nil
 	}
 
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc)
+	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
 	
 	// Step 1: Generate plan
 	plan, err := generator.GeneratePlan(context.Background())
@@ -334,8 +334,13 @@ type mockDownloadResult struct {
 	err      error
 }
 
-func (m *mockWorkflowDownloader) DownloadTrack(ctx context.Context, spotifyURL string) (bool, string, error) {
-	if result, ok := m.downloadResults[spotifyURL]; ok {
+func (m *mockWorkflowDownloader) DownloadTrack(ctx context.Context, item *PlanItem) (bool, string, error) {
+	// Use SpotifyURL as key, fallback to YouTubeURL if SpotifyURL is empty
+	url := item.SpotifyURL
+	if url == "" {
+		url = item.YouTubeURL
+	}
+	if result, ok := m.downloadResults[url]; ok {
 		return result.success, result.filePath, result.err
 	}
 	return false, "", nil
