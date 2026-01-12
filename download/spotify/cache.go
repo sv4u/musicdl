@@ -199,7 +199,13 @@ func (c *TTLCache) StopCleanup() {
 		return
 	}
 
-	close(c.stopCleanup)
+	// Safely close channel - check if already closed
+	select {
+	case <-c.stopCleanup:
+		// Already closed
+	default:
+		close(c.stopCleanup)
+	}
 	c.cleanupRunning = false
 }
 

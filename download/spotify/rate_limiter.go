@@ -54,6 +54,11 @@ func (rl *RateLimiter) WaitIfNeeded(ctx context.Context) error {
 		}
 
 		// At limit - calculate wait time
+		// Safety check: ensure we have at least one request time
+		if len(rl.requestTimes) == 0 {
+			rl.mu.Unlock()
+			continue
+		}
 		oldest := rl.requestTimes[0]
 		waitTime := rl.windowSize - now.Sub(oldest)
 		rl.mu.Unlock()

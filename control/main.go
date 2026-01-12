@@ -197,7 +197,11 @@ func downloadCommand() {
 		case <-done:
 			// Service completed
 			status := service.GetStatus()
-			phase := status["phase"].(string)
+			phase, ok := status["phase"].(string)
+			if !ok {
+				phase = "unknown"
+				log.Printf("WARN: invalid phase type in status: %T", status["phase"])
+			}
 
 			if phase == "completed" {
 				if stats, ok := status["plan_stats"].(map[string]interface{}); ok {
