@@ -5,10 +5,19 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"strings"
 
+	"github.com/sv4u/musicdl/download/audio"
 	"github.com/sv4u/musicdl/download/config"
 	"github.com/sv4u/spotigo"
 )
+
+// YouTubeMetadataProvider defines the interface for extracting YouTube metadata.
+// This allows for easier testing with mocks.
+type YouTubeMetadataProvider interface {
+	GetVideoMetadata(ctx context.Context, videoURL string) (*audio.YouTubeVideoMetadata, error)
+	GetPlaylistInfo(ctx context.Context, playlistURL string) (*audio.YouTubePlaylistInfo, error)
+}
 
 // Generator generates download plans from configuration.
 type Generator struct {
@@ -22,13 +31,17 @@ type Generator struct {
 		NextWithRateLimit(ctx context.Context, paging interface{ GetNext() *string }) (*spotigo.Paging[spotigo.SimplifiedAlbum], error)
 		NextAlbumTracks(ctx context.Context, paging interface{ GetNext() *string }) (*spotigo.Paging[spotigo.SimplifiedTrack], error)
 		NextPlaylistTracks(ctx context.Context, paging interface{ GetNext() *string }) (*spotigo.Paging[spotigo.PlaylistTrack], error)
+		Search(ctx context.Context, query, searchType string, opts *spotigo.SearchOptions) (*spotigo.SearchResponse, error)
 	}
 	// For playlist tracks, we need direct access to the spotigo client
 	playlistTracksFunc func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error)
-	seenTrackIDs    map[string]bool
-	seenAlbumIDs    map[string]bool
-	seenPlaylistIDs map[string]bool
-	seenArtistIDs   map[string]bool
+	audioProvider      YouTubeMetadataProvider
+	seenTrackIDs       map[string]bool
+	seenAlbumIDs       map[string]bool
+	seenPlaylistIDs    map[string]bool
+	seenArtistIDs      map[string]bool
+	seenYouTubeVideoIDs map[string]bool
+	seenYouTubePlaylistIDs map[string]bool
 }
 
 // SpotifyClientInterface defines the interface for Spotify client operations.
@@ -41,18 +54,22 @@ type SpotifyClientInterface interface {
 	NextWithRateLimit(ctx context.Context, paging interface{ GetNext() *string }) (*spotigo.Paging[spotigo.SimplifiedAlbum], error)
 	NextAlbumTracks(ctx context.Context, paging interface{ GetNext() *string }) (*spotigo.Paging[spotigo.SimplifiedTrack], error)
 	NextPlaylistTracks(ctx context.Context, paging interface{ GetNext() *string }) (*spotigo.Paging[spotigo.PlaylistTrack], error)
+	Search(ctx context.Context, query, searchType string, opts *spotigo.SearchOptions) (*spotigo.SearchResponse, error)
 }
 
 // NewGenerator creates a new plan generator.
-func NewGenerator(cfg *config.MusicDLConfig, spotifyClient SpotifyClientInterface, playlistTracksFunc func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error)) *Generator {
+func NewGenerator(cfg *config.MusicDLConfig, spotifyClient SpotifyClientInterface, playlistTracksFunc func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error), audioProvider YouTubeMetadataProvider) *Generator {
 	return &Generator{
-		config:            cfg,
-		spotifyClient:     spotifyClient,
-		playlistTracksFunc: playlistTracksFunc,
-		seenTrackIDs:      make(map[string]bool),
-		seenAlbumIDs:      make(map[string]bool),
-		seenPlaylistIDs:   make(map[string]bool),
-		seenArtistIDs:     make(map[string]bool),
+		config:                cfg,
+		spotifyClient:         spotifyClient,
+		playlistTracksFunc:    playlistTracksFunc,
+		audioProvider:         audioProvider,
+		seenTrackIDs:           make(map[string]bool),
+		seenAlbumIDs:           make(map[string]bool),
+		seenPlaylistIDs:        make(map[string]bool),
+		seenArtistIDs:          make(map[string]bool),
+		seenYouTubeVideoIDs:    make(map[string]bool),
+		seenYouTubePlaylistIDs: make(map[string]bool),
 	}
 }
 
@@ -121,6 +138,12 @@ func (g *Generator) GeneratePlan(ctx context.Context) (*DownloadPlan, error) {
 
 // processSong processes a single song and adds it to the plan.
 func (g *Generator) processSong(ctx context.Context, plan *DownloadPlan, song config.MusicSource) error {
+	// Check if this is a YouTube URL
+	if IsYouTubeVideo(song.URL) {
+		return g.processYouTubeVideo(ctx, plan, song)
+	}
+
+	// Process as Spotify track
 	trackID := extractTrackID(song.URL)
 	if trackID == "" {
 		return fmt.Errorf("invalid or empty track ID extracted from URL: %s", song.URL)
@@ -188,6 +211,237 @@ func (g *Generator) processSong(ctx context.Context, plan *DownloadPlan, song co
 	return nil
 }
 
+// processYouTubeVideo processes a YouTube video URL and adds it to the plan.
+func (g *Generator) processYouTubeVideo(ctx context.Context, plan *DownloadPlan, song config.MusicSource) error {
+	if g.audioProvider == nil {
+		return fmt.Errorf("audioProvider is required for YouTube video processing")
+	}
+
+	videoID := ExtractYouTubeVideoID(song.URL)
+	if videoID == "" {
+		return fmt.Errorf("invalid or empty YouTube video ID extracted from URL: %s", song.URL)
+	}
+
+	// Check for duplicates
+	if g.seenYouTubeVideoIDs[videoID] {
+		log.Printf("INFO: duplicate_detected type=youtube_video video_id=%s url=%s", videoID, song.URL)
+		return nil // Skip duplicate
+	}
+
+	// Extract metadata using audioProvider
+	videoMetadata, err := g.audioProvider.GetVideoMetadata(ctx, song.URL)
+	if err != nil {
+		log.Printf("ERROR: youtube_metadata_extraction_failed video_id=%s error=%v", videoID, err)
+		// Create failed item
+		item := &PlanItem{
+			ItemID:   fmt.Sprintf("track:youtube:error:%s", song.Name),
+			ItemType: PlanItemTypeTrack,
+			Name:     song.Name,
+			Status:   PlanItemStatusFailed,
+			Error:    err.Error(),
+			Metadata: map[string]interface{}{
+				"source_url": song.URL,
+				"error":      err.Error(),
+			},
+		}
+		plan.AddItem(item)
+		return err
+	}
+
+	// Create track item
+	trackName := videoMetadata.Title
+	if trackName == "" {
+		trackName = song.Name
+	}
+
+	item := &PlanItem{
+		ItemID:     fmt.Sprintf("track:youtube:%s", videoID),
+		ItemType:   PlanItemTypeTrack,
+		YouTubeURL: song.URL,
+		Name:       trackName,
+		Status:     PlanItemStatusPending,
+		Metadata: map[string]interface{}{
+			"source_name":      song.Name,
+			"source_url":       song.URL,
+			"youtube_metadata":  videoMetadata,
+		},
+	}
+
+	// Add uploader as artist if available
+	if videoMetadata.Uploader != "" {
+		item.Metadata["artist"] = videoMetadata.Uploader
+	}
+
+	// Attempt Spotify enhancement (non-blocking)
+	g.enhanceYouTubeWithSpotify(ctx, item, videoMetadata)
+
+	plan.AddItem(item)
+	g.seenYouTubeVideoIDs[videoID] = true
+	return nil
+}
+
+// enhanceYouTubeWithSpotify attempts to enhance YouTube metadata with Spotify data.
+// This is non-blocking - if enhancement fails, the item still proceeds with YouTube metadata.
+func (g *Generator) enhanceYouTubeWithSpotify(ctx context.Context, item *PlanItem, ytMetadata *audio.YouTubeVideoMetadata) {
+	if g.spotifyClient == nil {
+		return // No Spotify client available
+	}
+
+	// Build search query using Spotify query syntax
+	title := ytMetadata.Title
+	if title == "" {
+		title = item.Name
+	}
+	if title == "" {
+		return // Can't search without a title
+	}
+
+	artist := ytMetadata.Uploader
+	if artist == "" {
+		if artistFromMeta, ok := item.Metadata["artist"].(string); ok && artistFromMeta != "" {
+			artist = artistFromMeta
+		}
+	}
+	if artist == "" {
+		// Try search with just title
+		searchQuery := fmt.Sprintf("track:%s", title)
+		g.performSpotifySearch(ctx, item, searchQuery, "")
+		return
+	}
+
+	// Search with both title and artist
+	searchQuery := fmt.Sprintf("track:%s artist:%s", title, artist)
+	g.performSpotifySearch(ctx, item, searchQuery, artist)
+}
+
+// performSpotifySearch performs a Spotify search and enhances the item if a match is found.
+func (g *Generator) performSpotifySearch(ctx context.Context, item *PlanItem, searchQuery, expectedArtist string) {
+	// Search for tracks
+	opts := &spotigo.SearchOptions{
+		Limit: 10, // Get up to 10 results to find best match
+	}
+	response, err := g.spotifyClient.Search(ctx, searchQuery, "track", opts)
+	if err != nil {
+		log.Printf("WARN: spotify_enhancement_search_failed youtube_id=%s query=%s error=%v", ExtractYouTubeVideoID(item.YouTubeURL), searchQuery, err)
+		return
+	}
+
+	if response == nil || response.Tracks == nil || len(response.Tracks.Items) == 0 {
+		log.Printf("INFO: spotify_enhancement_no_results youtube_id=%s query=%s", ExtractYouTubeVideoID(item.YouTubeURL), searchQuery)
+		return
+	}
+
+	// Find first track with matching artist (if expectedArtist provided)
+	var bestTrack *spotigo.Track
+	for _, track := range response.Tracks.Items {
+		if expectedArtist == "" {
+			// No expected artist, use first result
+			bestTrack = &track
+			break
+		}
+
+		// Check if any artist matches (case-insensitive)
+		for _, trackArtist := range track.Artists {
+			if strings.EqualFold(trackArtist.Name, expectedArtist) {
+				bestTrack = &track
+				break
+			}
+		}
+		if bestTrack != nil {
+			break
+		}
+	}
+
+	// If no artist match found but we have results, use first result anyway
+	if bestTrack == nil && len(response.Tracks.Items) > 0 {
+		bestTrack = &response.Tracks.Items[0]
+	}
+
+	if bestTrack == nil {
+		log.Printf("INFO: spotify_enhancement_no_match youtube_id=%s query=%s", ExtractYouTubeVideoID(item.YouTubeURL), searchQuery)
+		return
+	}
+
+	// Get album metadata for the track
+	var album *spotigo.Album
+	if bestTrack.Album != nil && bestTrack.Album.ID != "" {
+		albumData, err := g.spotifyClient.GetAlbum(ctx, bestTrack.Album.ID)
+		if err != nil {
+			log.Printf("WARN: spotify_enhancement_album_fetch_failed track_id=%s album_id=%s error=%v", bestTrack.ID, bestTrack.Album.ID, err)
+			// Continue without album metadata
+		} else {
+			album = albumData
+		}
+	}
+
+	// Build enhancement metadata
+	enhancement := make(map[string]interface{})
+
+	// Track metadata
+	if bestTrack.Name != "" {
+		enhancement["title"] = bestTrack.Name
+	}
+	if len(bestTrack.Artists) > 0 {
+		enhancement["artist"] = bestTrack.Artists[0].Name
+	}
+	if bestTrack.TrackNumber > 0 {
+		enhancement["track_number"] = bestTrack.TrackNumber
+	}
+	if bestTrack.DiscNumber > 0 {
+		enhancement["disc_number"] = bestTrack.DiscNumber
+	}
+	if bestTrack.Explicit {
+		enhancement["explicit"] = true
+	}
+
+	// Album metadata
+	if album != nil {
+		enhancement["album"] = album.Name
+		if len(album.Artists) > 0 {
+			enhancement["album_artist"] = album.Artists[0].Name
+		}
+		if album.ReleaseDate != "" {
+			enhancement["date"] = album.ReleaseDate
+			// Extract year
+			parts := strings.Split(album.ReleaseDate, "-")
+			if len(parts) > 0 {
+				var year int
+				if _, err := fmt.Sscanf(parts[0], "%d", &year); err == nil {
+					enhancement["year"] = year
+				}
+			}
+		}
+		enhancement["tracks_count"] = album.TotalTracks
+	} else if bestTrack.Album != nil {
+		enhancement["album"] = bestTrack.Album.Name
+		if len(bestTrack.Album.Artists) > 0 {
+			enhancement["album_artist"] = bestTrack.Album.Artists[0].Name
+		}
+	}
+
+	// External URLs
+	if bestTrack.ExternalURLs != nil && bestTrack.ExternalURLs.Spotify != "" {
+		enhancement["spotify_url"] = bestTrack.ExternalURLs.Spotify
+	}
+
+	// Cover art
+	if album != nil && len(album.Images) > 0 {
+		enhancement["cover_url"] = album.Images[0].URL
+	} else if bestTrack.Album != nil && len(bestTrack.Album.Images) > 0 {
+		enhancement["cover_url"] = bestTrack.Album.Images[0].URL
+	}
+
+	// ISRC
+	if bestTrack.ExternalIDs != nil && bestTrack.ExternalIDs.ISRC != nil && *bestTrack.ExternalIDs.ISRC != "" {
+		enhancement["isrc"] = *bestTrack.ExternalIDs.ISRC
+	}
+
+	// Store enhancement in item metadata
+	item.Metadata["spotify_enhancement"] = enhancement
+
+	log.Printf("INFO: spotify_enhancement_applied youtube_id=%s spotify_id=%s track=%s", ExtractYouTubeVideoID(item.YouTubeURL), bestTrack.ID, bestTrack.Name)
+}
+
 // extractTrackID extracts track ID from URL or returns as-is if already an ID.
 func extractTrackID(urlOrID string) string {
 	re := regexp.MustCompile(`track/([a-zA-Z0-9]+)`)
@@ -230,6 +484,25 @@ func extractAlbumID(urlOrID string) string {
 
 // processArtist processes an artist and adds albums/tracks to plan.
 func (g *Generator) processArtist(ctx context.Context, plan *DownloadPlan, artist config.MusicSource) error {
+	// Explicitly reject YouTube URLs
+	if IsYouTubeURL(artist.URL) {
+		errMsg := fmt.Sprintf("YouTube URLs are not supported for artists. Use songs or playlists instead. URL: %s", artist.URL)
+		// Create failed item
+		item := &PlanItem{
+			ItemID:   fmt.Sprintf("artist:error:%s", artist.Name),
+			ItemType: PlanItemTypeArtist,
+			Name:     artist.Name,
+			Status:   PlanItemStatusFailed,
+			Error:    errMsg,
+			Metadata: map[string]interface{}{
+				"source_url": artist.URL,
+				"error":      errMsg,
+			},
+		}
+		plan.AddItem(item)
+		return fmt.Errorf(errMsg)
+	}
+
 	artistID := extractArtistID(artist.URL)
 
 	// Check for duplicates
@@ -471,6 +744,11 @@ func (g *Generator) processAlbumTracks(ctx context.Context, plan *DownloadPlan, 
 
 // processPlaylist processes a playlist and adds tracks/M3U to plan.
 func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, playlist config.MusicSource) error {
+	// Check if this is a YouTube playlist
+	if IsYouTubePlaylist(playlist.URL) {
+		return g.processYouTubePlaylist(ctx, plan, playlist)
+	}
+
 	playlistID := extractPlaylistID(playlist.URL)
 
 	// Check for duplicates
@@ -751,8 +1029,156 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 	return nil
 }
 
+// processYouTubePlaylist processes a YouTube playlist URL and adds it to the plan.
+func (g *Generator) processYouTubePlaylist(ctx context.Context, plan *DownloadPlan, playlist config.MusicSource) error {
+	if g.audioProvider == nil {
+		return fmt.Errorf("audioProvider is required for YouTube playlist processing")
+	}
+
+	playlistID := ExtractYouTubePlaylistID(playlist.URL)
+	if playlistID == "" {
+		return fmt.Errorf("invalid or empty YouTube playlist ID extracted from URL: %s", playlist.URL)
+	}
+
+	// Check for duplicates
+	if g.seenYouTubePlaylistIDs[playlistID] {
+		log.Printf("INFO: duplicate_detected type=youtube_playlist playlist_id=%s url=%s", playlistID, playlist.URL)
+		return nil // Skip duplicate
+	}
+
+	// Extract playlist metadata using audioProvider
+	playlistInfo, err := g.audioProvider.GetPlaylistInfo(ctx, playlist.URL)
+	if err != nil {
+		log.Printf("ERROR: youtube_playlist_metadata_extraction_failed playlist_id=%s error=%v", playlistID, err)
+		// Create failed item
+		item := &PlanItem{
+			ItemID:   fmt.Sprintf("playlist:youtube:error:%s", playlist.Name),
+			ItemType: PlanItemTypePlaylist,
+			Name:     playlist.Name,
+			Status:   PlanItemStatusFailed,
+			Error:    err.Error(),
+			Metadata: map[string]interface{}{
+				"source_url": playlist.URL,
+				"error":      err.Error(),
+			},
+		}
+		plan.AddItem(item)
+		return err
+	}
+
+	// Create playlist item
+	playlistName := playlistInfo.Title
+	if playlistName == "" {
+		playlistName = playlist.Name
+	}
+
+	playlistItem := &PlanItem{
+		ItemID:     fmt.Sprintf("playlist:youtube:%s", playlistID),
+		ItemType:   PlanItemTypePlaylist,
+		YouTubeURL: playlist.URL,
+		Name:       playlistName,
+		Status:     PlanItemStatusPending,
+		Metadata: map[string]interface{}{
+			"source_name":        playlist.Name,
+			"source_url":         playlist.URL,
+			"youtube_playlist_info": playlistInfo,
+		},
+	}
+
+	if playlistInfo.Description != "" {
+		playlistItem.Metadata["description"] = playlistInfo.Description
+	}
+
+	plan.AddItem(playlistItem)
+	g.seenYouTubePlaylistIDs[playlistID] = true
+
+	// Process each video in the playlist
+	for _, videoMeta := range playlistInfo.Entries {
+		videoID := videoMeta.VideoID
+		if videoID == "" {
+			continue
+		}
+
+		// Check for duplicate videos
+		if g.seenYouTubeVideoIDs[videoID] {
+			log.Printf("INFO: duplicate_detected type=youtube_video video_id=%s context=playlist", videoID)
+			existingTrackItemID := fmt.Sprintf("track:youtube:%s", videoID)
+			existingTrack := plan.GetItem(existingTrackItemID)
+			if existingTrack != nil {
+				playlistItem.ChildIDs = append(playlistItem.ChildIDs, existingTrackItemID)
+			}
+			continue
+		}
+
+		// Create track item for video
+		videoURL := videoMeta.WebpageURL
+		if videoURL == "" {
+			videoURL = fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID)
+		}
+
+		trackItem := &PlanItem{
+			ItemID:     fmt.Sprintf("track:youtube:%s", videoID),
+			ItemType:   PlanItemTypeTrack,
+			YouTubeURL: videoURL,
+			ParentID:   playlistItem.ItemID,
+			Name:       videoMeta.Title,
+			Status:     PlanItemStatusPending,
+			Metadata: map[string]interface{}{
+				"youtube_metadata": videoMeta,
+			},
+		}
+
+		// Add uploader as artist if available
+		if videoMeta.Uploader != "" {
+			trackItem.Metadata["artist"] = videoMeta.Uploader
+		}
+
+		// Attempt Spotify enhancement (non-blocking)
+		g.enhanceYouTubeWithSpotify(ctx, trackItem, &videoMeta)
+
+		plan.AddItem(trackItem)
+		playlistItem.ChildIDs = append(playlistItem.ChildIDs, trackItem.ItemID)
+		g.seenYouTubeVideoIDs[videoID] = true
+	}
+
+	// Create M3U item (child of playlist)
+	m3uItem := &PlanItem{
+		ItemID:   fmt.Sprintf("m3u:youtube:%s", playlistID),
+		ItemType: PlanItemTypeM3U,
+		ParentID: playlistItem.ItemID,
+		Name:     fmt.Sprintf("%s.m3u", playlistName),
+		Status:   PlanItemStatusPending,
+		Metadata: map[string]interface{}{
+			"playlist_name": playlistName,
+		},
+	}
+	plan.AddItem(m3uItem)
+	playlistItem.ChildIDs = append(playlistItem.ChildIDs, m3uItem.ItemID)
+
+	return nil
+}
+
 // processAlbum processes an album and adds tracks/M3U to plan.
 func (g *Generator) processAlbum(ctx context.Context, plan *DownloadPlan, album config.MusicSource) error {
+	// Explicitly reject YouTube URLs
+	if IsYouTubeURL(album.URL) {
+		errMsg := fmt.Sprintf("YouTube URLs are not supported for albums. Use songs or playlists instead. URL: %s", album.URL)
+		// Create failed item
+		item := &PlanItem{
+			ItemID:   fmt.Sprintf("album:error:%s", album.Name),
+			ItemType: PlanItemTypeAlbum,
+			Name:     album.Name,
+			Status:   PlanItemStatusFailed,
+			Error:    errMsg,
+			Metadata: map[string]interface{}{
+				"source_url": album.URL,
+				"error":      errMsg,
+			},
+		}
+		plan.AddItem(item)
+		return fmt.Errorf(errMsg)
+	}
+
 	albumID := extractAlbumID(album.URL)
 
 	// Check for duplicates

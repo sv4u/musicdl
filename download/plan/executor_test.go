@@ -10,12 +10,12 @@ import (
 
 // mockDownloader is a mock downloader for testing.
 type mockDownloader struct {
-	downloadFunc func(ctx context.Context, spotifyURL string) (bool, string, error)
+	downloadFunc func(ctx context.Context, item *PlanItem) (bool, string, error)
 }
 
-func (m *mockDownloader) DownloadTrack(ctx context.Context, spotifyURL string) (bool, string, error) {
+func (m *mockDownloader) DownloadTrack(ctx context.Context, item *PlanItem) (bool, string, error) {
 	if m.downloadFunc != nil {
-		return m.downloadFunc(ctx, spotifyURL)
+		return m.downloadFunc(ctx, item)
 	}
 	return false, "", nil
 }
@@ -64,7 +64,7 @@ func TestExecutor_Execute_SingleTrack(t *testing.T) {
 	}
 
 	downloader := &mockDownloader{
-		downloadFunc: func(ctx context.Context, spotifyURL string) (bool, string, error) {
+		downloadFunc: func(ctx context.Context, item *PlanItem) (bool, string, error) {
 			return true, testFile, nil
 		},
 	}
@@ -98,7 +98,7 @@ func TestExecutor_Execute_SingleTrack(t *testing.T) {
 
 func TestExecutor_Execute_TrackFailure(t *testing.T) {
 	downloader := &mockDownloader{
-		downloadFunc: func(ctx context.Context, spotifyURL string) (bool, string, error) {
+		downloadFunc: func(ctx context.Context, item *PlanItem) (bool, string, error) {
 			return false, "", nil
 		},
 	}
@@ -302,7 +302,7 @@ func TestExecutor_CreateM3UFile(t *testing.T) {
 
 func TestExecutor_RequestShutdown(t *testing.T) {
 	downloader := &mockDownloader{
-		downloadFunc: func(ctx context.Context, spotifyURL string) (bool, string, error) {
+		downloadFunc: func(ctx context.Context, item *PlanItem) (bool, string, error) {
 			// Simulate slow download
 			time.Sleep(100 * time.Millisecond)
 			return true, "/tmp/test.mp3", nil
@@ -340,7 +340,7 @@ func TestExecutor_RequestShutdown(t *testing.T) {
 
 func TestExecutor_WaitForShutdown_NoActiveExecution(t *testing.T) {
 	downloader := &mockDownloader{
-		downloadFunc: func(ctx context.Context, spotifyURL string) (bool, string, error) {
+		downloadFunc: func(ctx context.Context, item *PlanItem) (bool, string, error) {
 			return true, "/tmp/test.mp3", nil
 		},
 	}
@@ -355,7 +355,7 @@ func TestExecutor_WaitForShutdown_NoActiveExecution(t *testing.T) {
 
 func TestExecutor_WaitForShutdown_WithActiveExecution(t *testing.T) {
 	downloader := &mockDownloader{
-		downloadFunc: func(ctx context.Context, spotifyURL string) (bool, string, error) {
+		downloadFunc: func(ctx context.Context, item *PlanItem) (bool, string, error) {
 			// Simulate download that takes 200ms
 			time.Sleep(200 * time.Millisecond)
 			return true, "/tmp/test.mp3", nil
@@ -398,7 +398,7 @@ func TestExecutor_WaitForShutdown_WithActiveExecution(t *testing.T) {
 
 func TestExecutor_WaitForShutdown_Timeout(t *testing.T) {
 	downloader := &mockDownloader{
-		downloadFunc: func(ctx context.Context, spotifyURL string) (bool, string, error) {
+		downloadFunc: func(ctx context.Context, item *PlanItem) (bool, string, error) {
 			// Simulate very slow download (longer than timeout)
 			time.Sleep(2 * time.Second)
 			return true, "/tmp/test.mp3", nil
@@ -436,7 +436,7 @@ func TestExecutor_WaitForShutdown_Timeout(t *testing.T) {
 // between the check and the Wait() call.
 func TestExecutor_WaitForShutdown_NilWG(t *testing.T) {
 	downloader := &mockDownloader{
-		downloadFunc: func(ctx context.Context, spotifyURL string) (bool, string, error) {
+		downloadFunc: func(ctx context.Context, item *PlanItem) (bool, string, error) {
 			return true, "/tmp/test.mp3", nil
 		},
 	}

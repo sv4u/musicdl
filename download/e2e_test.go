@@ -100,7 +100,7 @@ func TestE2E_SingleTrackDownload(t *testing.T) {
 	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
 		return spotifyClient.GetPlaylistTracks(ctx, playlistID, opts)
 	}
-	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc)
+	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc, audioProvider)
 
 	// Create optimizer
 	optimizer := plan.NewOptimizer(true)
@@ -221,7 +221,7 @@ func TestE2E_PlanWorkflow_WithRealSpotify(t *testing.T) {
 	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
 		return spotifyClient.GetPlaylistTracks(ctx, playlistID, opts)
 	}
-	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc)
+	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc, audioProvider)
 	optimizer := plan.NewOptimizer(true)
 
 	ctx := context.Background()
@@ -320,7 +320,7 @@ func TestE2E_PlanPersistence_WithRealDownload(t *testing.T) {
 	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
 		return spotifyClient.GetPlaylistTracks(ctx, playlistID, opts)
 	}
-	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc)
+	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc, audioProvider)
 	optimizer := plan.NewOptimizer(true)
 
 	ctx := context.Background()

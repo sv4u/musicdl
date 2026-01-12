@@ -14,6 +14,11 @@ jobs:
   test-and-coverage:
     name: Run Tests and Generate Coverage
     runs-on: ubuntu-latest
+    # This job runs:
+    # 1. Unit tests (all packages, no build tags)
+    # 2. Race detector tests (to catch concurrency issues)
+    # 3. Integration tests (with -tags=integration, requires yt-dlp)
+    # 4. Coverage reports (merged from unit + integration tests)
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -33,14 +38,60 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
+      - name: Install yt-dlp for integration tests
+        run: |
+          sudo pip3 install yt-dlp || sudo pip install yt-dlp || echo "Warning: yt-dlp installation failed, integration tests will be skipped"
+
       - name: Run unit tests
         run: go test ./... -v
+        continue-on-error: false
 
       - name: Run tests with race detector
         run: go test ./... -race -v
+        continue-on-error: false
 
-      - name: Generate coverage profile
-        run: go test ./... -coverprofile=coverage.out
+      - name: Run integration tests
+        continue-on-error: true
+        run: |
+          if command -v yt-dlp &> /dev/null; then
+            echo "yt-dlp is available, running integration tests..."
+            go test ./... -tags=integration -v
+          else
+            echo "yt-dlp is not available, skipping integration tests"
+          fi
+
+      - name: Generate coverage profile (unit tests)
+        run: go test ./... -coverprofile=coverage-unit.out
+
+      - name: Generate coverage profile (integration tests)
+        continue-on-error: true
+        run: |
+          if command -v yt-dlp &> /dev/null; then
+            go test ./... -tags=integration -coverprofile=coverage-integration.out
+          else
+            echo "Skipping integration test coverage (yt-dlp not available)"
+            touch coverage-integration.out
+          fi
+
+      - name: Install gocovmerge for coverage merging
+        run: go install github.com/wadey/gocovmerge@latest
+
+      - name: Merge coverage profiles
+        run: |
+          # Merge unit and integration coverage profiles
+          if [ -f coverage-integration.out ] && [ -s coverage-integration.out ]; then
+            echo "Merging unit and integration test coverage..."
+            gocovmerge coverage-unit.out coverage-integration.out > coverage.out
+          else
+            echo "Using unit test coverage only (integration tests not available)"
+            cp coverage-unit.out coverage.out
+          fi
+          
+          # Verify coverage file was created
+          if [ ! -f coverage.out ] || [ ! -s coverage.out ]; then
+            echo "Error: Coverage file is missing or empty"
+            exit 1
+          fi
 
       - name: Generate HTML coverage report
         run: |
@@ -72,6 +123,22 @@ jobs:
           path: coverage/coverage.xml
           retention-days: 7
 
+      - name: Test summary
+        if: always()
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Test Execution Summary"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "✓ Unit tests: Executed"
+          echo "✓ Race detector tests: Executed"
+          if command -v yt-dlp &> /dev/null; then
+            echo "✓ Integration tests: Executed (yt-dlp available)"
+          else
+            echo "⚠ Integration tests: Skipped (yt-dlp not available)"
+          fi
+          echo ""
+
       - name: Display coverage summary
         if: always()
         run: |
@@ -83,9 +150,21 @@ jobs:
             echo "HTML report: coverage/coverage.html"
             echo "XML report: coverage/coverage.xml"
             echo ""
+            echo "Coverage by package:"
+            go tool cover -func=coverage.out | grep -E "^github.com" | awk '{printf "  %-60s %s\n", $1, $3}'
+            echo ""
             COVERAGE=$(go tool cover -func=coverage.out | tail -1 | awk '{print $3}')
-            echo "Coverage: $COVERAGE"
+            echo "Total Coverage: $COVERAGE"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            # Check if integration tests were included
+            if [ -f coverage-integration.out ] && [ -s coverage-integration.out ]; then
+              echo ""
+              echo "✓ Integration test coverage included"
+            else
+              echo ""
+              echo "⚠ Integration test coverage not included (yt-dlp may not be available)"
+            fi
           else
             echo "[!] Warning: Coverage report not found"
           fi

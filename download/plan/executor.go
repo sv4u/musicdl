@@ -11,9 +11,10 @@ import (
 
 // Downloader interface for downloading tracks.
 type Downloader interface {
-	// DownloadTrack downloads a track from a Spotify URL.
+	// DownloadTrack downloads a track from a PlanItem.
+	// The PlanItem contains either a SpotifyURL or YouTubeURL, along with metadata.
 	// Returns (success, filePath, error)
-	DownloadTrack(ctx context.Context, spotifyURL string) (bool, string, error)
+	DownloadTrack(ctx context.Context, item *PlanItem) (bool, string, error)
 }
 
 // Executor executes download plans with parallel processing.
@@ -127,13 +128,14 @@ func (e *Executor) executeTrack(ctx context.Context, item *PlanItem, plan *Downl
 		e.notifyProgress(item)
 	}()
 
-	if item.SpotifyURL == "" {
-		item.MarkFailed("Missing Spotify URL for track")
+	// Check if item has a valid URL (either Spotify or YouTube)
+	if item.SpotifyURL == "" && item.YouTubeURL == "" {
+		item.MarkFailed("Missing URL for track (neither SpotifyURL nor YouTubeURL provided)")
 		return
 	}
 
 	// Download track
-	success, filePath, err := e.downloader.DownloadTrack(ctx, item.SpotifyURL)
+	success, filePath, err := e.downloader.DownloadTrack(ctx, item)
 	if err != nil {
 		item.MarkFailed(err.Error())
 		return
