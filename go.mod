@@ -6,7 +6,7 @@ require (
 	github.com/bogem/id3v2/v2 v2.1.4
 	github.com/gorilla/mux v1.8.1
 	github.com/joho/godotenv v1.5.1
-	github.com/sv4u/spotigo v0.0.1
+	github.com/sv4u/spotigo v1.0.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
