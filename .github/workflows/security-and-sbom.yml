@@ -155,12 +155,16 @@ jobs:
           retention-days: 30
 
       - name: Run Grype vulnerability scanner on Docker image
-        uses: anchore/grype-action@v0
-        with:
-          image: ${{ steps.release-tag.outputs.image }}
-          fail-build: false
-          output-format: 'sarif'
-          output-file: 'grype-image-results.sarif'
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD:/output" \
+            -w /output \
+            anchore/grype:latest \
+            ${{ steps.release-tag.outputs.image }} \
+            --output sarif \
+            --file /output/grype-image-results.sarif \
+            --fail-on none || true
 
       - name: Upload Grype image results to GitHub Security
         uses: github/codeql-action/upload-sarif@v3

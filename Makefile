@@ -2,7 +2,7 @@
 
 # Go configuration
 GO := go
-GO_VERSION := 1.24
+GO_VERSION := 1.23
 BINARY_NAME := musicdl
 BUILD_DIR := ./control
 

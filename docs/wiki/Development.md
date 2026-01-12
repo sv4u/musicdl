@@ -4,7 +4,7 @@
 
 ### Prerequisites
 
-- Go 1.24 or later
+- Go 1.23 or later
 - Git
 - yt-dlp (for audio downloads)
 - ffmpeg (for audio conversion)
@@ -376,7 +376,7 @@ go mod verify
 
 If tests fail:
 
-1. Check Go version (requires 1.24+)
+1. Check Go version (requires 1.23+)
 2. Ensure all dependencies are downloaded: `go mod download`
 3. Check for environment variable requirements (for integration tests)
 4. Review test output for specific errors
