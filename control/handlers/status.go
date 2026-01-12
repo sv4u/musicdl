@@ -9,7 +9,7 @@ import (
 func (h *Handlers) Status(w http.ResponseWriter, r *http.Request) {
 	// Get service (may not be initialized yet)
 	service, err := h.getService()
-	if err != nil {
+	if err != nil || service == nil {
 		// Service not initialized yet, return idle state
 		response := map[string]interface{}{
 			"state":      "idle",
