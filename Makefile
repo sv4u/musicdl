@@ -1,18 +1,16 @@
-.PHONY: help test test-unit test-integration test-e2e test-coverage test-cov-html test-cov-xml test-fast install-test-deps clean-test clean docker-build docker-build-latest docker-build-versioned docker-clean docker-clean-all docker-push docker-push-latest docker-push-versioned docker-build-push docker-check
+.PHONY: help build test test-unit test-integration test-e2e test-coverage test-cov-html test-cov-xml test-race test-verbose test-specific test-function clean clean-test docker-build docker-build-latest docker-build-versioned docker-clean docker-clean-all docker-push docker-push-latest docker-push-versioned docker-build-push docker-check
 
-# Default Python interpreter
-PYTHON := python3
-PIP := pip3
-
-# Test directories
-TEST_DIR := tests
-UNIT_DIR := tests/unit
-INTEGRATION_DIR := tests/integration
-E2E_DIR := tests/e2e
+# Go configuration
+GO := go
+GO_VERSION := 1.24
+BINARY_NAME := musicdl
+BUILD_DIR := ./control
 
 # Coverage directories
-COV_DIR := htmlcov
-COV_XML := coverage.xml
+COV_DIR := coverage
+COV_OUT := coverage.out
+COV_HTML := $(COV_DIR)/coverage.html
+COV_XML := $(COV_DIR)/coverage.xml
 
 # Docker configuration
 DOCKERFILE := musicdl.Dockerfile
@@ -25,77 +23,99 @@ help: ## Show this help message
 	@echo "Available targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
 
-install-test-deps: ## Install test dependencies
-	$(PIP) install -r test-requirements.txt
+build: ## Build the musicdl binary
+	@echo "Building $(BINARY_NAME)..."
+	@$(GO) build -o $(BINARY_NAME) $(BUILD_DIR)
+	@echo "✓ Built $(BINARY_NAME)"
 
-test: ## Run all tests
-	pytest
+test: ## Run all tests (excludes integration and e2e by default)
+	@$(GO) test ./... -v
 
 test-unit: ## Run only unit tests (fast, no external dependencies)
-	pytest $(UNIT_DIR) -m "not integration and not e2e"
+	@$(GO) test ./... -v -tags="!integration !e2e"
 
 test-integration: ## Run only integration tests (requires real APIs/credentials)
-	pytest $(INTEGRATION_DIR) -m integration
+	@echo "⚠ Integration tests require Spotify API credentials"
+	@$(GO) test ./... -v -tags=integration
 
 test-e2e: ## Run only end-to-end tests (requires full environment)
-	pytest $(E2E_DIR) -m e2e
+	@echo "⚠ E2E tests require full environment setup"
+	@$(GO) test ./... -v -tags=e2e
 
-test-fast: ## Run fast tests (unit tests only, no coverage)
-	pytest $(UNIT_DIR) -m "not integration and not e2e" --no-cov
-
-test-coverage: ## Run all tests with coverage report
-	pytest --cov=core --cov-report=term-missing
+test-coverage: ## Run all tests with coverage report (terminal output)
+	@$(GO) test ./... -coverprofile=$(COV_OUT)
+	@$(GO) tool cover -func=$(COV_OUT)
 
 test-cov-html: ## Run tests and generate HTML coverage report
-	pytest --cov=core --cov-report=html
-	@echo "Coverage report generated in $(COV_DIR)/index.html"
+	@echo "Generating HTML coverage report..."
+	@mkdir -p $(COV_DIR)
+	@$(GO) test ./... -coverprofile=$(COV_OUT)
+	@$(GO) tool cover -html=$(COV_OUT) -o $(COV_HTML)
+	@echo "✓ Coverage report generated in $(COV_HTML)"
 
 test-cov-xml: ## Run tests and generate XML coverage report (for CI)
-	pytest --cov=core --cov-report=xml
-	@echo "Coverage report generated in $(COV_XML)"
+	@echo "Generating XML coverage report..."
+	@mkdir -p $(COV_DIR)
+	@$(GO) test ./... -coverprofile=$(COV_OUT)
+	@if ! command -v gocov >/dev/null 2>&1; then \
+		echo "Installing gocov tools..."; \
+		$(GO) install github.com/axw/gocov/gocov@latest; \
+		$(GO) install github.com/AlekSi/gocov-xml@latest; \
+	fi
+	@gocov convert $(COV_OUT) | gocov-xml > $(COV_XML)
+	@echo "✓ Coverage report generated in $(COV_XML)"
+
+test-race: ## Run tests with race detector
+	@echo "Running tests with race detector..."
+	@$(GO) test ./... -race -v
 
 test-verbose: ## Run tests with verbose output
-	pytest -v -s
+	@$(GO) test ./... -v -s
 
-test-specific: ## Run specific test file (usage: make test-specific FILE=tests/unit/test_cache.py)
+test-specific: ## Run specific test file (usage: make test-specific FILE=./download/service_test.go)
 	@if [ -z "$(FILE)" ]; then \
-		echo "Error: FILE variable required. Usage: make test-specific FILE=tests/unit/test_cache.py"; \
+		echo "Error: FILE variable required. Usage: make test-specific FILE=./download/service_test.go"; \
 		exit 1; \
 	fi
-	pytest $(FILE) -v
+	@$(GO) test -v $(FILE)
 
-test-function: ## Run specific test function (usage: make test-function FILE=tests/unit/test_cache.py::TestTTLCache::test_cache_set_and_get)
-	@if [ -z "$(FILE)" ]; then \
-		echo "Error: FILE variable required. Usage: make test-function FILE=tests/unit/test_cache.py::TestTTLCache::test_cache_set_and_get"; \
+test-function: ## Run specific test function (usage: make test-function FILE=./download/service_test.go FUNC=TestNewService)
+	@if [ -z "$(FILE)" ] || [ -z "$(FUNC)" ]; then \
+		echo "Error: FILE and FUNC variables required."; \
+		echo "Usage: make test-function FILE=./download/service_test.go FUNC=TestNewService"; \
 		exit 1; \
 	fi
-	pytest $(FILE) -v
-
-test-parallel: ## Run tests in parallel (faster execution)
-	pytest -n auto
-
-test-watch: ## Run tests in watch mode (requires pytest-watch: pip install pytest-watch)
-	ptw
+	@$(GO) test -v -run $(FUNC) $(FILE)
 
 clean-test: ## Clean test artifacts (coverage reports, cache, etc.)
-	rm -rf $(COV_DIR)
-	rm -f $(COV_XML)
-	rm -rf .pytest_cache
-	rm -rf .coverage
-	find . -type d -name __pycache__ -exec rm -r {} + 2>/dev/null || true
-	find . -type f -name "*.pyc" -delete
-	find . -type f -name "*.pyo" -delete
+	@echo "Cleaning test artifacts..."
+	@rm -rf $(COV_DIR)
+	@rm -f $(COV_OUT)
+	@rm -rf .pytest_cache
+	@rm -rf .coverage
+	@find . -type d -name __pycache__ -exec rm -r {} + 2>/dev/null || true
+	@find . -type f -name "*.pyc" -delete
+	@find . -type f -name "*.pyo" -delete
+	@find . -type f -name "*.test" -delete
+	@find . -type f -name "*.out" -delete
+	@echo "✓ Test artifacts cleaned"
 
-clean: clean-test docker-clean-all ## Clean all generated files including test artifacts and Docker images
+clean: clean-test ## Clean all generated files including test artifacts, binaries, and Docker images
+	@echo "Cleaning build artifacts..."
+	@rm -f $(BINARY_NAME)
+	@echo "✓ Build artifacts cleaned"
+	@$(MAKE) docker-clean-all
 
-test-check: ## Check if test dependencies are installed
-	@python3 -c "import pytest" 2>/dev/null && echo "✓ pytest installed" || echo "✗ pytest not installed - run 'make install-test-deps'"
-	@python3 -c "import pytest_mock" 2>/dev/null && echo "✓ pytest-mock installed" || echo "✗ pytest-mock not installed - run 'make install-test-deps'"
-	@python3 -c "import pytest_cov" 2>/dev/null && echo "✓ pytest-cov installed" || echo "✗ pytest-cov not installed - run 'make install-test-deps'"
-
-test-lint: ## Run tests and check for linting issues (if pylint/flake8 available)
-	@echo "Running tests with linting checks..."
-	pytest --flake8 --pylint 2>/dev/null || pytest
+test-check: ## Check if Go is installed and version is correct
+	@command -v $(GO) >/dev/null 2>&1 || (echo "✗ Go is not installed or not in PATH" && exit 1)
+	@echo "✓ Go is installed: $$($(GO) version)"
+	@INSTALLED_VERSION=$$($(GO) version | awk '{print $$3}' | sed 's/go//'); \
+	REQUIRED_VERSION="$(GO_VERSION)"; \
+	if [ "$$INSTALLED_VERSION" != "$$REQUIRED_VERSION" ]; then \
+		echo "⚠ Warning: Go version $$INSTALLED_VERSION installed, but $$REQUIRED_VERSION is recommended"; \
+	else \
+		echo "✓ Go version matches requirement: $$REQUIRED_VERSION"; \
+	fi
 
 docker-build: ## Build Docker image (usage: make docker-build [TAG=v1.2.3])
 	@echo "Building Docker image: $(DOCKER_IMAGE)"
@@ -212,4 +232,3 @@ docker-check: ## Check Docker setup and authentication
 	else \
 		echo "  (no images found)"; \
 	fi
-
