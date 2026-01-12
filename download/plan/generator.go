@@ -500,7 +500,7 @@ func (g *Generator) processArtist(ctx context.Context, plan *DownloadPlan, artis
 			},
 		}
 		plan.AddItem(item)
-		return fmt.Errorf(errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 
 	artistID := extractArtistID(artist.URL)
@@ -1176,7 +1176,7 @@ func (g *Generator) processAlbum(ctx context.Context, plan *DownloadPlan, album 
 			},
 		}
 		plan.AddItem(item)
-		return fmt.Errorf(errMsg)
+		return fmt.Errorf("%s", errMsg)
 	}
 
 	albumID := extractAlbumID(album.URL)
