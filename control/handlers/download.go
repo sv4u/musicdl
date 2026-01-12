@@ -9,11 +9,14 @@ import (
 func (h *Handlers) DownloadStart(w http.ResponseWriter, r *http.Request) {
 	// Get service (will initialize if needed)
 	service, err := h.getService()
-	if err != nil {
+	if err != nil || service == nil {
 		h.logError("getService", err)
 		response := map[string]interface{}{
 			"error":   "Failed to initialize download service",
-			"message": err.Error(),
+			"message": "Service not available",
+		}
+		if err != nil {
+			response["message"] = err.Error()
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -49,11 +52,14 @@ func (h *Handlers) DownloadStart(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) DownloadStop(w http.ResponseWriter, r *http.Request) {
 	// Get service
 	service, err := h.getService()
-	if err != nil {
+	if err != nil || service == nil {
 		h.logError("getService", err)
 		response := map[string]interface{}{
 			"error":   "Failed to get download service",
-			"message": err.Error(),
+			"message": "Service not available",
+		}
+		if err != nil {
+			response["message"] = err.Error()
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -88,7 +94,7 @@ func (h *Handlers) DownloadStop(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) DownloadStatus(w http.ResponseWriter, r *http.Request) {
 	// Get service (may not be initialized yet)
 	service, err := h.getService()
-	if err != nil {
+	if err != nil || service == nil {
 		// Service not initialized yet, return idle state
 		response := map[string]interface{}{
 			"state":   "idle",

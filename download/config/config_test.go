@@ -145,8 +145,23 @@ albums: []
 		t.Errorf("Expected 2 artists, got %d", len(config.Artists))
 	}
 
-	if config.Artists[0].Name != "Artist 1" {
-		t.Errorf("Expected artist name 'Artist 1', got '%s'", config.Artists[0].Name)
+	// Check that both artists are present (order is not guaranteed for map format)
+	expectedArtists := map[string]string{
+		"Artist 1": "https://open.spotify.com/artist/1",
+		"Artist 2": "https://open.spotify.com/artist/2",
+	}
+	
+	actualArtists := make(map[string]string)
+	for _, artist := range config.Artists {
+		actualArtists[artist.Name] = artist.URL
+	}
+	
+	for name, expectedURL := range expectedArtists {
+		if actualURL, ok := actualArtists[name]; !ok {
+			t.Errorf("Expected artist '%s' not found", name)
+		} else if actualURL != expectedURL {
+			t.Errorf("Expected artist '%s' to have URL '%s', got '%s'", name, expectedURL, actualURL)
+		}
 	}
 }
 
