@@ -51,7 +51,7 @@ jobs:
         with:
           scan-type: 'fs'
           scan-ref: '.'
-          format: 'cyclonedx-json'
+          format: 'cyclonedx'
           output: 'sbom-source-trivy-cyclonedx.json'
 
       - name: Generate SPDX SBOM for source code using Syft
@@ -132,7 +132,7 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ steps.release-tag.outputs.image }}
-          format: 'cyclonedx-json'
+          format: 'cyclonedx'
           output: 'sbom-image-trivy-cyclonedx.json'
 
       - name: Generate SPDX SBOM for Docker image using Syft
