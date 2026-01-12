@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -172,8 +173,15 @@ func (h *Handlers) LogsStream(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 
+				// Ensure file is always closed
+				defer file.Close()
+
 				// Seek to last known position
-				file.Seek(lastPos, io.SeekStart)
+				if _, err := file.Seek(lastPos, io.SeekStart); err != nil {
+					log.Printf("WARN: failed_to_seek_log_file pos=%d error=%v", lastPos, err)
+					continue
+				}
+
 				scanner := bufio.NewScanner(file)
 
 				// Read new lines
@@ -222,7 +230,11 @@ func (h *Handlers) LogsStream(w http.ResponseWriter, r *http.Request) {
 					mu.Unlock()
 				}
 
-				file.Close()
+				// Check for scanner errors
+				if err := scanner.Err(); err != nil {
+					log.Printf("WARN: error_reading_log_file error=%v", err)
+				}
+
 				lastPos = currentSize
 			}
 		}

@@ -145,6 +145,13 @@ func (s *Service) Start(ctx context.Context) error {
 			// Start execution in a goroutine
 			go func() {
 				stats, err := s.executor.Execute(ctx, generatedPlan, s.progressCallback)
+
+				// Check if context was cancelled
+				if ctx.Err() != nil {
+					log.Printf("INFO: plan_execution_cancelled error=%v", ctx.Err())
+					return
+				}
+
 				s.mu.Lock()
 				defer s.mu.Unlock()
 				if err != nil {
@@ -233,6 +240,12 @@ func (s *Service) Start(ctx context.Context) error {
 	go func() {
 		stats, err := s.executor.Execute(ctx, generatedPlan, s.progressCallback)
 
+		// Check if context was cancelled
+		if ctx.Err() != nil {
+			log.Printf("INFO: plan_execution_cancelled error=%v", ctx.Err())
+			return
+		}
+
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
@@ -289,7 +302,15 @@ func (s *Service) Stop() error {
 	// Wait for executor to complete with timeout
 	completed := s.executor.WaitForShutdown(shutdownTimeout)
 	if !completed {
-		log.Printf("WARN: shutdown_timeout_exceeded timeout=%v", shutdownTimeout)
+		log.Printf("WARN: shutdown_timeout_exceeded timeout=%v, forcing cleanup", shutdownTimeout)
+		// Force cleanup of resources
+		if s.spotifyClient != nil {
+			s.spotifyClient.Close()
+		}
+		if s.audioProvider != nil {
+			// Audio provider cleanup if needed
+			// (Currently no Close method, but add if needed in future)
+		}
 		s.state = ServiceStateError
 		s.errorMessage = fmt.Sprintf("Shutdown timeout exceeded after %v", shutdownTimeout)
 		return fmt.Errorf("shutdown timeout exceeded after %v", shutdownTimeout)
@@ -419,32 +440,39 @@ func (s *Service) savePlanThrottled() {
 
 // savePlan saves the current plan to disk if persistence is enabled.
 func (s *Service) savePlan() {
-	if !s.config.Download.PlanPersistenceEnabled || s.planPath == "" || s.currentPlan == nil {
+	if !s.config.Download.PlanPersistenceEnabled || s.planPath == "" {
 		return
 	}
 
 	s.mu.RLock()
-	planToSave := s.currentPlan
+	currentPlan := s.currentPlan
 	currentPhase := s.phase
-	s.mu.RUnlock()
-
-	if planToSave == nil {
+	if currentPlan == nil {
+		s.mu.RUnlock()
 		return
 	}
 
-	// Update metadata with current phase and timestamp
-	if planToSave.Metadata == nil {
-		planToSave.Metadata = make(map[string]interface{})
+	// Create a deep copy of metadata to avoid race conditions
+	metadataCopy := make(map[string]interface{})
+	for k, v := range currentPlan.Metadata {
+		metadataCopy[k] = v
 	}
-	planToSave.Metadata["phase"] = string(currentPhase)
-	planToSave.Metadata["phase_updated_at"] = time.Now().Unix()
-	planToSave.Metadata["last_saved_at"] = time.Now().Unix()
+	metadataCopy["phase"] = string(currentPhase)
+	metadataCopy["phase_updated_at"] = time.Now().Unix()
+	metadataCopy["last_saved_at"] = time.Now().Unix()
+	s.mu.RUnlock()
+
+	// Create a copy of the plan for saving
+	planCopy := &plan.DownloadPlan{
+		Items:    currentPlan.Items, // Items are read-only during save
+		Metadata: metadataCopy,
+	}
 
 	progressPath := filepath.Join(s.planPath, "download_plan_progress.json")
-	if err := planToSave.Save(progressPath); err != nil {
+	if err := planCopy.Save(progressPath); err != nil {
 		log.Printf("ERROR: plan_save_failed path=%s error=%v", progressPath, err)
 	} else {
-		log.Printf("INFO: plan_saved path=%s items=%d", progressPath, len(planToSave.Items))
+		log.Printf("INFO: plan_saved path=%s items=%d", progressPath, len(planCopy.Items))
 	}
 }
 

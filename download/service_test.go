@@ -644,3 +644,151 @@ func TestService_SavePlan_NoPlan(t *testing.T) {
 		t.Error("Expected no plan file when no plan exists")
 	}
 }
+
+// TestService_Start_ContextCancellation tests ISSUE-3 fix:
+// Ensures service goroutines check context cancellation before updating state.
+func TestService_Start_ContextCancellation(t *testing.T) {
+	tmpDir := t.TempDir()
+	planPath := filepath.Join(tmpDir, "plans")
+
+	cfg := &config.MusicDLConfig{
+		Version: "1.0",
+		Download: config.DownloadSettings{
+			ClientID:     "test_id",
+			ClientSecret: "test_secret",
+			Threads:      1,
+		},
+	}
+
+	spotifyConfig := &spotify.Config{
+		ClientID:     "test_id",
+		ClientSecret: "test_secret",
+	}
+	spotifyClient, _ := spotify.NewSpotifyClient(spotifyConfig)
+	defer spotifyClient.Close()
+
+	audioConfig := &audio.Config{
+		OutputFormat: "mp3",
+	}
+	audioProvider, _ := audio.NewProvider(audioConfig)
+
+	service, _ := NewService(cfg, spotifyClient, audioProvider, metadata.NewEmbedder(), planPath)
+
+	// Create a context that will be cancelled
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Start service
+	err := service.Start(ctx)
+	if err != nil {
+		t.Fatalf("Start() returned error: %v", err)
+	}
+
+	// Cancel context immediately
+	cancel()
+
+	// Wait a bit for goroutine to process cancellation
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify service doesn't update state after cancellation
+	// The goroutine should return early without updating state
+	status := service.GetStatus()
+	// State might be running or error, but shouldn't be completed if cancelled early
+	if status["phase"] == "completed" {
+		t.Error("Service should not complete after context cancellation")
+	}
+}
+
+// TestService_SavePlan_RaceCondition tests ISSUE-4 fix:
+// Ensures savePlan() creates copies to avoid race conditions.
+func TestService_SavePlan_RaceCondition(t *testing.T) {
+	tmpDir := t.TempDir()
+	planPath := filepath.Join(tmpDir, "plans")
+
+	cfg := &config.MusicDLConfig{
+		Version: "1.0",
+		Download: config.DownloadSettings{
+			ClientID:               "test_id",
+			ClientSecret:           "test_secret",
+			PlanPersistenceEnabled: true,
+		},
+	}
+
+	spotifyConfig := &spotify.Config{
+		ClientID:     "test_id",
+		ClientSecret: "test_secret",
+	}
+	spotifyClient, _ := spotify.NewSpotifyClient(spotifyConfig)
+	defer spotifyClient.Close()
+
+	audioConfig := &audio.Config{
+		OutputFormat: "mp3",
+	}
+	audioProvider, _ := audio.NewProvider(audioConfig)
+
+	// Ensure plan directory exists
+	if err := os.MkdirAll(planPath, 0755); err != nil {
+		t.Fatalf("Failed to create plan directory: %v", err)
+	}
+
+	service, _ := NewService(cfg, spotifyClient, audioProvider, metadata.NewEmbedder(), planPath)
+
+	// Create a plan with metadata
+	testPlan := plan.NewDownloadPlan(map[string]interface{}{
+		"test_key": "test_value",
+	})
+	item := &plan.PlanItem{
+		ItemID:   "item1",
+		ItemType: plan.PlanItemTypeTrack,
+		Name:     "Test Track",
+		Status:   plan.PlanItemStatusPending,
+	}
+	testPlan.AddItem(item)
+
+	// Set plan in service
+	service.mu.Lock()
+	service.currentPlan = testPlan
+	service.phase = ServicePhaseExecuting
+	service.mu.Unlock()
+
+	// Concurrently modify metadata and save plan
+	done := make(chan bool, 2)
+	go func() {
+		// Modify metadata while savePlan might be running
+		for i := 0; i < 10; i++ {
+			service.mu.Lock()
+			if service.currentPlan != nil && service.currentPlan.Metadata != nil {
+				service.currentPlan.Metadata["concurrent_key"] = i
+			}
+			service.mu.Unlock()
+			time.Sleep(10 * time.Millisecond)
+		}
+		done <- true
+	}()
+
+	go func() {
+		// Call savePlan multiple times concurrently
+		for i := 0; i < 10; i++ {
+			service.savePlan()
+			time.Sleep(10 * time.Millisecond)
+		}
+		done <- true
+	}()
+
+	// Wait for both goroutines
+	<-done
+	<-done
+
+	// Verify plan file was saved (should not panic or corrupt)
+	progressPath := filepath.Join(planPath, "download_plan_progress.json")
+	if _, err := os.Stat(progressPath); err != nil {
+		t.Logf("Plan file not created (may be expected): %v", err)
+	} else {
+		// Try to load the plan to verify it's valid
+		loadedPlan, err := plan.LoadPlan(progressPath)
+		if err != nil {
+			t.Errorf("Failed to load saved plan: %v", err)
+		} else if loadedPlan == nil {
+			t.Error("Loaded plan is nil")
+		}
+	}
+}

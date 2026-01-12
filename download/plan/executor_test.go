@@ -431,6 +431,61 @@ func TestExecutor_WaitForShutdown_Timeout(t *testing.T) {
 	}
 }
 
+// TestExecutor_WaitForShutdown_NilWG tests ISSUE-6 fix:
+// Ensures WaitForShutdown handles nil WaitGroup correctly when wg becomes nil
+// between the check and the Wait() call.
+func TestExecutor_WaitForShutdown_NilWG(t *testing.T) {
+	downloader := &mockDownloader{
+		downloadFunc: func(ctx context.Context, spotifyURL string) (bool, string, error) {
+			return true, "/tmp/test.mp3", nil
+		},
+	}
+	executor := NewExecutor(downloader, 2)
+	plan := NewDownloadPlan(nil)
+
+	trackItem := &PlanItem{
+		ItemID:     "track:1",
+		ItemType:   PlanItemTypeTrack,
+		SpotifyURL: "https://open.spotify.com/track/test",
+		Name:       "Test Track",
+		Status:     PlanItemStatusPending,
+	}
+	plan.AddItem(trackItem)
+
+	// Start execution
+	done := make(chan bool)
+	go func() {
+		executor.Execute(context.Background(), plan, nil)
+		done <- true
+	}()
+
+	// Wait for execution to complete
+	<-done
+
+	// Now executionWg should be nil, but WaitForShutdown should handle it safely
+	// This tests the fix where we re-check wg inside the goroutine
+	completed := executor.WaitForShutdown(1 * time.Second)
+	if !completed {
+		t.Error("Expected completion when execution is done (wg is nil)")
+	}
+
+	// Test concurrent access - multiple calls to WaitForShutdown when wg is nil
+	const numCalls = 10
+	results := make(chan bool, numCalls)
+	for i := 0; i < numCalls; i++ {
+		go func() {
+			results <- executor.WaitForShutdown(1 * time.Second)
+		}()
+	}
+
+	// All should complete successfully
+	for i := 0; i < numCalls; i++ {
+		if !<-results {
+			t.Error("Expected all WaitForShutdown calls to complete when wg is nil")
+		}
+	}
+}
+
 // Helper functions
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && 
