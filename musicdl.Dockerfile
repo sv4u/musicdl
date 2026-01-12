@@ -21,12 +21,32 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build Go binary
-# Build a single binary with subcommands (serve, download)
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-	-ldflags="-w -s" \
-	-o /usr/local/bin/musicdl \
-	./control
+# Determine version: use Git tag if on a tag, otherwise use Git commit
+# If VERSION build arg is provided, use it; otherwise calculate from Git
+RUN if [ -n "$VERSION" ]; then \
+		BUILD_VERSION="$VERSION"; \
+	else \
+		# Fetch tags in case of shallow clone
+		git fetch --tags --force >/dev/null 2>&1 || true; \
+		# Check if we're on a tag (exact match)
+		if git describe --exact-match --tags HEAD >/dev/null 2>&1; then \
+			BUILD_VERSION=$(git describe --exact-match --tags HEAD); \
+		# Check if we can describe HEAD with a tag (includes commits after tag)
+		elif git describe --tags HEAD >/dev/null 2>&1; then \
+			BUILD_VERSION=$(git describe --tags HEAD); \
+		# Fallback to commit hash (short, 7 chars)
+		elif git rev-parse --short HEAD >/dev/null 2>&1; then \
+			BUILD_VERSION=$(git rev-parse --short HEAD); \
+		# Final fallback
+		else \
+			BUILD_VERSION="dev"; \
+		fi; \
+	fi && \
+	echo "Building musicdl with version: $BUILD_VERSION" && \
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+		-ldflags="-w -s -X main.Version=$BUILD_VERSION" \
+		-o /usr/local/bin/musicdl \
+		./control
 
 # Stage 2: Runtime image
 FROM alpine:latest
@@ -78,7 +98,8 @@ COPY config.yaml /scripts/config.yaml
 
 # Create entrypoint script
 # The entrypoint runs the Go control platform with 'serve' command
-RUN printf '#!/bin/sh\nset -e\n# Print startup message\necho "Starting musicdl control platform..."\n# Run control platform server\nexec /usr/local/bin/musicdl serve --port "${HEALTHCHECK_PORT:-8080}" --config "${CONFIG_PATH:-/scripts/config.yaml}" --plan-path "${MUSICDL_PLAN_PATH:-/var/lib/musicdl/plans}" --log-path "${MUSICDL_LOG_PATH:-/var/lib/musicdl/logs/musicdl.log}"\n' > /scripts/entrypoint.sh && \
+# Version will be printed by the Go application itself
+RUN printf '#!/bin/sh\nset -e\n# Run control platform server\nexec /usr/local/bin/musicdl serve --port "${HEALTHCHECK_PORT:-8080}" --config "${CONFIG_PATH:-/scripts/config.yaml}" --plan-path "${MUSICDL_PLAN_PATH:-/var/lib/musicdl/plans}" --log-path "${MUSICDL_LOG_PATH:-/var/lib/musicdl/logs/musicdl.log}"\n' > /scripts/entrypoint.sh && \
 	chmod +x /scripts/entrypoint.sh
 
 # Create healthcheck script
