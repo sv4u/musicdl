@@ -327,9 +327,12 @@ func (p *Provider) GetVideoMetadata(ctx context.Context, videoURL string) (*YouT
 	}
 
 	// Extract thumbnail (prefer highest quality)
+	// yt-dlp returns thumbnails sorted from lowest to highest quality
 	if thumbnails, ok := rawData["thumbnails"].([]interface{}); ok && len(thumbnails) > 0 {
-		if firstThumb, ok := thumbnails[0].(map[string]interface{}); ok {
-			if url, ok := firstThumb["url"].(string); ok {
+		// Get the last thumbnail (highest quality)
+		lastThumb := thumbnails[len(thumbnails)-1]
+		if thumbMap, ok := lastThumb.(map[string]interface{}); ok {
+			if url, ok := thumbMap["url"].(string); ok {
 				metadata.Thumbnail = url
 			}
 		}
@@ -437,10 +440,13 @@ func (p *Provider) GetPlaylistInfo(ctx context.Context, playlistURL string) (*Yo
 		info.WebpageURL = webpageURL
 	}
 
-	// Extract thumbnail
+	// Extract thumbnail (prefer highest quality)
+	// yt-dlp returns thumbnails sorted from lowest to highest quality
 	if thumbnails, ok := rawData["thumbnails"].([]interface{}); ok && len(thumbnails) > 0 {
-		if firstThumb, ok := thumbnails[0].(map[string]interface{}); ok {
-			if url, ok := firstThumb["url"].(string); ok {
+		// Get the last thumbnail (highest quality)
+		lastThumb := thumbnails[len(thumbnails)-1]
+		if thumbMap, ok := lastThumb.(map[string]interface{}); ok {
+			if url, ok := thumbMap["url"].(string); ok {
 				info.Thumbnail = url
 			}
 		}
@@ -464,6 +470,12 @@ func (p *Provider) GetPlaylistInfo(ctx context.Context, playlistURL string) (*Yo
 					videoMeta.Duration = int(duration)
 				} else if duration, ok := entryMap["duration"].(int); ok {
 					videoMeta.Duration = duration
+				}
+				// Extract uploader/channel (important for artist metadata and Spotify enhancement)
+				if uploader, ok := entryMap["uploader"].(string); ok {
+					videoMeta.Uploader = uploader
+				} else if channel, ok := entryMap["channel"].(string); ok {
+					videoMeta.Uploader = channel
 				}
 				if url, ok := entryMap["url"].(string); ok {
 					videoMeta.WebpageURL = url

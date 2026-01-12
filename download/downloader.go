@@ -230,6 +230,10 @@ func (d *Downloader) downloadYouTubeTrack(ctx context.Context, item *plan.PlanIt
 	}
 
 	// 5. Download directly from YouTube URL (no search needed)
+	// Check audioProvider is available before attempting download
+	if d.audioProvider == nil {
+		return false, "", fmt.Errorf("audioProvider is required for YouTube downloads")
+	}
 	downloadedPath, err := d.audioProvider.Download(ctx, item.YouTubeURL, outputPath)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to download from YouTube: %w", err)
@@ -437,6 +441,7 @@ func youtubeMetadataToSong(ytMetadata *audio.YouTubeVideoMetadata, item *plan.Pl
 		Artist:   ytMetadata.Uploader,
 		Album:    "YouTube", // Default album name
 		Duration: ytMetadata.Duration,
+		CoverURL: ytMetadata.Thumbnail, // Set cover URL from YouTube thumbnail
 	}
 
 	// Use item name as fallback if title is empty

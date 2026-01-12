@@ -13,6 +13,7 @@ func TestIsYouTubeURL(t *testing.T) {
 		{"YouTube playlist URL", "https://www.youtube.com/playlist?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", true},
 		{"YouTube embed URL", "https://www.youtube.com/embed/dQw4w9WgXcQ", true},
 		{"YouTube nocookie URL", "https://www.youtube-nocookie.com/watch?v=dQw4w9WgXcQ", true},
+		{"YouTube URL with uppercase", "https://YOUTUBE.COM/watch?v=dQw4w9WgXcQ", true},
 		{"Spotify URL", "https://open.spotify.com/track/123", false},
 		{"Empty URL", "", false},
 		{"Invalid URL", "not a url", false},
@@ -39,6 +40,8 @@ func TestIsYouTubeVideo(t *testing.T) {
 		{"YouTube embed URL", "https://www.youtube.com/embed/dQw4w9WgXcQ", true},
 		{"YouTube playlist URL", "https://www.youtube.com/playlist?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", false},
 		{"YouTube video with playlist param", "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", true},
+		{"YouTube URL with uppercase", "https://YOUTUBE.COM/watch?v=dQw4w9WgXcQ", true},
+		{"YouTube URL with mixed case", "https://www.YOUTUBE.com/watch?v=dQw4w9WgXcQ", true},
 		{"Spotify URL", "https://open.spotify.com/track/123", false},
 		{"Empty URL", "", false},
 	}
@@ -62,6 +65,8 @@ func TestIsYouTubePlaylist(t *testing.T) {
 		{"YouTube playlist URL", "https://www.youtube.com/playlist?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", true},
 		{"YouTube video with playlist param", "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", true},
 		{"YouTube watch URL only", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", false},
+		{"YouTube playlist URL with uppercase", "https://YOUTUBE.COM/playlist?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", true},
+		{"YouTube video with playlist param and uppercase", "https://www.YOUTUBE.com/watch?v=dQw4w9WgXcQ&list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", true},
 		{"Spotify URL", "https://open.spotify.com/track/123", false},
 		{"Empty URL", "", false},
 	}
@@ -86,6 +91,8 @@ func TestExtractYouTubeVideoID(t *testing.T) {
 		{"YouTube short URL", "https://youtu.be/dQw4w9WgXcQ", "dQw4w9WgXcQ"},
 		{"YouTube embed URL", "https://www.youtube.com/embed/dQw4w9WgXcQ", "dQw4w9WgXcQ"},
 		{"YouTube playlist URL", "https://www.youtube.com/playlist?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", ""},
+		{"YouTube URL with uppercase", "https://YOUTUBE.COM/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ"},
+		{"YouTube URL with mixed case", "https://www.YOUTUBE.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ"},
 		{"Spotify URL", "https://open.spotify.com/track/123", ""},
 		{"Empty URL", "", ""},
 	}
@@ -109,6 +116,8 @@ func TestExtractYouTubePlaylistID(t *testing.T) {
 		{"YouTube playlist URL", "https://www.youtube.com/playlist?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", "PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf"},
 		{"YouTube video with playlist param", "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", "PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf"},
 		{"YouTube watch URL only", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", ""},
+		{"YouTube playlist URL with uppercase", "https://YOUTUBE.COM/playlist?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", "PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf"},
+		{"YouTube video with playlist param and uppercase", "https://www.YOUTUBE.com/watch?v=dQw4w9WgXcQ&list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf", "PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf"},
 		{"Spotify URL", "https://open.spotify.com/track/123", ""},
 		{"Empty URL", "", ""},
 	}
