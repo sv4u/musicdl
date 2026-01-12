@@ -1,6 +1,6 @@
 module github.com/sv4u/musicdl
 
-go 1.24
+go 1.23
 
 require (
 	github.com/bogem/id3v2/v2 v2.1.4
