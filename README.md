@@ -5,7 +5,7 @@
 ![Security & SBOM](https://github.com/sv4u/musicdl/actions/workflows/security-and-sbom.yml/badge.svg)
 ![Version](https://img.shields.io/github/v/tag/sv4u/musicdl?label=version&sort=semver)
 ![License](https://img.shields.io/github/license/sv4u/musicdl)
-![Go](https://img.shields.io/badge/go-1.23-blue?logo=go&logoColor=white)
+![Go](https://img.shields.io/badge/go-1.24-blue?logo=go&logoColor=white)
 
 ## NAME
 
