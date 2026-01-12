@@ -250,6 +250,9 @@ func (d *Downloader) getOutputPath(song *metadata.Song) string {
 	output = strings.ReplaceAll(output, "{track-number}", fmt.Sprintf("%02d", song.TrackNumber))
 	output = strings.ReplaceAll(output, "{output-ext}", d.config.Format)
 
+	// Clean path to prevent directory traversal attacks
+	output = filepath.Clean(output)
+
 	// Ensure directory exists
 	dir := filepath.Dir(output)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -261,6 +264,7 @@ func (d *Downloader) getOutputPath(song *metadata.Song) string {
 }
 
 // sanitizeFilename sanitizes a filename by removing invalid characters.
+// Also removes directory traversal sequences for additional security.
 func sanitizeFilename(name string) string {
 	invalidChars := []rune{'/', '\\', ':', '*', '?', '"', '<', '>', '|'}
 	result := []rune(name)
@@ -272,7 +276,12 @@ func sanitizeFilename(name string) string {
 			}
 		}
 	}
-	return string(result)
+	
+	// Remove directory traversal sequences
+	sanitized := string(result)
+	sanitized = strings.ReplaceAll(sanitized, "..", "_")
+	
+	return sanitized
 }
 
 // fileExistsCached checks if file exists using cache.
@@ -300,6 +309,29 @@ func (d *Downloader) fileExistsCached(filePath string) bool {
 func (d *Downloader) setFileExistsCached(filePath string, exists bool) {
 	d.cacheMu.Lock()
 	defer d.cacheMu.Unlock()
+
+	maxSize := d.config.FileExistenceCacheMaxSize
+	if maxSize == 0 {
+		maxSize = 10000 // Default
+	}
+
+	// Evict oldest entries if at capacity
+	if len(d.fileExistenceCache) >= maxSize {
+		// Simple eviction: remove first 10% of entries
+		evictCount := maxSize / 10
+		if evictCount == 0 {
+			evictCount = 1 // Ensure at least one entry is evicted
+		}
+		count := 0
+		for k := range d.fileExistenceCache {
+			if count >= evictCount {
+				break
+			}
+			delete(d.fileExistenceCache, k)
+			count++
+		}
+	}
+
 	d.fileExistenceCache[filePath] = exists
 }
 

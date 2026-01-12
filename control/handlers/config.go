@@ -100,7 +100,10 @@ func (h *Handlers) ConfigPut(w http.ResponseWriter, r *http.Request) {
 		// File exists, create backup
 		originalData, err := os.ReadFile(h.configPath)
 		if err == nil {
-			os.WriteFile(backupPath, originalData, 0644)
+			if err := os.WriteFile(backupPath, originalData, 0644); err != nil {
+				// Log warning but continue - backup is optional
+				h.logError("ConfigPut backup", err)
+			}
 		}
 	}
 

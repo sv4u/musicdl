@@ -54,8 +54,8 @@ func (h *Handlers) Status(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Safely extract plan_stats, default to empty map if not present
-	statistics := status["plan_stats"]
-	if statistics == nil {
+	statistics, ok := status["plan_stats"].(map[string]interface{})
+	if !ok || statistics == nil {
 		statistics = map[string]interface{}{}
 	}
 

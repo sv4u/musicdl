@@ -450,6 +450,8 @@ func (s *Service) savePlan() {
 
 // WaitForCompletion waits for the service to complete (reaches idle or error state).
 // This is useful for one-shot execution mode.
+// Note: This method does not accept a context to maintain backward compatibility.
+// For context-aware waiting, use GetStatus() in a loop with context checking.
 func (s *Service) WaitForCompletion() {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
