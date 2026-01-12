@@ -70,7 +70,7 @@ test-race: ## Run tests with race detector
 	@$(GO) test ./... -race -v
 
 test-verbose: ## Run tests with verbose output
-	@$(GO) test ./... -v -s
+	@$(GO) test ./... -v
 
 test-specific: ## Run specific test file (usage: make test-specific FILE=./download/service_test.go)
 	@if [ -z "$(FILE)" ]; then \

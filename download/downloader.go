@@ -257,6 +257,7 @@ func (d *Downloader) getOutputPath(song *metadata.Song) string {
 	dir := filepath.Dir(output)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		// If we can't create directory, use current directory
+		log.Printf("WARN: failed_to_create_output_directory dir=%s error=%v, using current directory", dir, err)
 		output = filepath.Base(output)
 	}
 
@@ -266,6 +267,16 @@ func (d *Downloader) getOutputPath(song *metadata.Song) string {
 // sanitizeFilename sanitizes a filename by removing invalid characters.
 // Also removes directory traversal sequences for additional security.
 func sanitizeFilename(name string) string {
+	if name == "" {
+		return "_"
+	}
+
+	// Limit length to prevent filesystem issues
+	maxLen := 255
+	if len(name) > maxLen {
+		name = name[:maxLen]
+	}
+
 	invalidChars := []rune{'/', '\\', ':', '*', '?', '"', '<', '>', '|'}
 	result := []rune(name)
 	for i, r := range result {
@@ -276,11 +287,17 @@ func sanitizeFilename(name string) string {
 			}
 		}
 	}
-	
+
 	// Remove directory traversal sequences
 	sanitized := string(result)
 	sanitized = strings.ReplaceAll(sanitized, "..", "_")
-	
+
+	// Remove leading/trailing dots and spaces (Windows issue)
+	sanitized = strings.Trim(sanitized, ". ")
+	if sanitized == "" {
+		return "_"
+	}
+
 	return sanitized
 }
 
