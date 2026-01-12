@@ -25,7 +25,12 @@ help: ## Show this help message
 
 build: ## Build the musicdl binary
 	@echo "Building $(BINARY_NAME)..."
-	@$(GO) build -o $(BINARY_NAME) $(BUILD_DIR)
+	@VERSION=$$(git describe --exact-match --tags HEAD 2>/dev/null || \
+		git describe --tags HEAD 2>/dev/null || \
+		git rev-parse --short HEAD 2>/dev/null || \
+		echo "dev"); \
+	echo "Building with version: $$VERSION"; \
+	$(GO) build -ldflags="-X main.Version=$$VERSION" -o $(BINARY_NAME) $(BUILD_DIR)
 	@echo "✓ Built $(BINARY_NAME)"
 
 test: ## Run all tests (excludes integration and e2e by default)

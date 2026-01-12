@@ -18,6 +18,12 @@ import (
 	"github.com/sv4u/musicdl/download/spotify"
 )
 
+var (
+	// Version is set at build time via ldflags
+	// Example: go build -ldflags="-X main.Version=v1.2.3"
+	Version = "dev"
+)
+
 const (
 	// Default port for the control platform
 	defaultPort = 8080
@@ -36,6 +42,12 @@ func main() {
 	}
 
 	command := os.Args[1]
+
+	// Handle version command
+	if command == "version" || command == "--version" || command == "-v" {
+		fmt.Printf("musicdl version %s\n", Version)
+		os.Exit(0)
+	}
 
 	switch command {
 	case "serve":
@@ -58,6 +70,7 @@ USAGE:
 COMMANDS:
     serve      Start the control platform web server
     download   Run download service (one-shot or daemon mode)
+    version    Show version information
 
 FLAGS:
     -h, --help    Show this help message
@@ -107,6 +120,7 @@ func serveCommand() {
 	// Start server in goroutine
 	errChan := make(chan error, 1)
 	go func() {
+		log.Printf("musicdl version %s", Version)
 		log.Printf("Starting control platform server on port %d", *port)
 		if err := server.Start(); err != nil {
 			errChan <- err
@@ -167,6 +181,7 @@ func downloadCommand() {
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	// Start download service
+	log.Printf("musicdl version %s", Version)
 	log.Printf("Starting download service...")
 	if err := service.Start(ctx); err != nil {
 		log.Fatalf("Failed to start download service: %v", err)

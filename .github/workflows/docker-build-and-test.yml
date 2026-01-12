@@ -56,6 +56,14 @@ jobs:
           docker run --rm --entrypoint test "$IMAGE_TAG" -x /usr/local/bin/musicdl && echo "✓ Go binary is executable" || (echo "✗ Go binary not executable" && exit 1)
           # Check binary responds to help
           docker run --rm --entrypoint /usr/local/bin/musicdl "$IMAGE_TAG" serve --help 2>&1 | grep -q "serve" && echo "✓ Go binary responds to help" || (echo "✗ Go binary does not respond correctly" && exit 1)
+          # Check version command works and returns a version
+          VERSION_OUTPUT=$(docker run --rm --entrypoint /usr/local/bin/musicdl "$IMAGE_TAG" version 2>&1) || (echo "✗ Version command failed" && exit 1)
+          if echo "$VERSION_OUTPUT" | grep -qE "musicdl version (v?[0-9]+\.[0-9]+\.[0-9]+|[a-f0-9]{7,}|dev)"; then
+            echo "✓ Version command returns valid version: $VERSION_OUTPUT"
+          else
+            echo "✗ Version command returned invalid output: $VERSION_OUTPUT"
+            exit 1
+          fi
 
       - name: Functional Test - Control Platform API
         run: |
@@ -98,6 +106,19 @@ jobs:
             echo "✗ Server did not become ready within ${MAX_WAIT}s"
             echo "=== Container Logs ==="
             docker logs "$CONTAINER_ID" 2>&1
+            echo "====================="
+            exit 1
+          fi
+          
+          # Verify version is printed in logs
+          echo "Verifying version is printed in logs..."
+          CONTAINER_LOGS=$(docker logs "$CONTAINER_ID" 2>&1)
+          if echo "$CONTAINER_LOGS" | grep -qE "musicdl version (v?[0-9]+\.[0-9]+\.[0-9]+|[a-f0-9]{7,}|dev)"; then
+            echo "✓ Version is printed in container logs"
+          else
+            echo "✗ Version not found in container logs"
+            echo "=== Container Logs ==="
+            echo "$CONTAINER_LOGS"
             echo "====================="
             exit 1
           fi
