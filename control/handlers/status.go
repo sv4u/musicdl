@@ -37,6 +37,12 @@ func (h *Handlers) Status(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Safely extract values with defaults
+	state, ok := status["state"].(string)
+	if !ok || state == "" {
+		state = "idle"
+	}
+
 	phase := status["phase"]
 	if phase == nil {
 		phase = "idle"
@@ -47,10 +53,16 @@ func (h *Handlers) Status(w http.ResponseWriter, r *http.Request) {
 		planFile = nil
 	}
 
+	// Safely extract plan_stats, default to empty map if not present
+	statistics := status["plan_stats"]
+	if statistics == nil {
+		statistics = map[string]interface{}{}
+	}
+
 	response := map[string]interface{}{
-		"state":      status["state"],
+		"state":      state,
 		"phase":      phase,
-		"statistics": status["plan_stats"],
+		"statistics": statistics,
 		"plan_file":  planFile,
 		"plan":       planData,
 	}
