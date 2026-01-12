@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"runtime/debug"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -49,10 +51,13 @@ func NewServer(config *ServerConfig) (*Server, error) {
 	// Set up routes
 	server.setupRoutes()
 
+	// Wrap router with panic recovery middleware
+	recoveryHandler := recoveryMiddleware(router)
+
 	// Create HTTP server
 	server.httpServer = &http.Server{
 		Addr:         fmt.Sprintf(":%d", config.Port),
-		Handler:      router,
+		Handler:      recoveryHandler,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -106,4 +111,32 @@ func (s *Server) Start() error {
 // Shutdown gracefully shuts down the server.
 func (s *Server) Shutdown(ctx context.Context) error {
 	return s.httpServer.Shutdown(ctx)
+}
+
+// recoveryMiddleware wraps an http.Handler to recover from panics and return a proper error response.
+func recoveryMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				// Log the panic with stack trace
+				log.Printf("PANIC: %v\n%s", err, debug.Stack())
+
+				// Try to send a JSON error response
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				
+				response := map[string]interface{}{
+					"error":   "Internal server error",
+					"message": "A panic occurred while processing the request",
+				}
+				
+				// Try to encode response, but if that fails, just write a simple message
+				if encErr := json.NewEncoder(w).Encode(response); encErr != nil {
+					// If encoding fails, write a simple error message
+					w.Write([]byte(`{"error":"Internal server error"}`))
+				}
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
 }

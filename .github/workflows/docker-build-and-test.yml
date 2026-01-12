@@ -62,12 +62,25 @@ jobs:
           echo "Testing control platform API..."
           set -e
           
+          # Cleanup function to ensure container is always stopped and logs are captured
+          cleanup() {
+            if [ -n "$CONTAINER_ID" ]; then
+              echo "=== Container Logs ==="
+              docker logs "$CONTAINER_ID" 2>&1 || true
+              echo "====================="
+              docker stop "$CONTAINER_ID" 2>/dev/null || true
+              docker rm "$CONTAINER_ID" 2>/dev/null || true
+            fi
+          }
+          trap cleanup EXIT
+          
           # Start container in background with port mapping
           CONTAINER_ID=$(docker run -d -p 8080:8080 "$IMAGE_TAG")
           if [ -z "$CONTAINER_ID" ]; then
             echo "✗ Failed to start container"
             exit 1
           fi
+          echo "Container started: $CONTAINER_ID"
           
           # Wait for server to be ready (with timeout and retry)
           MAX_WAIT=30
@@ -83,18 +96,28 @@ jobs:
           
           if [ $WAITED -ge $MAX_WAIT ]; then
             echo "✗ Server did not become ready within ${MAX_WAIT}s"
-            docker logs "$CONTAINER_ID"
-            docker stop "$CONTAINER_ID" 2>/dev/null
-            docker rm "$CONTAINER_ID" 2>/dev/null
+            echo "=== Container Logs ==="
+            docker logs "$CONTAINER_ID" 2>&1
+            echo "====================="
             exit 1
           fi
           
           # Test health endpoint (should return JSON)
-          HEALTH_RESPONSE=$(curl -sf http://localhost:8080/api/health)
+          echo "Testing health endpoint..."
+          HEALTH_RESPONSE=$(curl -sf http://localhost:8080/api/health 2>&1) || HEALTH_CURL_EXIT=$?
+          if [ -n "$HEALTH_CURL_EXIT" ]; then
+            echo "✗ Health endpoint curl failed with exit code: $HEALTH_CURL_EXIT"
+            echo "Response: $HEALTH_RESPONSE"
+            echo "=== Container Logs ==="
+            docker logs "$CONTAINER_ID" 2>&1
+            echo "====================="
+            exit 1
+          fi
           if [ -z "$HEALTH_RESPONSE" ]; then
             echo "✗ Health endpoint returned empty response"
-            docker stop "$CONTAINER_ID" 2>/dev/null
-            docker rm "$CONTAINER_ID" 2>/dev/null
+            echo "=== Container Logs ==="
+            docker logs "$CONTAINER_ID" 2>&1
+            echo "====================="
             exit 1
           fi
           
@@ -102,18 +125,32 @@ jobs:
           if ! echo "$HEALTH_RESPONSE" | grep -q '"status"'; then
             echo "✗ Health endpoint response is not valid JSON"
             echo "Response: $HEALTH_RESPONSE"
-            docker stop "$CONTAINER_ID" 2>/dev/null
-            docker rm "$CONTAINER_ID" 2>/dev/null
+            echo "=== Container Logs ==="
+            docker logs "$CONTAINER_ID" 2>&1
+            echo "====================="
             exit 1
           fi
           echo "✓ Health endpoint returns valid JSON"
           
-          # Test status endpoint
-          STATUS_RESPONSE=$(curl -sf http://localhost:8080/api/status)
+          # Test status endpoint with detailed error reporting
+          echo "Testing status endpoint..."
+          STATUS_RESPONSE=$(curl -sf http://localhost:8080/api/status 2>&1) || STATUS_CURL_EXIT=$?
+          if [ -n "$STATUS_CURL_EXIT" ]; then
+            echo "✗ Status endpoint curl failed with exit code: $STATUS_CURL_EXIT"
+            echo "Curl output: $STATUS_RESPONSE"
+            echo "=== Container Logs ==="
+            docker logs "$CONTAINER_ID" 2>&1
+            echo "====================="
+            echo "=== Container Status ==="
+            docker ps -a --filter "id=$CONTAINER_ID" || true
+            echo "========================="
+            exit 1
+          fi
           if [ -z "$STATUS_RESPONSE" ]; then
             echo "✗ Status endpoint returned empty response"
-            docker stop "$CONTAINER_ID" 2>/dev/null
-            docker rm "$CONTAINER_ID" 2>/dev/null
+            echo "=== Container Logs ==="
+            docker logs "$CONTAINER_ID" 2>&1
+            echo "====================="
             exit 1
           fi
           
@@ -121,13 +158,12 @@ jobs:
           if ! echo "$STATUS_RESPONSE" | grep -q '"state"'; then
             echo "✗ Status endpoint response is not valid JSON"
             echo "Response: $STATUS_RESPONSE"
-            docker stop "$CONTAINER_ID" 2>/dev/null
-            docker rm "$CONTAINER_ID" 2>/dev/null
+            echo "=== Container Logs ==="
+            docker logs "$CONTAINER_ID" 2>&1
+            echo "====================="
             exit 1
           fi
           echo "✓ Status endpoint returns valid JSON"
           
-          # Cleanup
-          docker stop "$CONTAINER_ID" 2>/dev/null || true
-          docker rm "$CONTAINER_ID" 2>/dev/null || true
-          echo "✓ Container cleaned up successfully"
+          # Cleanup (trap will also handle this, but explicit is good)
+          echo "✓ All tests passed"
