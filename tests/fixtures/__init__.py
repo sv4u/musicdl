@@ -1,4 +1,0 @@
-"""
-Test fixtures for musicdl.
-"""
-

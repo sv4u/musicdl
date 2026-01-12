@@ -1,11 +1,4 @@
-# Core dependencies (from spotDL)
-spotipy>=2.25.0
+# Runtime dependencies for Go subprocess calls
+# These Python packages are used by the Go implementation via subprocess
 yt-dlp>=2025.3.0
 mutagen>=1.47.0
-
-# Configuration and utilities
-pydantic>=2.11.0
-PyYAML>=6.0.2
-
-# HTTP requests for cover art
-requests>=2.32.0

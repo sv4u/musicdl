@@ -4,8 +4,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
   push:
-    branches:
-      - main
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -19,36 +18,50 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          python-version: '3.12'
-          cache: 'pip'
+          go-version: '1.24'
 
-      - name: Cache pip dependencies
+      - name: Cache Go modules
         uses: actions/cache@v5
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt', 'test-requirements.txt') }}
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-pip-
+            ${{ runner.os }}-go-
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install -r test-requirements.txt
+      - name: Run unit tests
+        run: go test ./... -v
 
-      - name: Run pytest with coverage
+      - name: Run tests with race detector
+        run: go test ./... -race -v
+
+      - name: Generate coverage profile
+        run: go test ./... -coverprofile=coverage.out
+
+      - name: Generate HTML coverage report
         run: |
-          pytest
+          mkdir -p coverage
+          go tool cover -html=coverage.out -o coverage/coverage.html
+
+      - name: Install gocov tools for XML coverage
+        run: |
+          go install github.com/axw/gocov/gocov@latest
+          go install github.com/AlekSi/gocov-xml@latest
+
+      - name: Generate XML coverage report
+        run: |
+          gocov convert coverage.out | gocov-xml > coverage/coverage.xml
 
       - name: Upload coverage HTML report
         uses: actions/upload-artifact@v6
         if: always()
         with:
           name: coverage-html
-          path: htmlcov/
+          path: coverage/coverage.html
           retention-days: 7
 
       - name: Upload coverage XML report
@@ -56,27 +69,23 @@ jobs:
         if: always()
         with:
           name: coverage-xml
-          path: coverage.xml
+          path: coverage/coverage.xml
           retention-days: 7
 
       - name: Display coverage summary
         if: always()
         run: |
-          if [ -f coverage.xml ]; then
+          if [ -f coverage.out ]; then
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "[OK] Coverage report generated successfully"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
-            echo "HTML report: htmlcov/index.html"
-            echo "XML report: coverage.xml"
+            echo "HTML report: coverage/coverage.html"
+            echo "XML report: coverage/coverage.xml"
             echo ""
-            # Extract coverage percentage from coverage.xml if available
-            if command -v python3 &> /dev/null; then
-              COVERAGE=$(python3 -c "import xml.etree.ElementTree as ET; tree = ET.parse('coverage.xml'); root = tree.getroot(); print(f\"{float(root.get('line-rate', 0)) * 100:.2f}%\")" 2>/dev/null || echo "N/A")
-              echo "Coverage: $COVERAGE"
-            fi
+            COVERAGE=$(go tool cover -func=coverage.out | tail -1 | awk '{print $3}')
+            echo "Coverage: $COVERAGE"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           else
             echo "[!] Warning: Coverage report not found"
           fi
-

@@ -4,275 +4,130 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
   push:
-    branches:
-      - main
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-and-test:
-    name: Build and Test Docker Image
+  docker-build-and-test:
+    name: Build Docker Image and Run Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Determine image tags
-        id: tags
-        run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            PR_NUMBER="${{ github.event.pull_request.number }}"
-            echo "image_tag=ghcr.io/sv4u/musicdl:pr-${PR_NUMBER}" >> $GITHUB_OUTPUT
-            echo "artifact_name=docker-image-pr-${PR_NUMBER}" >> $GITHUB_OUTPUT
-            echo "tags_list=ghcr.io/sv4u/musicdl:pr-${PR_NUMBER}" >> $GITHUB_OUTPUT
-          else
-            SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-            echo "image_tag=ghcr.io/sv4u/musicdl:sha-${SHORT_SHA}" >> $GITHUB_OUTPUT
-            echo "image_tag_latest=ghcr.io/sv4u/musicdl:latest" >> $GITHUB_OUTPUT
-            echo "artifact_name=docker-image-${SHORT_SHA}" >> $GITHUB_OUTPUT
-            echo "tags_list=ghcr.io/sv4u/musicdl:sha-${SHORT_SHA},ghcr.io/sv4u/musicdl:latest" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Generate build timestamp
-        id: build-timestamp
-        run: |
-          BUILD_TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          echo "timestamp=${BUILD_TIMESTAMP}" >> $GITHUB_OUTPUT
-
       - name: Build Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./musicdl.Dockerfile
-          tags: ${{ steps.tags.outputs.tags_list }}
-          load: true
-          push: false
-          labels: |
-            org.opencontainers.image.source=https://github.com/sv4u/musicdl
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.created=${{ steps.build-timestamp.outputs.timestamp }}
-
-      - name: Run smoke tests
         run: |
-          IMAGE_TAG="${{ steps.tags.outputs.image_tag }}"
+          docker build -f musicdl.Dockerfile -t musicdl:test .
 
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "[TEST] Running smoke tests for Docker image"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      - name: Set image tag variable
+        run: echo "IMAGE_TAG=musicdl:test" >> $GITHUB_ENV
 
-          # Test 1: Verify container can start
-          echo "[1/6] Testing container startup..."
-          if docker run --rm --entrypoint sh "$IMAGE_TAG" -c "echo 'Container started successfully'" >/dev/null 2>&1; then
-            echo "  ✓ Container starts successfully"
-          else
-            echo "  ✗ Container failed to start"
-            exit 1
-          fi
-
-          # Test 2: Test entrypoint script execution
-          echo "[2/6] Testing entrypoint script execution..."
-          # Test that entrypoint script exists and is executable by running it with a test command
-          if docker run --rm --entrypoint test "$IMAGE_TAG" -x /scripts/entrypoint.sh >/dev/null 2>&1; then
-            echo "  ✓ Entrypoint script exists and is executable"
-          else
-            echo "  ✗ Entrypoint script failed"
-            exit 1
-          fi
-
-          # Test 3: Verify Python environment
-          echo "[3/6] Verifying Python environment..."
-          if ! PYTHON_VERSION=$(docker run --rm --entrypoint python3 "$IMAGE_TAG" --version 2>&1); then
-            echo "  ✗ Failed to get Python version"
-            exit 1
-          fi
-          if echo "$PYTHON_VERSION" | grep -q "Python 3.12"; then
-            echo "  ✓ Python 3.12 is available: $PYTHON_VERSION"
-          else
-            echo "  ✗ Python 3.12 not found or incorrect version: $PYTHON_VERSION"
-            exit 1
-          fi
-
-          if ! PIP_LIST=$(docker run --rm --entrypoint python3 "$IMAGE_TAG" -m pip list 2>&1); then
-            echo "  ✗ Failed to run pip list"
-            exit 1
-          fi
-          MISSING_PACKAGES=""
-          if ! echo "$PIP_LIST" | grep -qF "spotipy"; then
-            MISSING_PACKAGES="${MISSING_PACKAGES} spotipy"
-          fi
-          if ! echo "$PIP_LIST" | grep -qF "yt-dlp"; then
-            MISSING_PACKAGES="${MISSING_PACKAGES} yt-dlp"
-          fi
-          if ! echo "$PIP_LIST" | grep -qF "mutagen"; then
-            MISSING_PACKAGES="${MISSING_PACKAGES} mutagen"
-          fi
-          if [ -z "$MISSING_PACKAGES" ]; then
-            echo "  ✓ Required Python packages are installed (spotipy, yt-dlp, mutagen)"
-          else
-            echo "  ✗ Required Python packages missing: $MISSING_PACKAGES"
-            exit 1
-          fi
-
-          # Test 4: Check required dependencies
-          echo "[4/6] Checking required system dependencies..."
-          if ! FFMPEG_VERSION=$(docker run --rm --entrypoint ffmpeg "$IMAGE_TAG" -version 2>&1 | head -n 1); then
-            echo "  ✗ Failed to get ffmpeg version"
-            exit 1
-          fi
-          if echo "$FFMPEG_VERSION" | grep -q "ffmpeg version"; then
-            echo "  ✓ ffmpeg is installed: $(echo "$FFMPEG_VERSION" | cut -d' ' -f3 | head -n 1)"
-          else
-            echo "  ✗ ffmpeg not found or version check failed: $FFMPEG_VERSION"
-            exit 1
-          fi
-
-          if ! ARIA2_VERSION=$(docker run --rm --entrypoint aria2c "$IMAGE_TAG" --version 2>&1 | head -n 1); then
-            echo "  ✗ Failed to get aria2 version"
-            exit 1
-          fi
-          if echo "$ARIA2_VERSION" | grep -q "aria2 version"; then
-            echo "  ✓ aria2 is installed: $(echo "$ARIA2_VERSION" | cut -d' ' -f3 | head -n 1)"
-          else
-            echo "  ✗ aria2 not found or version check failed: $ARIA2_VERSION"
-            exit 1
-          fi
-
-          # Test 5: Verify directory structure
-          echo "[5/6] Verifying directory structure..."
-          if ! docker run --rm --entrypoint test "$IMAGE_TAG" -d /scripts; then
-            echo "  ✗ Required directory /scripts is missing"
-            exit 1
-          fi
-          if ! docker run --rm --entrypoint test "$IMAGE_TAG" -d /download; then
-            echo "  ✗ Required directory /download is missing"
-            exit 1
-          fi
-          echo "  ✓ Required directories exist (/scripts, /download)"
-
-          # Test 6: Check file permissions
-          echo "[6/6] Checking file permissions..."
-          if ! docker run --rm --entrypoint test "$IMAGE_TAG" -x /scripts/entrypoint.sh; then
-            echo "  ✗ Entrypoint script is not executable"
-            exit 1
-          fi
-          echo "  ✓ Entrypoint script is executable"
-
-          if ! docker run --rm --entrypoint test "$IMAGE_TAG" -d /download; then
-            echo "  ✗ Download directory does not exist"
-            exit 1
-          fi
-          if ! docker run --rm --entrypoint test "$IMAGE_TAG" -w /download; then
-            echo "  ✗ Download directory is not writable"
-            exit 1
-          fi
-          echo "  ✓ Download directory has correct permissions"
-
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "[OK] All smoke tests passed"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-      - name: Run functional tests
-        env:
-          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIFY_CLIENT_ID }}
-          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
+      - name: Smoke Test 1 - Directory structure
         run: |
-          IMAGE_TAG="${{ steps.tags.outputs.image_tag }}"
+          echo "Testing directory structure..."
+          docker run --rm --entrypoint test "$IMAGE_TAG" -d /scripts && echo "✓ /scripts exists" || (echo "✗ /scripts missing" && exit 1)
+          docker run --rm --entrypoint test "$IMAGE_TAG" -d /download && echo "✓ /download exists" || (echo "✗ /download missing" && exit 1)
+          docker run --rm --entrypoint test "$IMAGE_TAG" -d /var/lib/musicdl/plans && echo "✓ /var/lib/musicdl/plans exists" || (echo "✗ /var/lib/musicdl/plans missing" && exit 1)
+          docker run --rm --entrypoint test "$IMAGE_TAG" -d /var/lib/musicdl/logs && echo "✓ /var/lib/musicdl/logs exists" || (echo "✗ /var/lib/musicdl/logs missing" && exit 1)
 
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "[TEST] Running functional tests for Docker image"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      - name: Smoke Test 2 - File permissions
+        run: |
+          echo "Testing file permissions..."
+          docker run --rm --entrypoint test "$IMAGE_TAG" -x /scripts/entrypoint.sh && echo "✓ entrypoint.sh is executable" || (echo "✗ entrypoint.sh not executable" && exit 1)
+          docker run --rm --entrypoint test "$IMAGE_TAG" -w /download && echo "✓ /download is writable" || (echo "✗ /download not writable" && exit 1)
 
-          # Check if secrets are available (may not be available for PRs from forks)
-          if [ -z "$SPOTIFY_CLIENT_ID" ] || [ -z "$SPOTIFY_CLIENT_SECRET" ]; then
-            echo "[!] Warning: SPOTIFY_CLIENT_ID or SPOTIFY_CLIENT_SECRET secrets not available"
-            echo "   Using test credentials for functional test validation"
-            echo "   Note: Secrets may not be available for PRs from forks"
-            SPOTIFY_CLIENT_ID="test_client_id"
-            SPOTIFY_CLIENT_SECRET="test_client_secret"
-          else
-            echo "[✓] Using repository secrets for Spotify credentials"
-          fi
+      - name: Smoke Test 3 - System dependencies
+        run: |
+          echo "Testing system dependencies..."
+          docker run --rm --entrypoint ffmpeg "$IMAGE_TAG" -version > /dev/null 2>&1 && echo "✓ ffmpeg is available" || (echo "✗ ffmpeg not found" && exit 1)
 
-          # Create minimal test config (without credentials - using env vars instead)
-          cat > /tmp/test-config.yaml << 'EOF'
-          version: "1.2"
-          download:
-            threads: 1
-            max_retries: 1
-            format: "mp3"
-            bitrate: "128k"
-            output: "test/{title}.{output-ext}"
-            audio_providers: ["youtube-music"]
-            cache_max_size: 10
-            cache_ttl: 60
-            overwrite: "skip"
-          songs: []
-          artists: {}
-          playlists: {}
-          EOF
+      - name: Smoke Test 4 - Go binary verification
+        run: |
+          echo "Testing Go binary..."
+          # Check binary exists
+          docker run --rm --entrypoint test "$IMAGE_TAG" -f /usr/local/bin/musicdl && echo "✓ Go binary exists" || (echo "✗ Go binary not found" && exit 1)
+          # Check binary is executable
+          docker run --rm --entrypoint test "$IMAGE_TAG" -x /usr/local/bin/musicdl && echo "✓ Go binary is executable" || (echo "✗ Go binary not executable" && exit 1)
+          # Check binary responds to help
+          docker run --rm --entrypoint /usr/local/bin/musicdl "$IMAGE_TAG" serve --help 2>&1 | grep -q "serve" && echo "✓ Go binary responds to help" || (echo "✗ Go binary does not respond correctly" && exit 1)
 
-          echo "[1/2] Created minimal test configuration (credentials via environment variables)"
-
-          # Test that download.py can be executed with test config and environment variables
-          # We expect it to fail gracefully (no valid Spotify credentials or URLs)
-          # but it should not crash with critical errors
-          echo "[2/2] Testing download.py execution with minimal config and env vars..."
-          set +e
-          set -o pipefail
-          timeout 120 docker run --rm \
-            -e SPOTIFY_CLIENT_ID="$SPOTIFY_CLIENT_ID" \
-            -e SPOTIFY_CLIENT_SECRET="$SPOTIFY_CLIENT_SECRET" \
-            -v /tmp/test-config.yaml:/scripts/config.yaml:ro \
-            "$IMAGE_TAG" 2>&1 | tee /tmp/docker-output.log
-          EXIT_CODE=$?
-          set +o pipefail
+      - name: Functional Test - Control Platform API
+        run: |
+          echo "Testing control platform API..."
           set -e
-
-          # Check for timeout
-          if [ $EXIT_CODE -eq 124 ]; then
-            echo "  ✗ Functional test timed out after 2 minutes"
-            cat /tmp/docker-output.log
+          
+          # Start container in background with port mapping
+          CONTAINER_ID=$(docker run -d -p 8080:8080 "$IMAGE_TAG")
+          if [ -z "$CONTAINER_ID" ]; then
+            echo "✗ Failed to start container"
             exit 1
           fi
-
-          # Check for critical errors (segfault, import errors, etc.)
-          if grep -qiE "(segmentation fault|fatal error|import.*error|module.*not found|traceback|syntax error|nameerror|attributeerror|typeerror)" /tmp/docker-output.log; then
-            echo "  ✗ Critical error detected in container execution"
-            cat /tmp/docker-output.log
+          
+          # Wait for server to be ready (with timeout and retry)
+          MAX_WAIT=30
+          WAITED=0
+          while [ $WAITED -lt $MAX_WAIT ]; do
+            if curl -sf http://localhost:8080/api/health > /dev/null 2>&1; then
+              echo "✓ Server is ready"
+              break
+            fi
+            sleep 1
+            WAITED=$((WAITED + 1))
+          done
+          
+          if [ $WAITED -ge $MAX_WAIT ]; then
+            echo "✗ Server did not become ready within ${MAX_WAIT}s"
+            docker logs "$CONTAINER_ID"
+            docker stop "$CONTAINER_ID" 2>/dev/null
+            docker rm "$CONTAINER_ID" 2>/dev/null
             exit 1
           fi
-
-          # Exit code 0 or non-zero is acceptable (depends on config validation)
-          # The important thing is that it doesn't crash
-          echo "  ✓ download.py executed without critical errors (exit code: $EXIT_CODE)"
-
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "[OK] All functional tests passed"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-      - name: Save Docker image as artifact
-        if: github.event_name == 'pull_request'
-        run: |
-          if ! docker save ${{ steps.tags.outputs.image_tag }} | gzip > docker-image.tar.gz; then
-            echo "Error: Failed to save Docker image"
+          
+          # Test health endpoint (should return JSON)
+          HEALTH_RESPONSE=$(curl -sf http://localhost:8080/api/health)
+          if [ -z "$HEALTH_RESPONSE" ]; then
+            echo "✗ Health endpoint returned empty response"
+            docker stop "$CONTAINER_ID" 2>/dev/null
+            docker rm "$CONTAINER_ID" 2>/dev/null
             exit 1
           fi
-          if [ ! -f docker-image.tar.gz ] || [ ! -s docker-image.tar.gz ]; then
-            echo "Error: Docker image artifact is missing or empty"
+          
+          # Verify JSON format and status
+          if ! echo "$HEALTH_RESPONSE" | grep -q '"status"'; then
+            echo "✗ Health endpoint response is not valid JSON"
+            echo "Response: $HEALTH_RESPONSE"
+            docker stop "$CONTAINER_ID" 2>/dev/null
+            docker rm "$CONTAINER_ID" 2>/dev/null
             exit 1
           fi
-
-      - name: Upload Docker image artifact
-        if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@v6
-        with:
-          name: ${{ steps.tags.outputs.artifact_name }}
-          path: docker-image.tar.gz
-          retention-days: 1
+          echo "✓ Health endpoint returns valid JSON"
+          
+          # Test status endpoint
+          STATUS_RESPONSE=$(curl -sf http://localhost:8080/api/status)
+          if [ -z "$STATUS_RESPONSE" ]; then
+            echo "✗ Status endpoint returned empty response"
+            docker stop "$CONTAINER_ID" 2>/dev/null
+            docker rm "$CONTAINER_ID" 2>/dev/null
+            exit 1
+          fi
+          
+          # Verify status JSON format
+          if ! echo "$STATUS_RESPONSE" | grep -q '"state"'; then
+            echo "✗ Status endpoint response is not valid JSON"
+            echo "Response: $STATUS_RESPONSE"
+            docker stop "$CONTAINER_ID" 2>/dev/null
+            docker rm "$CONTAINER_ID" 2>/dev/null
+            exit 1
+          fi
+          echo "✓ Status endpoint returns valid JSON"
+          
+          # Cleanup
+          docker stop "$CONTAINER_ID" 2>/dev/null || true
+          docker rm "$CONTAINER_ID" 2>/dev/null || true
+          echo "✓ Container cleaned up successfully"

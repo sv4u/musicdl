@@ -5,28 +5,48 @@
 ![Security & SBOM](https://github.com/sv4u/musicdl/actions/workflows/security-and-sbom.yml/badge.svg)
 ![Version](https://img.shields.io/github/v/tag/sv4u/musicdl?label=version&sort=semver)
 ![License](https://img.shields.io/github/license/sv4u/musicdl)
-![Python](https://img.shields.io/badge/python-3.12-blue?logo=python&logoColor=white)
+![Go](https://img.shields.io/badge/go-1.24-blue?logo=go&logoColor=white)
 
 ## NAME
 
-musicdl - Download music from Spotify using YouTube and other audio sources
+musicdl - Control platform for downloading music from Spotify using YouTube and other audio sources
 
 ## SYNOPSIS
 
 ```bash
-python3 download.py [CONFIG]
+# Control platform (web UI and API)
+musicdl serve [flags]
+
+# Download service (long-running)
+musicdl download [flags]
 ```
 
 ## DESCRIPTION
 
-Downloads music from Spotify by sourcing audio from YouTube, YouTube Music, and SoundCloud, then embedding metadata into downloaded files. Uses plan-based architecture with parallel execution.
+musicdl is a Go-based control platform for downloading music from Spotify by sourcing audio from YouTube, YouTube Music, and SoundCloud, then embedding metadata into downloaded files. It provides a web-based UI and REST API for managing downloads, configuration, and monitoring.
+
+**Key Features:**
+- Web-based control platform with real-time status dashboard
+- REST API for programmatic control
+- Plan-based architecture with parallel execution
+- Config-only credentials (no environment variables)
+- Real-time progress tracking and log viewing
+- Configuration editor with validation
 
 ## INSTALLATION
+
+### From Source
 
 ```bash
 git clone git@github.com:sv4u/musicdl.git
 cd musicdl
-pip install -r requirements.txt
+go build -o musicdl ./control
+```
+
+### Docker
+
+```bash
+docker pull ghcr.io/sv4u/musicdl:latest
 ```
 
 ## CONFIGURATION
@@ -145,11 +165,40 @@ albums:
 
 ## USAGE
 
+### Control Platform (Web UI)
+
+Start the control platform web server:
+
 ```bash
-python3 download.py config.yaml
+musicdl serve --port 8080 --config config.yaml
 ```
 
-Processes all songs, artists, playlists, and albums in configuration file. Displays summary of successful and failed downloads.
+Access the web UI at `http://localhost:8080`:
+- **Dashboard** (`/`) - Overview with status and quick actions
+- **Status** (`/status`) - Detailed download status and plan progress
+- **Config** (`/config`) - YAML configuration editor
+- **Logs** (`/logs`) - Log viewer with filtering and search
+
+### Download Service
+
+Start the download service (long-running):
+
+```bash
+musicdl download --config config.yaml
+```
+
+### API Endpoints
+
+The control platform provides REST API endpoints:
+
+- `GET /api/health` - Health check
+- `GET /api/status` - Download service status
+- `POST /api/download/start` - Start download
+- `POST /api/download/stop` - Stop download
+- `GET /api/config` - Get configuration
+- `PUT /api/config` - Update configuration
+- `POST /api/config/validate` - Validate configuration
+- `GET /api/logs` - Get logs (with filtering)
 
 ## EXAMPLES
 
@@ -202,33 +251,33 @@ albums:
 ## FILES
 
 - `config.yaml` - Configuration file (required)
-- `download.py` - Main entry point
-- `/var/lib/musicdl/plans/` - Plan files directory (default, configurable via `MUSICDL_PLAN_PATH`)
+- `musicdl` - Go binary (control platform and download service)
+- `/var/lib/musicdl/plans/` - Plan files directory (default, configurable via `--plan-path` or `MUSICDL_PLAN_PATH`)
   - `download_plan.json` - Initial plan after generation
   - `download_plan_optimized.json` - Optimized plan after optimization
   - `download_plan_progress.json` - Progress snapshot during execution
-- `/var/lib/musicdl/logs/musicdl.log` - Application log file (default, configurable via `MUSICDL_LOG_PATH`)
+- `/var/lib/musicdl/logs/musicdl.log` - Application log file (default, configurable via `--log-path` or `MUSICDL_LOG_PATH`)
   - Used by `/logs` endpoint for log viewing
   - Contains all application logs with timestamps, log levels, and messages
 
-## ENVIRONMENT
+## CONFIGURATION
 
-**Required:**
+**Credentials:**
 
-- `SPOTIFY_CLIENT_ID` - Spotify API client ID
-- `SPOTIFY_CLIENT_SECRET` - Spotify API client secret
+Spotify API credentials are configured **only** in the configuration file. No environment variables are needed:
 
-**Optional:**
+```yaml
+download:
+  client_id: "your_spotify_client_id"
+  client_secret: "your_spotify_client_secret"
+```
+
+**Environment Variables (Optional):**
 
 - `CONFIG_PATH` - Path to configuration file (default: `/scripts/config.yaml`)
 - `MUSICDL_PLAN_PATH` - Plan file directory path (default: `/var/lib/musicdl/plans`)
 - `MUSICDL_LOG_PATH` - Log file path (default: `/var/lib/musicdl/logs/musicdl.log`)
-- `HEALTHCHECK_PORT` - Healthcheck server port (default: `8080`)
-
-**Credential Resolution Order:**
-
-1. Environment variables (`SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`) - highest priority
-2. Configuration file (`download.client_id`, `download.client_secret`) - fallback
+- `HEALTHCHECK_PORT` - Control platform port (default: `8080`)
 
 ## DOCKER
 
@@ -242,64 +291,55 @@ docker build -f musicdl.Dockerfile -t musicdl:latest .
 
 ```bash
 docker run --rm \
-  -e SPOTIFY_CLIENT_ID="your_client_id" \
-  -e SPOTIFY_CLIENT_SECRET="your_client_secret" \
-  -v /path/to/music:/download \
-  musicdl:latest
-```
-
-**Custom Config:**
-
-```bash
-docker run --rm \
-  -e SPOTIFY_CLIENT_ID="your_client_id" \
-  -e SPOTIFY_CLIENT_SECRET="your_client_secret" \
+  -p 8080:8080 \
   -v /path/to/music:/download \
   -v /path/to/config.yaml:/scripts/config.yaml:ro \
   musicdl:latest
 ```
 
-**Healthcheck Server:**
+**Note:** Spotify credentials are configured in `config.yaml` only. No environment variables needed.
 
-Docker image includes HTTP healthcheck server. Publish port 8080:
+**Custom Config:**
 
-- `http://localhost:8080/health` - JSON healthcheck endpoint for monitoring systems
-- `http://localhost:8080/status` - HTML status dashboard with real-time progress
-- `http://localhost:8080/logs` - HTML log viewer with filtering and search
+```bash
+docker run --rm \
+  -p 8080:8080 \
+  -v /path/to/music:/download \
+  -v /path/to/config.yaml:/scripts/config.yaml:ro \
+  musicdl:latest
+```
 
-Requires `plan_persistence_enabled: true` or `plan_status_reporting_enabled: true` in configuration.
+**Web UI:**
 
-**Status Dashboard Features:**
+The Docker image runs the control platform by default. Access the web UI at:
 
-- Real-time download progress and statistics
-- Plan phase tracking (generating, optimizing, executing)
-- Spotify rate limit warnings with countdown timer
-- Plan item status (pending, in progress, completed, failed, skipped)
-- Auto-refresh capability
+- `http://localhost:8080/` - Dashboard with status and quick actions
+- `http://localhost:8080/status` - Detailed status page
+- `http://localhost:8080/config` - Configuration editor
+- `http://localhost:8080/logs` - Log viewer
 
-**Log Viewer Features:**
+**API Endpoints:**
 
-- View all application logs in styled console format
-- Filter by log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-- Search logs by keyword (case-insensitive)
-- Filter by time range (start time and end time)
-- Auto-refresh capability
-- Search result highlighting
+- `http://localhost:8080/api/health` - JSON healthcheck endpoint
+- `http://localhost:8080/api/status` - Download service status
+- `http://localhost:8080/api/download/start` - Start download
+- `http://localhost:8080/api/download/stop` - Stop download
+- `http://localhost:8080/api/config` - Get/update configuration
 
 **Docker Compose:**
 
 ```yaml
 services:
   musicdl:
-    image: musicdl:latest
-    build:
-      context: .
-      dockerfile: ./musicdl.Dockerfile
+    image: ghcr.io/sv4u/musicdl:latest
+    ports:
+      - "8080:8080"
     volumes:
       - /path/to/music/library:/download:rw
+      - /path/to/config.yaml:/scripts/config.yaml:ro
     environment:
-      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
-      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
+      - CONFIG_PATH=/scripts/config.yaml
+      - HEALTHCHECK_PORT=8080
     restart: unless-stopped
 ```
 

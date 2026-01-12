@@ -4,9 +4,10 @@
 
 ### Prerequisites
 
-- Python 3.12
-- pip
+- Go 1.24 or later
 - Git
+- yt-dlp (for audio downloads)
+- ffmpeg (for audio conversion)
 
 ### Setup
 
@@ -15,40 +16,57 @@
 git clone git@github.com:sv4u/musicdl.git
 cd musicdl
 
-# Install dependencies
-pip install -r requirements.txt
-pip install -r test-requirements.txt
+# Download dependencies
+go mod download
+
+# Build binary
+go build -o musicdl ./control
 ```
 
 ### Project Structure
 
 ```
 musicdl/
-├── core/                    # Core modules
-│   ├── audio_provider.py    # Audio source provider (yt-dlp wrapper)
-│   ├── cache.py             # In-memory caching
-│   ├── config.py            # Configuration models
-│   ├── downloader.py        # Download orchestrator
-│   ├── exceptions.py        # Custom exceptions
-│   ├── metadata.py          # Metadata embedding
-│   ├── models.py            # Data models
-│   ├── plan.py              # Plan data structures
-│   ├── plan_executor.py     # Plan execution
-│   ├── plan_generator.py    # Plan generation
-│   ├── plan_optimizer.py    # Plan optimization
-│   ├── rate_limiter.py     # Rate limiting
-│   ├── spotify_client.py    # Spotify API client
-│   └── utils.py             # Utility functions
-├── scripts/                  # Utility scripts
-│   ├── get_version.py       # Version extraction
-│   └── healthcheck_server.py # Healthcheck HTTP server
-├── tests/                    # Test suite
-│   ├── unit/                # Unit tests
-│   ├── integration/         # Integration tests
-│   └── e2e/                 # End-to-end tests
-├── download.py              # Main entry point
+├── control/                  # Control platform
+│   ├── main.go              # Main entry point (serve/download commands)
+│   ├── server.go            # HTTP server setup
+│   └── handlers/            # HTTP handlers
+│       ├── handlers.go      # Base handlers struct
+│       ├── dashboard.go     # Dashboard page
+│       ├── status.go         # Status endpoints
+│       ├── download.go       # Download control endpoints
+│       ├── config.go         # Config management endpoints
+│       ├── logs.go           # Log viewing endpoints
+│       └── health.go         # Health check endpoints
+├── download/                 # Download service
+│   ├── service.go           # Download service implementation
+│   ├── downloader.go        # Download orchestrator
+│   ├── config/              # Configuration loading
+│   │   ├── config.go        # Config models
+│   │   └── loader.go        # YAML loader
+│   ├── spotify/             # Spotify API client
+│   │   ├── client.go        # Spotify client wrapper
+│   │   ├── cache.go         # Response caching
+│   │   ├── rate_limiter.go  # Rate limiting
+│   │   └── rate_limit_tracker.go # Rate limit tracking
+│   ├── audio/               # Audio provider
+│   │   ├── provider.go      # Audio provider interface
+│   │   └── ytdlp.go         # yt-dlp subprocess wrapper
+│   ├── metadata/            # Metadata embedding
+│   │   ├── embedder.go      # Metadata embedder interface
+│   │   ├── mp3.go           # MP3 metadata
+│   │   ├── flac.go          # FLAC metadata (stub)
+│   │   ├── m4a.go           # M4A metadata (stub)
+│   │   └── vorbis.go        # OGG/Opus metadata (stub)
+│   └── plan/                # Plan architecture
+│       ├── models.go        # Plan data structures
+│       ├── generator.go     # Plan generation
+│       ├── optimizer.go     # Plan optimization
+│       └── executor.go      # Plan execution
+├── go.mod                    # Go module definition
+├── go.sum                    # Dependency checksums
 ├── config.yaml              # Example configuration
-└── requirements.txt         # Dependencies
+└── musicdl.Dockerfile        # Docker build file
 ```
 
 ## Running Tests
@@ -56,111 +74,146 @@ musicdl/
 ### All Tests
 
 ```bash
-pytest
+go test ./...
 ```
 
-### Specific Test Categories
+### Verbose Output
 
 ```bash
-# Unit tests only
-pytest tests/unit/
+go test -v ./...
+```
 
-# Integration tests only
-pytest tests/integration/
+### Specific Package
 
-# End-to-end tests only
-pytest tests/e2e/
+```bash
+go test ./download/spotify
 ```
 
 ### With Coverage
 
 ```bash
-pytest --cov=core --cov-report=html --cov-report=xml
+go test -cover ./...
 ```
 
-Coverage reports:
+### Coverage Report
 
-- HTML: `htmlcov/index.html`
-- XML: `coverage.xml`
+```bash
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out
+```
+
+### Integration Tests
+
+Integration tests require real API credentials. Set up a `.env` file:
+
+```bash
+SPOTIGO_CLIENT_ID=your_client_id
+SPOTIGO_CLIENT_SECRET=your_client_secret
+```
+
+Then run integration tests:
+
+```bash
+go test -v ./download/spotify -tags=integration
+```
 
 ## Code Style
 
-This project follows Python best practices:
+This project follows Go best practices:
 
-- **Type Hints**: All functions and classes should have type annotations
-- **Docstrings**: Use PEP 257 docstring conventions
-- **Formatting**: Use consistent formatting (consider using `black` or `ruff`)
-- **Linting**: Use `ruff` for linting
+- **Formatting**: Use `gofmt` or `go fmt` (automatically applied)
+- **Linting**: Use `golangci-lint` for comprehensive linting
+- **Documentation**: Use Go doc comments for exported functions/types
+- **Error Handling**: Always handle errors explicitly, use error wrapping
 
 ### Type Annotations
 
-All functions should include type hints:
+Go has static typing, so type annotations are required:
 
-```python
-def process_downloads(config: MusicDLConfig) -> Dict[str, Dict[str, int]]:
-    """Process downloads and return statistics."""
-    ...
+```go
+func processDownloads(config *config.MusicDLConfig) (map[string]int, error) {
+    // ...
+}
 ```
 
-### Docstrings
+### Documentation
 
-Follow PEP 257 conventions:
+Follow Go doc conventions:
 
-```python
-def generate_plan(self) -> DownloadPlan:
-    """
-    Generate complete download plan from configuration.
-
-    Returns:
-        DownloadPlan with all items
-    """
-    ...
+```go
+// GeneratePlan generates a complete download plan from configuration.
+//
+// It processes all songs, artists, playlists, and albums defined in the
+// configuration and creates a hierarchical DownloadPlan structure.
+//
+// Returns the generated plan or an error if generation fails.
+func (g *Generator) GeneratePlan(ctx context.Context) (*DownloadPlan, error) {
+    // ...
+}
 ```
 
 ## Testing Guidelines
 
 ### Test Organization
 
-- **Unit Tests**: Test individual functions/classes in isolation
-- **Integration Tests**: Test interactions between components
-- **End-to-End Tests**: Test complete workflows
+- **Unit Tests**: Test individual functions/structs in isolation
+- **Integration Tests**: Test interactions between components (use build tags)
+- **Test Files**: `*_test.go` files in the same package
 
 ### Test Naming
 
-- Test files: `test_*.py`
-- Test functions: `test_*`
-- Test classes: `Test*`
+- Test functions: `TestFunctionName` or `TestStruct_MethodName`
+- Test files: `*_test.go`
+- Example tests: `ExampleFunctionName`
 
 ### Test Structure
 
-Follow Arrange-Act-Assert pattern:
+Follow table-driven tests for multiple cases:
 
-```python
-def test_download_track():
-    # Arrange
-    config = create_test_config()
-    downloader = Downloader(config)
+```go
+func TestDownloader_DownloadTrack(t *testing.T) {
+    tests := []struct {
+        name    string
+        url     string
+        wantErr bool
+    }{
+        {
+            name:    "valid track",
+            url:     "https://open.spotify.com/track/...",
+            wantErr: false,
+        },
+        {
+            name:    "invalid url",
+            url:     "invalid",
+            wantErr: true,
+        },
+    }
     
-    # Act
-    result = downloader.download_track(track_url)
-    
-    # Assert
-    assert result.success
-    assert result.file_path.exists()
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            // Test implementation
+        })
+    }
+}
 ```
 
 ### Mocking
 
-Use `pytest-mock` for mocking:
+Use interfaces for testability:
 
-```python
-def test_spotify_client_rate_limit(mocker):
-    # Mock external API calls
-    mock_request = mocker.patch('requests.get')
-    mock_request.return_value.status_code = 429
-    
-    # Test rate limit handling
-    ...
+```go
+type SpotifyClientInterface interface {
+    GetTrack(ctx context.Context, trackID string) (*spotigo.Track, error)
+}
+
+// In tests, create mock implementations
+type mockSpotifyClient struct {
+    getTrackFunc func(ctx context.Context, trackID string) (*spotigo.Track, error)
+}
+
+func (m *mockSpotifyClient) GetTrack(ctx context.Context, trackID string) (*spotigo.Track, error) {
+    return m.getTrackFunc(ctx, trackID)
+}
 ```
 
 ## Contributing
@@ -170,8 +223,9 @@ def test_spotify_client_rate_limit(mocker):
 1. Create a feature branch from `main`
 2. Make your changes
 3. Write/update tests
-4. Ensure all tests pass
-5. Submit a pull request
+4. Ensure all tests pass: `go test ./...`
+5. Format code: `go fmt ./...`
+6. Submit a pull request
 
 ### Commit Messages
 
@@ -191,67 +245,69 @@ test: add integration tests for plan executor
 3. **Tests**: All tests must pass
 4. **Coverage**: Maintain or improve test coverage
 5. **Documentation**: Update docs if needed
+6. **Formatting**: Code must be formatted with `go fmt`
 
 ## Debugging
 
 ### Logging
 
-The project uses Python's `logging` module:
+The project uses Go's standard `log` package:
 
-```python
-import logging
+```go
+import "log"
 
-logger = logging.getLogger(__name__)
-
-logger.debug("Detailed debug information")
-logger.info("General information")
-logger.warning("Warning message")
-logger.error("Error message")
+log.Printf("Debug: processing track %s", trackID)
+log.Printf("Error: failed to download: %v", err)
 ```
 
 ### Debug Mode
 
-Enable debug logging:
+Enable verbose logging by setting log level:
 
-```python
-import logging
-logging.basicConfig(level=logging.DEBUG)
+```go
+log.SetFlags(log.LstdFlags | log.Lshortfile)
 ```
 
 ### Plan Inspection
 
 Inspect plan files for debugging:
 
-```python
-from core.plan import DownloadPlan
-from pathlib import Path
+```go
+import (
+    "encoding/json"
+    "os"
+    "github.com/sv4u/musicdl/download/plan"
+)
 
-plan = DownloadPlan.load(Path("download_plan.json"))
-print(plan.get_statistics())
+data, _ := os.ReadFile("download_plan.json")
+var plan plan.DownloadPlan
+json.Unmarshal(data, &plan)
+stats := plan.GetStatistics()
+fmt.Printf("Statistics: %+v\n", stats)
 ```
 
 ## Common Tasks
 
 ### Adding a New Audio Provider
 
-1. Add provider to `AudioProvider` class
+1. Add provider to `audio.Provider` in `download/audio/provider.go`
 2. Update `audio_providers` configuration option
 3. Add tests for new provider
 4. Update documentation
 
 ### Adding a New Configuration Option
 
-1. Add field to `DownloadSettings` in `core/config.py`
+1. Add field to `DownloadSettings` in `download/config/config.go`
 2. Add default value
 3. Update `config.yaml` example
-4. Add validation if needed
+4. Add validation in `Validate()` method
 5. Update tests
 6. Update documentation
 
 ### Modifying Plan Structure
 
-1. Update `PlanItem` dataclass in `core/plan.py`
-2. Update serialization/deserialization
+1. Update `PlanItem` struct in `download/plan/models.go`
+2. Update JSON serialization tags
 3. Update plan generator/optimizer/executor
 4. Update tests
 5. Consider migration for existing plan files
@@ -260,25 +316,23 @@ print(plan.get_statistics())
 
 ### Core Dependencies
 
-- `spotipy`: Spotify Web API client
-- `yt-dlp`: YouTube downloader
-- `mutagen`: Audio metadata manipulation
-- `pydantic`: Configuration validation
-- `PyYAML`: YAML file parsing
-- `requests`: HTTP requests
+- `github.com/sv4u/spotigo`: Spotify Web API client
+- `github.com/gorilla/mux`: HTTP router
+- `gopkg.in/yaml.v3`: YAML parsing
+- `github.com/bogem/id3v2/v2`: MP3 metadata
+- `github.com/mewkiz/flac`: FLAC metadata (for future use)
+- `github.com/joho/godotenv`: Environment variable loading (for tests)
 
-### Development Dependencies
+### External Tools
 
-- `pytest`: Testing framework
-- `pytest-cov`: Coverage reporting
-- `pytest-mock`: Mocking utilities
-- `ruff`: Linting and formatting
+- `yt-dlp`: YouTube downloader (Python tool, called as subprocess)
+- `ffmpeg`: Audio conversion
 
 ### Updating Dependencies
 
-1. Update `requirements.txt` or `test-requirements.txt`
-2. Test changes thoroughly
-3. Update version pins if needed
+1. Update `go.mod` with new version
+2. Run `go mod tidy` to update `go.sum`
+3. Test changes thoroughly
 4. Commit with `deps:` prefix
 
 ## CI/CD Integration
@@ -287,10 +341,10 @@ print(plan.get_statistics())
 
 Before pushing:
 
-1. Run tests: `pytest`
-2. Check coverage: `pytest --cov=core`
-3. Run linter: `ruff check .`
-4. Format code: `ruff format .`
+1. Run tests: `go test ./...`
+2. Check formatting: `go fmt ./...`
+3. Run linter: `golangci-lint run`
+4. Check for race conditions: `go test -race ./...`
 
 ### GitHub Actions
 
@@ -311,17 +365,20 @@ If you encounter import errors:
 # Ensure you're in the project root
 cd /path/to/musicdl
 
-# Install in development mode
-pip install -e .
+# Download dependencies
+go mod download
+
+# Verify module
+go mod verify
 ```
 
 ### Test Failures
 
 If tests fail:
 
-1. Check Python version (requires 3.12)
-2. Ensure all dependencies are installed
-3. Check for environment variable requirements
+1. Check Go version (requires 1.24+)
+2. Ensure all dependencies are downloaded: `go mod download`
+3. Check for environment variable requirements (for integration tests)
 4. Review test output for specific errors
 
 ### Configuration Issues
@@ -333,9 +390,24 @@ If configuration validation fails:
 3. Check required fields
 4. Review error messages for specific issues
 
+### Build Issues
+
+If build fails:
+
+```bash
+# Clean module cache
+go clean -modcache
+
+# Re-download dependencies
+go mod download
+
+# Verify build
+go build ./control
+```
+
 ## Resources
 
-- [Python Type Hints](https://docs.python.org/3/library/typing.html)
-- [PEP 257 - Docstring Conventions](https://peps.python.org/pep-0257/)
-- [pytest Documentation](https://docs.pytest.org/)
+- [Go Documentation](https://go.dev/doc/)
+- [Effective Go](https://go.dev/doc/effective_go)
+- [Go Testing](https://go.dev/doc/tutorial/add-a-test)
 - [Conventional Commits](https://www.conventionalcommits.org/)
