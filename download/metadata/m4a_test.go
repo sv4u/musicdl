@@ -4,15 +4,9 @@ package metadata
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 )
-
-func checkMutagenAvailable() error {
-	cmd := exec.Command("python3", "-c", "import mutagen")
-	return cmd.Run()
-}
 
 func TestEmbedder_EmbedM4A_Integration(t *testing.T) {
 	// This test requires an actual M4A file and mutagen
