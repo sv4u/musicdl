@@ -7,9 +7,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/sv4u/musicdl/download/plan"
 )
@@ -101,9 +103,25 @@ download:
 	testPlan.AddItem(track3)
 	playlistItem.ChildIDs = append(playlistItem.ChildIDs, track3.ItemID)
 
-	// Note: We can't directly set the plan in the service without exposing internal methods
-	// The tests will verify the API structure and filtering/sorting logic
-	// Integration tests would require a running service with an actual plan
+	// Inject the test plan into the service using reflection
+	// This is necessary because currentPlan is a private field
+	service, err := handlers.getService()
+	if err != nil {
+		t.Fatalf("getService() failed: %v", err)
+	}
+	
+	// Use reflection with unsafe to set the private currentPlan field
+	serviceValue := reflect.ValueOf(service).Elem()
+	currentPlanField := serviceValue.FieldByName("currentPlan")
+	if !currentPlanField.IsValid() {
+		t.Fatal("currentPlan field not found in Service struct")
+	}
+	
+	// Create a new reflect.Value pointing to the field's address
+	// This allows us to set unexported fields
+	fieldPtr := unsafe.Pointer(currentPlanField.UnsafeAddr())
+	fieldValue := reflect.NewAt(currentPlanField.Type(), fieldPtr).Elem()
+	fieldValue.Set(reflect.ValueOf(testPlan))
 
 	return handlers, testPlan
 }
