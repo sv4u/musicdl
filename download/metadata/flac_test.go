@@ -4,15 +4,9 @@ package metadata
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 )
-
-func checkMutagenAvailable() error {
-	cmd := exec.Command("python3", "-c", "import mutagen")
-	return cmd.Run()
-}
 
 func TestEmbedder_EmbedFLAC_Integration(t *testing.T) {
 	// This test requires an actual FLAC file and mutagen
