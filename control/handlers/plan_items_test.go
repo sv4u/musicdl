@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -157,7 +158,10 @@ func TestPlanItems_FilterByStatus(t *testing.T) {
 func TestPlanItems_Search(t *testing.T) {
 	handlers, _ := setupPlanItemsTest(t)
 
-	req := httptest.NewRequest("GET", "/api/plan/items?search=Track One", nil)
+	// Use url.Values to properly encode the query string
+	query := url.Values{}
+	query.Set("search", "Track One")
+	req := httptest.NewRequest("GET", "/api/plan/items?"+query.Encode(), nil)
 	w := httptest.NewRecorder()
 
 	handlers.PlanItems(w, req)

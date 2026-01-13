@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -29,7 +30,11 @@ download:
 		t.Fatalf("NewHandlers() failed: %v", err)
 	}
 
-	req := httptest.NewRequest("GET", "/api/status/stream", nil)
+	// Create a cancellable context for the request
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	req := httptest.NewRequest("GET", "/api/status/stream", nil).WithContext(ctx)
 	w := httptest.NewRecorder()
 
 	// Start SSE stream in goroutine
@@ -43,7 +48,7 @@ download:
 	time.Sleep(100 * time.Millisecond)
 
 	// Cancel request context to stop stream
-	req.Context().Done()
+	cancel()
 
 	// Wait for stream to finish
 	select {
