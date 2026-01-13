@@ -347,7 +347,12 @@ func (s *Service) GetStatus() map[string]interface{} {
 
 	// Add plan statistics if available
 	if s.currentPlan != nil {
-		stats := s.currentPlan.GetStatistics()
+		execStats := s.currentPlan.GetExecutionStatistics()
+		// Convert map[string]int to map[string]interface{} for JSON serialization
+		stats := make(map[string]interface{})
+		for k, v := range execStats {
+			stats[k] = v
+		}
 		status["plan_stats"] = stats
 	}
 

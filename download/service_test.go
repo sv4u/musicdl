@@ -259,6 +259,99 @@ func TestService_GetStatus_ProgressPercentage(t *testing.T) {
 	}
 }
 
+func TestService_GetStatus_PlanStats(t *testing.T) {
+	cfg := &config.MusicDLConfig{
+		Version: "1.0",
+		Download: config.DownloadSettings{
+			ClientID:     "test_id",
+			ClientSecret: "test_secret",
+		},
+	}
+
+	spotifyConfig := &spotify.Config{
+		ClientID:     "test_id",
+		ClientSecret: "test_secret",
+	}
+	spotifyClient, _ := spotify.NewSpotifyClient(spotifyConfig)
+
+	audioConfig := &audio.Config{
+		OutputFormat: "mp3",
+	}
+	audioProvider, _ := audio.NewProvider(audioConfig)
+
+	service, _ := NewService(cfg, spotifyClient, audioProvider, metadata.NewEmbedder(), "")
+
+	// Create a plan with various track items
+	testPlan := plan.NewDownloadPlan(nil)
+	testPlan.AddItem(&plan.PlanItem{
+		ItemID:   "track:1",
+		ItemType: plan.PlanItemTypeTrack,
+		Status:   plan.PlanItemStatusPending,
+		CreatedAt: time.Now(),
+	})
+	testPlan.AddItem(&plan.PlanItem{
+		ItemID:   "track:2",
+		ItemType: plan.PlanItemTypeTrack,
+		Status:   plan.PlanItemStatusCompleted,
+		CreatedAt: time.Now(),
+	})
+	testPlan.AddItem(&plan.PlanItem{
+		ItemID:   "track:3",
+		ItemType: plan.PlanItemTypeTrack,
+		Status:   plan.PlanItemStatusFailed,
+		CreatedAt: time.Now(),
+	})
+	testPlan.AddItem(&plan.PlanItem{
+		ItemID:   "track:4",
+		ItemType: plan.PlanItemTypeTrack,
+		Status:   plan.PlanItemStatusInProgress,
+		CreatedAt: time.Now(),
+	})
+	// Add a skipped track (should be excluded)
+	testPlan.AddItem(&plan.PlanItem{
+		ItemID:   "track:5",
+		ItemType: plan.PlanItemTypeTrack,
+		Status:   plan.PlanItemStatusSkipped,
+		CreatedAt: time.Now(),
+	})
+	// Add non-track items (should be excluded)
+	testPlan.AddItem(&plan.PlanItem{
+		ItemID:   "album:1",
+		ItemType: plan.PlanItemTypeAlbum,
+		Status:   plan.PlanItemStatusCompleted,
+		CreatedAt: time.Now(),
+	})
+
+	// Test GetExecutionStatistics directly on the plan
+	execStats := testPlan.GetExecutionStatistics()
+	if execStats["total"] != 4 {
+		t.Errorf("Expected total=4, got %d", execStats["total"])
+	}
+	if execStats["pending"] != 1 {
+		t.Errorf("Expected pending=1, got %d", execStats["pending"])
+	}
+	if execStats["completed"] != 1 {
+		t.Errorf("Expected completed=1, got %d", execStats["completed"])
+	}
+	if execStats["failed"] != 1 {
+		t.Errorf("Expected failed=1, got %d", execStats["failed"])
+	}
+	if execStats["in_progress"] != 1 {
+		t.Errorf("Expected in_progress=1, got %d", execStats["in_progress"])
+	}
+
+	// Get status without plan - plan_stats should not be present or should be empty
+	status := service.GetStatus()
+	planStats, ok := status["plan_stats"]
+	if ok && planStats != nil {
+		// If plan_stats exists, it should be an empty map when no plan
+		statsMap, ok := planStats.(map[string]interface{})
+		if ok && len(statsMap) > 0 {
+			t.Errorf("Expected no plan_stats when no plan exists, got %v", planStats)
+		}
+	}
+}
+
 func TestService_UpdateProgress(t *testing.T) {
 	cfg := &config.MusicDLConfig{
 		Version: "1.0",

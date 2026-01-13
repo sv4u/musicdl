@@ -170,6 +170,54 @@ func (p *DownloadPlan) GetStatistics() map[string]interface{} {
 	return stats
 }
 
+// GetExecutionStatistics returns execution statistics for track items.
+// This method counts only track items (excluding containers and M3U files)
+// and excludes skipped items. It returns status-based statistics that are
+// useful for tracking download progress.
+// The returned map contains: "completed", "failed", "pending", "in_progress", "total".
+func (p *DownloadPlan) GetExecutionStatistics() map[string]int {
+	// Filter to only track items, excluding skipped items
+	trackItems := make([]*PlanItem, 0)
+	for _, item := range p.Items {
+		if item.ItemType == PlanItemTypeTrack {
+			// Use thread-safe GetStatus() to check status
+			status := item.GetStatus()
+			if status != PlanItemStatusSkipped {
+				trackItems = append(trackItems, item)
+			}
+		}
+	}
+
+	// Count by status
+	completed := 0
+	failed := 0
+	pending := 0
+	inProgress := 0
+
+	for _, item := range trackItems {
+		// Use thread-safe GetStatus() method
+		status := item.GetStatus()
+		switch status {
+		case PlanItemStatusCompleted:
+			completed++
+		case PlanItemStatusFailed:
+			failed++
+		case PlanItemStatusPending:
+			pending++
+		case PlanItemStatusInProgress:
+			inProgress++
+		}
+	}
+
+	return map[string]int{
+		"completed":   completed,
+		"failed":      failed,
+		"pending":     pending,
+		"in_progress": inProgress,
+		"total":       len(trackItems),
+	}
+}
+
 // Save saves the plan to a JSON file.
 func (p *DownloadPlan) Save(filePath string) error {
 	data, err := json.MarshalIndent(p, "", "  ")

@@ -135,6 +135,232 @@ func TestDownloadPlan_GetStatistics(t *testing.T) {
 	}
 }
 
+func TestDownloadPlan_GetExecutionStatistics_EmptyPlan(t *testing.T) {
+	plan := NewDownloadPlan(nil)
+	stats := plan.GetExecutionStatistics()
+
+	expected := map[string]int{
+		"completed":   0,
+		"failed":      0,
+		"pending":     0,
+		"in_progress": 0,
+		"total":       0,
+	}
+
+	for key, expectedVal := range expected {
+		if stats[key] != expectedVal {
+			t.Errorf("Expected %s=%d, got %d", key, expectedVal, stats[key])
+		}
+	}
+}
+
+func TestDownloadPlan_GetExecutionStatistics_OnlyTracks(t *testing.T) {
+	plan := NewDownloadPlan(nil)
+	plan.AddItem(&PlanItem{
+		ItemID:   "track:1",
+		ItemType: PlanItemTypeTrack,
+		Status:   PlanItemStatusPending,
+		CreatedAt: time.Now(),
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:   "track:2",
+		ItemType: PlanItemTypeTrack,
+		Status:   PlanItemStatusCompleted,
+		CreatedAt: time.Now(),
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:   "track:3",
+		ItemType: PlanItemTypeTrack,
+		Status:   PlanItemStatusFailed,
+		CreatedAt: time.Now(),
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:   "track:4",
+		ItemType: PlanItemTypeTrack,
+		Status:   PlanItemStatusInProgress,
+		CreatedAt: time.Now(),
+	})
+
+	stats := plan.GetExecutionStatistics()
+
+	if stats["total"] != 4 {
+		t.Errorf("Expected total=4, got %d", stats["total"])
+	}
+	if stats["pending"] != 1 {
+		t.Errorf("Expected pending=1, got %d", stats["pending"])
+	}
+	if stats["completed"] != 1 {
+		t.Errorf("Expected completed=1, got %d", stats["completed"])
+	}
+	if stats["failed"] != 1 {
+		t.Errorf("Expected failed=1, got %d", stats["failed"])
+	}
+	if stats["in_progress"] != 1 {
+		t.Errorf("Expected in_progress=1, got %d", stats["in_progress"])
+	}
+}
+
+func TestDownloadPlan_GetExecutionStatistics_ExcludesSkipped(t *testing.T) {
+	plan := NewDownloadPlan(nil)
+	plan.AddItem(&PlanItem{
+		ItemID:   "track:1",
+		ItemType: PlanItemTypeTrack,
+		Status:   PlanItemStatusPending,
+		CreatedAt: time.Now(),
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:   "track:2",
+		ItemType: PlanItemTypeTrack,
+		Status:   PlanItemStatusSkipped,
+		CreatedAt: time.Now(),
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:   "track:3",
+		ItemType: PlanItemTypeTrack,
+		Status:   PlanItemStatusCompleted,
+		CreatedAt: time.Now(),
+	})
+
+	stats := plan.GetExecutionStatistics()
+
+	// Should only count 2 items (pending and completed), skipping the skipped one
+	if stats["total"] != 2 {
+		t.Errorf("Expected total=2 (excluding skipped), got %d", stats["total"])
+	}
+	if stats["pending"] != 1 {
+		t.Errorf("Expected pending=1, got %d", stats["pending"])
+	}
+	if stats["completed"] != 1 {
+		t.Errorf("Expected completed=1, got %d", stats["completed"])
+	}
+}
+
+func TestDownloadPlan_GetExecutionStatistics_ExcludesNonTracks(t *testing.T) {
+	plan := NewDownloadPlan(nil)
+	plan.AddItem(&PlanItem{
+		ItemID:   "track:1",
+		ItemType: PlanItemTypeTrack,
+		Status:   PlanItemStatusPending,
+		CreatedAt: time.Now(),
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:   "album:1",
+		ItemType: PlanItemTypeAlbum,
+		Status:   PlanItemStatusCompleted,
+		CreatedAt: time.Now(),
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:   "playlist:1",
+		ItemType: PlanItemTypePlaylist,
+		Status:   PlanItemStatusInProgress,
+		CreatedAt: time.Now(),
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:   "m3u:1",
+		ItemType: PlanItemTypeM3U,
+		Status:   PlanItemStatusCompleted,
+		CreatedAt: time.Now(),
+	})
+
+	stats := plan.GetExecutionStatistics()
+
+	// Should only count the track item
+	if stats["total"] != 1 {
+		t.Errorf("Expected total=1 (only track), got %d", stats["total"])
+	}
+	if stats["pending"] != 1 {
+		t.Errorf("Expected pending=1, got %d", stats["pending"])
+	}
+	if stats["completed"] != 0 {
+		t.Errorf("Expected completed=0, got %d", stats["completed"])
+	}
+}
+
+func TestDownloadPlan_GetExecutionStatistics_MixedScenario(t *testing.T) {
+	plan := NewDownloadPlan(nil)
+	// Add various track items with different statuses
+	plan.AddItem(&PlanItem{
+		ItemID:   "track:1",
+		ItemType: PlanItemTypeTrack,
+		Status:   PlanItemStatusPending,
+		CreatedAt: time.Now(),
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:   "track:2",
+		ItemType: PlanItemTypeTrack,
+		Status:   PlanItemStatusPending,
+		CreatedAt: time.Now(),
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:   "track:3",
+		ItemType: PlanItemTypeTrack,
+		Status:   PlanItemStatusCompleted,
+		CreatedAt: time.Now(),
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:   "track:4",
+		ItemType: PlanItemTypeTrack,
+		Status:   PlanItemStatusCompleted,
+		CreatedAt: time.Now(),
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:   "track:5",
+		ItemType: PlanItemTypeTrack,
+		Status:   PlanItemStatusCompleted,
+		CreatedAt: time.Now(),
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:   "track:6",
+		ItemType: PlanItemTypeTrack,
+		Status:   PlanItemStatusFailed,
+		CreatedAt: time.Now(),
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:   "track:7",
+		ItemType: PlanItemTypeTrack,
+		Status:   PlanItemStatusInProgress,
+		CreatedAt: time.Now(),
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:   "track:8",
+		ItemType: PlanItemTypeTrack,
+		Status:   PlanItemStatusSkipped,
+		CreatedAt: time.Now(),
+	})
+	// Add non-track items (should be ignored)
+	plan.AddItem(&PlanItem{
+		ItemID:   "album:1",
+		ItemType: PlanItemTypeAlbum,
+		Status:   PlanItemStatusCompleted,
+		CreatedAt: time.Now(),
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:   "m3u:1",
+		ItemType: PlanItemTypeM3U,
+		Status:   PlanItemStatusCompleted,
+		CreatedAt: time.Now(),
+	})
+
+	stats := plan.GetExecutionStatistics()
+
+	// Should count 7 track items (excluding skipped and non-tracks)
+	if stats["total"] != 7 {
+		t.Errorf("Expected total=7, got %d", stats["total"])
+	}
+	if stats["pending"] != 2 {
+		t.Errorf("Expected pending=2, got %d", stats["pending"])
+	}
+	if stats["completed"] != 3 {
+		t.Errorf("Expected completed=3, got %d", stats["completed"])
+	}
+	if stats["failed"] != 1 {
+		t.Errorf("Expected failed=1, got %d", stats["failed"])
+	}
+	if stats["in_progress"] != 1 {
+		t.Errorf("Expected in_progress=1, got %d", stats["in_progress"])
+	}
+}
+
 func TestDownloadPlan_SaveLoad(t *testing.T) {
 	plan := NewDownloadPlan(map[string]interface{}{
 		"config_version": "1.0",
