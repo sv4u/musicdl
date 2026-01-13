@@ -77,6 +77,10 @@ func (s *Server) setupRoutes() {
 
 	// Status endpoints
 	api.HandleFunc("/status", s.handlers.Status).Methods("GET")
+	api.HandleFunc("/status/stream", s.handlers.StatusStream).Methods("GET")
+	
+	// Plan endpoints
+	api.HandleFunc("/plan/items", s.handlers.PlanItems).Methods("GET")
 
 	// Download control endpoints
 	api.HandleFunc("/download/start", s.handlers.DownloadStart).Methods("POST")

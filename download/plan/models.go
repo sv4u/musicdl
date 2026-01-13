@@ -114,6 +114,46 @@ func (p *PlanItem) GetStatus() PlanItemStatus {
 	return p.Status
 }
 
+// GetProgress returns the current progress (thread-safe).
+func (p *PlanItem) GetProgress() float64 {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.Progress
+}
+
+// GetError returns the error message (thread-safe).
+func (p *PlanItem) GetError() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.Error
+}
+
+// GetFilePath returns the file path (thread-safe).
+func (p *PlanItem) GetFilePath() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.FilePath
+}
+
+// GetTimestamps returns timestamps (thread-safe).
+func (p *PlanItem) GetTimestamps() (createdAt time.Time, startedAt *time.Time, completedAt *time.Time) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.CreatedAt, p.StartedAt, p.CompletedAt
+}
+
+// GetMetadata returns a copy of metadata (thread-safe).
+func (p *PlanItem) GetMetadata() map[string]interface{} {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	// Return a copy to avoid race conditions
+	metadataCopy := make(map[string]interface{})
+	for k, v := range p.Metadata {
+		metadataCopy[k] = v
+	}
+	return metadataCopy
+}
+
 // DownloadPlan represents a complete download plan.
 type DownloadPlan struct {
 	Items    []*PlanItem        `json:"items"`

@@ -48,6 +48,20 @@ download:
   plan_persistence_enabled: true # Save plans to disk (default: true)
   plan_status_reporting_enabled: true # Enable status reporting (default: true)
 
+# UI and history tracking configuration
+ui:
+  # History tracking settings
+  # history_path: Relative paths are resolved relative to plan_path. Absolute paths are used as-is.
+  #               Empty string (default) = plan_path/history
+  history_path: "" # Path to history directory (default: plan_path/history, empty = auto)
+  history_retention: 0 # Number of runs to keep (0 = unlimited, default: 0)
+  snapshot_interval: 10 # Progress snapshot interval in seconds (default: 10)
+  
+  # Log settings
+  # log_path: Relative paths are resolved relative to config file directory. Absolute paths are used as-is.
+  #           Empty string (default) = uses command-line --log-path flag value
+  log_path: "" # Path to log file (default: set by control platform, empty = auto)
+
 # Music sources to download
 # You can use either simple format (name: url) or extended format (name, url, create_m3u)
 

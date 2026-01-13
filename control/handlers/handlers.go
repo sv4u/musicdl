@@ -54,6 +54,28 @@ func (h *Handlers) getService() (*download.Service, error) {
 			return
 		}
 
+		// Set UI defaults (needs planPath)
+		cfg.UI.SetDefaults(h.planPath)
+		
+		// Resolve history_path: if empty, default to planPath/history
+		// If relative, resolve relative to planPath; if absolute, use as-is
+		if cfg.UI.HistoryPath == "" {
+			cfg.UI.HistoryPath = filepath.Join(h.planPath, "history")
+		} else if !filepath.IsAbs(cfg.UI.HistoryPath) {
+			// Relative path: resolve relative to planPath
+			cfg.UI.HistoryPath = filepath.Join(h.planPath, cfg.UI.HistoryPath)
+		}
+		
+		// Resolve log_path: if empty, use command-line logPath
+		// If relative, resolve relative to config file directory; if absolute, use as-is
+		if cfg.UI.LogPath == "" {
+			cfg.UI.LogPath = h.logPath
+		} else if !filepath.IsAbs(cfg.UI.LogPath) {
+			// Relative path: resolve relative to config file directory
+			configDir := filepath.Dir(h.configPath)
+			cfg.UI.LogPath = filepath.Join(configDir, cfg.UI.LogPath)
+		}
+
 		// Create Spotify client
 		spotifyConfig := &spotify.Config{
 			ClientID:          cfg.Download.ClientID,

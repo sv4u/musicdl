@@ -219,10 +219,35 @@ type MusicSource struct {
 	CreateM3U bool   `yaml:"create_m3u"`
 }
 
+// UISettings holds UI and history tracking configuration settings.
+type UISettings struct {
+	// History tracking settings
+	HistoryPath      string `yaml:"history_path"`       // Path to history directory (default: plan_path/history)
+	HistoryRetention int    `yaml:"history_retention"`  // Number of runs to keep (0 = unlimited, default: 0)
+	SnapshotInterval int   `yaml:"snapshot_interval"`   // Progress snapshot interval in seconds (default: 10)
+	
+	// Log settings
+	LogPath string `yaml:"log_path"` // Path to log file (configurable)
+}
+
+// SetDefaults sets default values for UISettings.
+func (u *UISettings) SetDefaults(planPath string) {
+	// Validate and set SnapshotInterval: must be positive, default to 10 if zero or negative
+	if u.SnapshotInterval <= 0 {
+		u.SnapshotInterval = 10 // Default: snapshot every 10 seconds
+	}
+	// HistoryRetention: 0 means unlimited, negative values are invalid but we allow 0
+	if u.HistoryRetention < 0 {
+		u.HistoryRetention = 0 // Treat negative as unlimited
+	}
+	// HistoryPath and LogPath are set by the caller based on planPath
+}
+
 // MusicDLConfig represents the main configuration model.
 type MusicDLConfig struct {
 	Version  string          `yaml:"version"`
 	Download DownloadSettings `yaml:"download"`
+	UI       UISettings      `yaml:"ui"`
 	Songs    []MusicSource   `yaml:"songs"`
 	Artists  []MusicSource   `yaml:"artists"`
 	Playlists []MusicSource  `yaml:"playlists"`
@@ -243,6 +268,8 @@ func (c *MusicDLConfig) Validate() error {
 	if err := c.Download.Validate(); err != nil {
 		return err
 	}
+
+	// UI settings defaults are set by the caller (needs planPath)
 
 	return nil
 }
