@@ -2,13 +2,65 @@ package handlers
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+// threadSafeRecorder wraps httptest.ResponseRecorder with thread-safe access.
+// This is needed for testing SSE streams where the handler writes concurrently
+// while the test reads from the response body.
+type threadSafeRecorder struct {
+	recorder *httptest.ResponseRecorder
+	mu       sync.RWMutex
+}
+
+// newThreadSafeRecorder creates a new thread-safe recorder.
+func newThreadSafeRecorder() *threadSafeRecorder {
+	return &threadSafeRecorder{
+		recorder: httptest.NewRecorder(),
+	}
+}
+
+// Header returns the response headers (thread-safe).
+func (tsr *threadSafeRecorder) Header() http.Header {
+	tsr.mu.RLock()
+	defer tsr.mu.RUnlock()
+	return tsr.recorder.Header()
+}
+
+// Write writes data to the response body (thread-safe).
+func (tsr *threadSafeRecorder) Write(b []byte) (int, error) {
+	tsr.mu.Lock()
+	defer tsr.mu.Unlock()
+	return tsr.recorder.Write(b)
+}
+
+// WriteHeader writes the status code (thread-safe).
+func (tsr *threadSafeRecorder) WriteHeader(statusCode int) {
+	tsr.mu.Lock()
+	defer tsr.mu.Unlock()
+	tsr.recorder.WriteHeader(statusCode)
+}
+
+// Flush flushes the response (thread-safe).
+func (tsr *threadSafeRecorder) Flush() {
+	tsr.mu.Lock()
+	defer tsr.mu.Unlock()
+	tsr.recorder.Flush()
+}
+
+// BodyString returns the response body as a string (thread-safe).
+func (tsr *threadSafeRecorder) BodyString() string {
+	tsr.mu.RLock()
+	defer tsr.mu.RUnlock()
+	return tsr.recorder.Body.String()
+}
 
 func TestStatusStream(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -115,7 +167,7 @@ download:
 	}
 
 	req := httptest.NewRequest("GET", "/api/status/stream", nil)
-	w := httptest.NewRecorder()
+	w := newThreadSafeRecorder()
 
 	// Start SSE stream
 	go handlers.StatusStream(w, req)
@@ -123,8 +175,8 @@ download:
 	// Wait for heartbeat
 	time.Sleep(2 * time.Second)
 
-	// Check response body for heartbeat
-	body := w.Body.String()
+	// Check response body for heartbeat (thread-safe read)
+	body := w.BodyString()
 	if !strings.Contains(body, "heartbeat") {
 		t.Error("Expected heartbeat in SSE stream")
 	}
@@ -151,7 +203,7 @@ download:
 	}
 
 	req := httptest.NewRequest("GET", "/api/status/stream", nil)
-	w := httptest.NewRecorder()
+	w := newThreadSafeRecorder()
 
 	// Start SSE stream
 	go handlers.StatusStream(w, req)
@@ -159,8 +211,8 @@ download:
 	// Wait for initial data
 	time.Sleep(500 * time.Millisecond)
 
-	// Check response body for initial status data
-	body := w.Body.String()
+	// Check response body for initial status data (thread-safe read)
+	body := w.BodyString()
 	if !strings.Contains(body, "data:") {
 		t.Error("Expected initial data in SSE stream")
 	}

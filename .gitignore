@@ -197,3 +197,6 @@ cython_debug/
 
 # Cursor plans
 .cursor/plans/
+
+# GitHub Actions workflow job logs
+job-logs.txt
