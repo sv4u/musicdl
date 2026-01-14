@@ -244,6 +244,11 @@ func (s *Service) Start(ctx context.Context) error {
 		// Check if context was cancelled
 		if ctx.Err() != nil {
 			log.Printf("INFO: plan_execution_cancelled error=%v", ctx.Err())
+			s.mu.Lock()
+			s.state = ServiceStateIdle
+			s.phase = ServicePhaseIdle
+			s.errorMessage = ""
+			s.mu.Unlock()
 			return
 		}
 
@@ -273,6 +278,13 @@ func (s *Service) Start(ctx context.Context) error {
 		log.Printf("INFO: state_transition state=%s phase=%s", s.state, s.phase)
 		// Save final plan state
 		s.savePlan()
+		
+		// Cleanup: Reset progress tracking and ensure service is ready for next download
+		s.progressMu.Lock()
+		s.progressPercentage = 0.0
+		s.progressMu.Unlock()
+		
+		log.Printf("INFO: download_service_cleanup_complete state=%s phase=%s", s.state, s.phase)
 	}()
 
 	return nil

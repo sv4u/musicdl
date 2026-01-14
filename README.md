@@ -67,6 +67,12 @@ download:
   audio_providers: ["youtube-music", "youtube"]
   overwrite: "skip"
 
+ui:
+  history_path: ""  # Default: plan_path/history
+  history_retention: 0  # 0 = unlimited
+  snapshot_interval: 10  # seconds
+  log_path: ""  # Default: uses --log-path flag
+
 songs: []
 artists: []
 playlists: []
@@ -117,6 +123,18 @@ albums: []
 - `plan_execution_enabled` (bool, default: true): Enable plan execution
 - `plan_persistence_enabled` (bool, default: true): Enable plan persistence (save/load to disk)
 - `plan_status_reporting_enabled` (bool, default: true): Enable plan status reporting (saves plans during generation/optimization for status display)
+
+### UI Configuration
+
+**History Tracking:**
+
+- `history_path` (str, default: ""): Path to history directory. Empty string (default) = `plan_path/history`. Relative paths are resolved relative to `plan_path`. Absolute paths are used as-is.
+- `history_retention` (int, default: 0): Number of download runs to keep in history. 0 = unlimited retention (default).
+- `snapshot_interval` (int, default: 10): Progress snapshot interval in seconds. Controls how often progress snapshots are saved during download execution.
+
+**Log Settings:**
+
+- `log_path` (str, default: ""): Path to log file. Empty string (default) = uses command-line `--log-path` flag value. Relative paths are resolved relative to config file directory. Absolute paths are used as-is.
 
 ### Output Template Placeholders
 
@@ -232,6 +250,12 @@ download:
   cache_ttl: 7200
   spotify_rate_limit_requests: 8
   download_bandwidth_limit: 2097152  # 2MB/sec
+
+ui:
+  history_path: "custom_history"  # Custom history directory
+  history_retention: 100  # Keep last 100 runs
+  snapshot_interval: 5  # Snapshot every 5 seconds
+  log_path: "logs/musicdl.log"  # Custom log path
 
 songs:
   - "Song 1": https://open.spotify.com/track/...
