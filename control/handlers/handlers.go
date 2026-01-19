@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -8,11 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sv4u/musicdl/download"
-	"github.com/sv4u/musicdl/download/audio"
-	"github.com/sv4u/musicdl/download/config"
-	"github.com/sv4u/musicdl/download/metadata"
-	"github.com/sv4u/musicdl/download/spotify"
+	"github.com/sv4u/musicdl/control/client"
+	"github.com/sv4u/musicdl/control/config"
+	"github.com/sv4u/musicdl/control/service"
 )
 
 // Handlers holds all HTTP handlers for the control platform.
@@ -22,115 +21,58 @@ type Handlers struct {
 	logPath    string
 	startTime  time.Time
 
-	// Download service (lazy initialization)
-	service     *download.Service
-	serviceMu   sync.RWMutex
-	serviceInit sync.Once
+	// Configuration manager
+	configManager *config.ConfigManager
+	configMu      sync.RWMutex
+
+	// Service manager (process lifecycle)
+	serviceManager *service.Manager
+	serviceMu      sync.RWMutex
 }
 
 // NewHandlers creates a new handlers instance.
-func NewHandlers(configPath, planPath, logPath string, startTime time.Time) (*Handlers, error) {
+func NewHandlers(configPath, planPath, logPath string, startTime time.Time, version string) (*Handlers, error) {
 	// Validate paths exist or can be created
 	if err := validatePaths(configPath, planPath, logPath); err != nil {
 		return nil, fmt.Errorf("path validation failed: %w", err)
 	}
 
+	// Create configuration manager
+	configManager, err := config.NewConfigManager(configPath, planPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create config manager: %w", err)
+	}
+
+	// Create service manager
+	clientAddress := "localhost:30025"
+	clientVersion := version
+	if clientVersion == "" {
+		clientVersion = "dev"
+	}
+	serviceManager := service.NewManager(clientAddress, clientVersion, planPath, logPath)
+
+	// Cleanup any orphaned processes on startup
+	if err := serviceManager.Cleanup(); err != nil {
+		log.Printf("Warning: failed to cleanup orphaned processes: %v", err)
+	}
+
 	return &Handlers{
-		configPath: configPath,
-		planPath:   planPath,
-		logPath:    logPath,
-		startTime:  startTime,
+		configPath:    configPath,
+		planPath:      planPath,
+		logPath:       logPath,
+		startTime:     startTime,
+		configManager: configManager,
+		serviceManager: serviceManager,
 	}, nil
 }
 
-// getService returns the download service, initializing it if necessary.
-func (h *Handlers) getService() (*download.Service, error) {
-	var initErr error
-	h.serviceInit.Do(func() {
-		// Load config
-		cfg, err := config.LoadConfig(h.configPath)
-		if err != nil {
-			initErr = fmt.Errorf("failed to load config: %w", err)
-			return
-		}
-
-		// Set UI defaults (needs planPath)
-		cfg.UI.SetDefaults(h.planPath)
-		
-		// Resolve history_path: if empty, default to planPath/history
-		// If relative, resolve relative to planPath; if absolute, use as-is
-		if cfg.UI.HistoryPath == "" {
-			cfg.UI.HistoryPath = filepath.Join(h.planPath, "history")
-		} else if !filepath.IsAbs(cfg.UI.HistoryPath) {
-			// Relative path: resolve relative to planPath
-			cfg.UI.HistoryPath = filepath.Join(h.planPath, cfg.UI.HistoryPath)
-		}
-		
-		// Resolve log_path: if empty, use command-line logPath
-		// If relative, resolve relative to config file directory; if absolute, use as-is
-		if cfg.UI.LogPath == "" {
-			cfg.UI.LogPath = h.logPath
-		} else if !filepath.IsAbs(cfg.UI.LogPath) {
-			// Relative path: resolve relative to config file directory
-			configDir := filepath.Dir(h.configPath)
-			cfg.UI.LogPath = filepath.Join(configDir, cfg.UI.LogPath)
-		}
-
-		// Create Spotify client
-		spotifyConfig := &spotify.Config{
-			ClientID:          cfg.Download.ClientID,
-			ClientSecret:      cfg.Download.ClientSecret,
-			CacheMaxSize:      cfg.Download.CacheMaxSize,
-			CacheTTL:          cfg.Download.CacheTTL,
-			RateLimitEnabled:  cfg.Download.SpotifyRateLimitEnabled,
-			RateLimitRequests: cfg.Download.SpotifyRateLimitRequests,
-			RateLimitWindow:   cfg.Download.SpotifyRateLimitWindow,
-			MaxRetries:        cfg.Download.SpotifyMaxRetries,
-			RetryBaseDelay:    cfg.Download.SpotifyRetryBaseDelay,
-			RetryMaxDelay:     cfg.Download.SpotifyRetryMaxDelay,
-		}
-		spotifyClient, err := spotify.NewSpotifyClient(spotifyConfig)
-		if err != nil {
-			initErr = fmt.Errorf("failed to create Spotify client: %w", err)
-			return
-		}
-
-		// Create audio provider
-		audioConfig := &audio.Config{
-			OutputFormat:   cfg.Download.Format,
-			Bitrate:        cfg.Download.Bitrate,
-			AudioProviders: cfg.Download.AudioProviders,
-			CacheMaxSize:   cfg.Download.AudioSearchCacheMaxSize,
-			CacheTTL:       cfg.Download.AudioSearchCacheTTL,
-		}
-		audioProvider, err := audio.NewProvider(audioConfig)
-		if err != nil {
-			initErr = fmt.Errorf("failed to create audio provider: %w", err)
-			return
-		}
-
-		// Create metadata embedder
-		metadataEmbedder := metadata.NewEmbedder()
-
-		// Create download service
-		service, err := download.NewService(cfg, spotifyClient, audioProvider, metadataEmbedder, h.planPath)
-		if err != nil {
-			initErr = fmt.Errorf("failed to create download service: %w", err)
-			return
-		}
-
-		h.serviceMu.Lock()
-		h.service = service
-		h.serviceMu.Unlock()
-	})
-
-	if initErr != nil {
-		return nil, initErr
-	}
-
+// getDownloadClient returns the gRPC client for the download service.
+func (h *Handlers) getDownloadClient(ctx context.Context) (*client.DownloadClient, error) {
 	h.serviceMu.RLock()
-	defer h.serviceMu.RUnlock()
-	return h.service, nil
+	svcManager := h.serviceManager
+	h.serviceMu.RUnlock()
+
+	return svcManager.GetClient(ctx)
 }
 
 // validatePaths ensures required directories exist.

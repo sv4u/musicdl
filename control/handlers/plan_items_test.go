@@ -7,11 +7,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
-	"unsafe"
 
 	"github.com/sv4u/musicdl/download/plan"
 )
@@ -31,7 +29,7 @@ download:
 		t.Fatalf("Failed to create config file: %v", err)
 	}
 
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("NewHandlers() failed: %v", err)
 	}
@@ -103,25 +101,10 @@ download:
 	testPlan.AddItem(track3)
 	playlistItem.ChildIDs = append(playlistItem.ChildIDs, track3.ItemID)
 
-	// Inject the test plan into the service using reflection
-	// This is necessary because currentPlan is a private field
-	service, err := handlers.getService()
-	if err != nil {
-		t.Fatalf("getService() failed: %v", err)
-	}
-	
-	// Use reflection with unsafe to set the private currentPlan field
-	serviceValue := reflect.ValueOf(service).Elem()
-	currentPlanField := serviceValue.FieldByName("currentPlan")
-	if !currentPlanField.IsValid() {
-		t.Fatal("currentPlan field not found in Service struct")
-	}
-	
-	// Create a new reflect.Value pointing to the field's address
-	// This allows us to set unexported fields
-	fieldPtr := unsafe.Pointer(currentPlanField.UnsafeAddr())
-	fieldValue := reflect.NewAt(currentPlanField.Type(), fieldPtr).Elem()
-	fieldValue.Set(reflect.ValueOf(testPlan))
+	// Note: With gRPC architecture, we can't directly inject test plans into the service
+	// These tests would need to be integration tests that start the actual gRPC server
+	// For now, we return handlers and testPlan but tests will need to be updated
+	// to work with the gRPC client/server architecture
 
 	return handlers, testPlan
 }

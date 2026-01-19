@@ -34,7 +34,7 @@ albums: []
 	}
 
 	// Create handlers
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("NewHandlers() failed: %v", err)
 	}
@@ -83,7 +83,7 @@ albums: []
 	}
 
 	// Create handlers
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("NewHandlers() failed: %v", err)
 	}
@@ -155,7 +155,7 @@ albums: []
 	}
 
 	// Create handlers
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("NewHandlers() failed: %v", err)
 	}
@@ -224,7 +224,7 @@ albums: []
 	}
 
 	// Create handlers
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("NewHandlers() failed: %v", err)
 	}
@@ -286,7 +286,7 @@ albums: []
 	}
 
 	// Create handlers
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("NewHandlers() failed: %v", err)
 	}

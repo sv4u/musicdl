@@ -4,10 +4,12 @@ FROM golang:1.24-alpine AS builder
 # Accept VERSION as build argument (optional - if not provided, will use Git tags)
 ARG VERSION
 
-# Install build dependencies
+# Install build dependencies (including protoc for Protocol Buffers)
 RUN apk add --no-cache \
 	git \
-	ca-certificates
+	ca-certificates \
+	protobuf \
+	protobuf-dev
 
 # Set working directory
 WORKDIR /build
@@ -20,6 +22,15 @@ RUN go mod download
 
 # Copy source code
 COPY . .
+
+# Install Go protobuf plugins
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest && \
+	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+# Generate Protocol Buffers code
+RUN protoc --go_out=. --go_opt=paths=source_relative \
+	--go-grpc_out=. --go-grpc_opt=paths=source_relative \
+	download/proto/musicdl.proto || (echo "Proto generation failed" && exit 1)
 
 # Determine version: use Git tag if on a tag, otherwise use Git commit
 # If VERSION build arg is provided, use it; otherwise calculate from Git

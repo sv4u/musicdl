@@ -5,19 +5,33 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"sync"
 
 	"github.com/sv4u/musicdl/download/config"
+	"gopkg.in/yaml.v3"
 )
 
-// ConfigGet handles GET /api/config - Read current config file.
+// ConfigGet handles GET /api/config - Read current config.
 func (h *Handlers) ConfigGet(w http.ResponseWriter, r *http.Request) {
-	// Read config file
-	data, err := os.ReadFile(h.configPath)
+	// Get config from manager
+	cfg, err := h.configManager.Get()
 	if err != nil {
 		h.logError("ConfigGet", err)
 		response := map[string]interface{}{
-			"error":   "Failed to read config file",
+			"error":   "Failed to load configuration",
+			"message": err.Error(),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Marshal to YAML
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		h.logError("ConfigGet", err)
+		response := map[string]interface{}{
+			"error":   "Failed to marshal configuration",
 			"message": err.Error(),
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -81,7 +95,7 @@ func (h *Handlers) ConfigPut(w http.ResponseWriter, r *http.Request) {
 	tmpFile.Close()
 
 	// Validate by loading
-	_, err = config.LoadConfig(tmpFile.Name())
+	cfg, err := config.LoadConfig(tmpFile.Name())
 	if err != nil {
 		// Validation failed
 		response := map[string]interface{}{
@@ -94,42 +108,82 @@ func (h *Handlers) ConfigPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Backup original config (optional, but good practice)
-	backupPath := h.configPath + ".backup"
-	if _, err := os.Stat(h.configPath); err == nil {
-		// File exists, create backup
-		originalData, err := os.ReadFile(h.configPath)
+	// Validate on download service if running
+	h.serviceMu.RLock()
+	svcManager := h.serviceManager
+	h.serviceMu.RUnlock()
+
+	ctx := r.Context()
+	queued := false
+
+	if svcManager.IsRunning() {
+		// Service is running - queue the update
+		if err := h.configManager.QueueUpdate(cfg); err != nil {
+			h.logError("ConfigPut", err)
+			response := map[string]interface{}{
+				"error":   "Failed to queue config update",
+				"message": err.Error(),
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(response)
+			return
+		}
+
+		// Also validate on download service via gRPC
+		client, err := svcManager.GetClient(ctx)
 		if err == nil {
-			if err := os.WriteFile(backupPath, originalData, 0644); err != nil {
-				// Log warning but continue - backup is optional
-				h.logError("ConfigPut backup", err)
+			protoConfig := convertConfigToProto(cfg)
+			validationResp, err := client.ValidateConfig(ctx, protoConfig)
+			if err == nil && validationResp != nil && !validationResp.Valid {
+				// Download service validation failed
+				h.configManager.ClearPendingUpdate()
+				response := map[string]interface{}{
+					"error":   "Config validation failed on download service",
+					"message": "See errors for details",
+					"errors":   validationResp.Errors,
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(response)
+				return
 			}
 		}
-	}
 
-	// Write validated config to file
-	if err := os.WriteFile(h.configPath, body, 0644); err != nil {
-		h.logError("ConfigPut", err)
-		response := map[string]interface{}{
-			"error":   "Failed to write config file",
-			"message": err.Error(),
+		queued = true
+	} else {
+		// Service not running - save immediately
+		if err := h.configManager.Save(cfg); err != nil {
+			h.logError("ConfigPut", err)
+			response := map[string]interface{}{
+				"error":   "Failed to save configuration",
+				"message": err.Error(),
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(response)
+			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(response)
-		return
 	}
 
-	// Invalidate service so it reinitializes with new config
-	h.serviceMu.Lock()
-	h.service = nil
-	h.serviceInit = sync.Once{}
-	h.serviceMu.Unlock()
+	// Check for pending update status
+	pending, hasPending := h.configManager.GetPendingUpdate()
 
 	response := map[string]interface{}{
-		"message": "Config updated successfully",
-		"path":    h.configPath,
+		"message":      "Config updated successfully",
+		"path":         h.configPath,
+		"queued":       queued,
+		"has_pending":  hasPending,
 	}
+
+	if queued {
+		response["message"] = "Config update queued - will be applied after current download completes"
+	}
+
+	if hasPending && pending != nil {
+		response["pending_config"] = "Config update is pending"
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
@@ -197,12 +251,45 @@ func (h *Handlers) ConfigValidate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validation succeeded
+	// Also validate on download service if running
+	ctx := r.Context()
+	h.serviceMu.RLock()
+	svcManager := h.serviceManager
+	h.serviceMu.RUnlock()
+
+	valid := true
+	var validationErrors []interface{}
+
+	if svcManager.IsRunning() {
+		client, err := svcManager.GetClient(ctx)
+		if err == nil {
+			protoConfig := convertConfigToProto(cfg)
+			validationResp, err := client.ValidateConfig(ctx, protoConfig)
+			if err == nil && validationResp != nil {
+				valid = validationResp.Valid
+				if !valid && len(validationResp.Errors) > 0 {
+					for _, err := range validationResp.Errors {
+						validationErrors = append(validationErrors, map[string]interface{}{
+							"field":   err.Field,
+							"message": err.Message,
+						})
+					}
+				}
+			}
+		}
+	}
+
 	response := map[string]interface{}{
-		"valid":   true,
+		"valid":   valid,
 		"message": "Config is valid",
 		"version": cfg.Version,
 	}
+
+	if !valid && len(validationErrors) > 0 {
+		response["errors"] = validationErrors
+		response["message"] = "Config validation failed"
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)

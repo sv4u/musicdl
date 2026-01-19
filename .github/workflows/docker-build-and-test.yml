@@ -56,6 +56,8 @@ jobs:
           docker run --rm --entrypoint test "$IMAGE_TAG" -x /usr/local/bin/musicdl && echo "✓ Go binary is executable" || (echo "✗ Go binary not executable" && exit 1)
           # Check binary responds to help
           docker run --rm --entrypoint /usr/local/bin/musicdl "$IMAGE_TAG" serve --help 2>&1 | grep -q "serve" && echo "✓ Go binary responds to help" || (echo "✗ Go binary does not respond correctly" && exit 1)
+          # Check download-service command exists (new architecture)
+          docker run --rm --entrypoint /usr/local/bin/musicdl "$IMAGE_TAG" download-service --help 2>&1 | grep -q "download-service" && echo "✓ download-service command available" || (echo "✗ download-service command not available" && exit 1)
           # Check version command works and returns a version
           VERSION_OUTPUT=$(docker run --rm --entrypoint /usr/local/bin/musicdl "$IMAGE_TAG" version 2>&1) || (echo "✗ Version command failed" && exit 1)
           if echo "$VERSION_OUTPUT" | grep -qE "musicdl version (v?[0-9]+\.[0-9]+\.[0-9]+|[a-f0-9]{7,}|dev)"; then

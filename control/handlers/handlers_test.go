@@ -22,7 +22,7 @@ func TestNewHandlers(t *testing.T) {
 	}
 
 	// Test successful creation
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("NewHandlers() failed: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestNewHandlers(t *testing.T) {
 	}
 
 	// Test with non-existent config file
-	_, err = NewHandlers("/nonexistent/config.yaml", planPath, logPath, time.Now())
+	_, err = NewHandlers("/nonexistent/config.yaml", planPath, logPath, time.Now(), "v1.0.0")
 	if err == nil {
 		t.Error("NewHandlers() should fail with non-existent config file")
 	}
@@ -46,7 +46,7 @@ func TestHealth(t *testing.T) {
 
 	os.WriteFile(configPath, []byte("version: \"1.2\"\n"), 0644)
 
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("Failed to create handlers: %v", err)
 	}
@@ -74,7 +74,7 @@ func TestDashboard(t *testing.T) {
 
 	os.WriteFile(configPath, []byte("version: \"1.2\"\n"), 0644)
 
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("Failed to create handlers: %v", err)
 	}

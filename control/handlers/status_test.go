@@ -27,7 +27,7 @@ download:
 		t.Fatalf("Failed to create config: %v", err)
 	}
 
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("Failed to create handlers: %v", err)
 	}
@@ -51,12 +51,7 @@ download:
 		t.Errorf("Expected state 'idle', got %v", response["state"])
 	}
 
-	// Initialize service and test again
-	_, err = handlers.getService()
-	if err != nil {
-		t.Fatalf("Failed to get service: %v", err)
-	}
-
+	// Test status again (service may or may not be running)
 	req2 := httptest.NewRequest("GET", "/api/status", nil)
 	w2 := httptest.NewRecorder()
 	handlers.Status(w2, req2)
@@ -84,7 +79,7 @@ func TestStatusPage(t *testing.T) {
 
 	os.WriteFile(configPath, []byte("version: \"1.2\"\n"), 0644)
 
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("Failed to create handlers: %v", err)
 	}

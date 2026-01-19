@@ -2,7 +2,62 @@
 
 ## Overview
 
-musicdl uses a plan-based architecture with parallel execution for efficient music downloads. The application processes downloads in three distinct phases: generation, optimization, and execution.
+musicdl uses a decoupled architecture with a web server (control plane) and a separate download service. The web server provides a REST API and web UI, while the download service handles the actual download operations. Communication between the two is via gRPC. The download service uses a plan-based architecture with parallel execution, processing downloads in three distinct phases: generation, optimization, and execution.
+
+## System Architecture
+
+### Decoupled Design
+
+The system consists of two main components:
+
+1. **Web Server (Control Plane)**: HTTP server providing REST API and web UI
+2. **Download Service**: gRPC server handling download operations
+
+**Key Benefits:**
+- **Separation of Concerns**: Web server handles user interaction, download service handles downloads
+- **Independent Lifecycle**: Download service can be started/stopped independently
+- **Process Isolation**: Download service runs as a separate process, improving stability
+- **Resource Management**: Each component can have different resource limits
+- **Graceful Shutdown**: Coordinated shutdown ensures clean state management
+
+### Architecture Diagram
+
+```mermaid
+flowchart TD
+    User[User/Browser] --> WebServer[Web Server<br/>HTTP/REST API]
+    WebServer --> ServiceManager[Service Manager<br/>Process Management]
+    ServiceManager --> DownloadService[Download Service<br/>gRPC Server]
+    
+    WebServer --> ConfigManager[Config Manager<br/>Config & Queue]
+    ConfigManager --> DownloadService
+    
+    DownloadService --> PlanGenerator[Plan Generator]
+    DownloadService --> PlanOptimizer[Plan Optimizer]
+    DownloadService --> PlanExecutor[Plan Executor]
+    
+    PlanGenerator --> SpotifyClient[Spotify Client]
+    PlanExecutor --> AudioProvider[Audio Provider<br/>yt-dlp]
+    PlanExecutor --> MetadataEmbedder[Metadata Embedder<br/>mutagen]
+    
+    SpotifyClient --> SpotifyAPI[Spotify Web API]
+    AudioProvider --> YouTube[YouTube/YouTube Music]
+    AudioProvider --> SoundCloud[SoundCloud]
+    MetadataEmbedder --> FileSystem[File System]
+    
+    WebServer --> LogStreamer[Log Streamer<br/>SSE]
+    DownloadService --> Logger[Structured Logger<br/>JSON]
+    Logger --> LogFile[Log File]
+    LogStreamer --> LogFile
+```
+
+### Communication Flow
+
+1. **User Request**: User interacts with web UI or REST API
+2. **Web Server**: Handles HTTP request, validates, manages state
+3. **Service Manager**: Spawns/manages download service process if needed
+4. **gRPC Client**: Web server uses gRPC client to communicate with download service
+5. **Download Service**: Receives gRPC requests, executes downloads, streams logs
+6. **Response**: Results flow back through gRPC to web server, then to user
 
 ## Plan-Based Architecture
 
@@ -14,27 +69,46 @@ musicdl uses a plan-based architecture with parallel execution for efficient mus
 - **Plan Persistence**: Save and resume download plans (when enabled)
 - **Better Error Recovery**: Failed items can be retried without reprocessing entire plan
 
-### Architecture Flow
+### Component Details
 
-```mermaid
-flowchart TD
-    EntryPoint["download.py Entry Point"] --> ConfigLoader["Config Loader load_config"]
-    ConfigLoader --> Downloader["Downloader Orchestrator"]
-    
-    Downloader --> SpotifyClient["SpotifyClient API Client"]
-    Downloader --> AudioProvider["AudioProvider yt-dlp wrapper"]
-    Downloader --> MetadataEmbedder["MetadataEmbedder mutagen"]
-    Downloader --> TTLCache["TTLCache In-memory cache"]
-    
-    SpotifyClient --> SpotifyAPI["Spotify Web API External Service"]
-    AudioProvider --> YouTube["YouTube/YouTube Music External Service"]
-    AudioProvider --> SoundCloud["SoundCloud External Service"]
-    
-    MetadataEmbedder --> FileSystem["File System Output Files"]
-    
-    ConfigLoader --> ConfigModel["Config Models Pydantic validation"]
-    Downloader --> ExceptionHandler["Exception Handler Retry logic"]
-```
+#### Web Server (Control Plane)
+
+**Location**: `control/` package
+
+**Components:**
+- **HTTP Server**: Gorilla Mux router with REST API endpoints
+- **Handlers**: Request handlers for API and web UI
+- **Service Manager**: Manages download service process lifecycle
+- **Config Manager**: Manages configuration loading, validation, and update queue
+- **gRPC Client**: Client for communicating with download service
+
+**Key Features:**
+- REST API for programmatic control
+- Web UI (Dashboard, Status, Config, Logs pages)
+- Process management (spawn, monitor, stop download service)
+- Configuration management with update queuing
+- Log streaming via Server-Sent Events (SSE)
+- Graceful shutdown coordination
+
+#### Download Service
+
+**Location**: `download/` package
+
+**Components:**
+- **gRPC Server**: Protocol Buffers-based RPC server
+- **Service**: Core download orchestration
+- **Plan Generator**: Converts config to download plan
+- **Plan Optimizer**: Removes duplicates, checks files
+- **Plan Executor**: Executes downloads in parallel
+- **Structured Logger**: JSON logging to file
+
+**Key Features:**
+- gRPC interface for remote control
+- Plan-based download architecture
+- Parallel execution with thread pool
+- Real-time progress tracking
+- Structured JSON logging
+- Version compatibility checking
 
 ### Three-Phase Process
 
@@ -147,17 +221,29 @@ Executes downloads in parallel with detailed progress tracking.
   - Audio search results (default: 500 entries, 24 hour TTL)
   - File existence checks (default: 10000 entries, 1 hour TTL)
 
-### Configuration
+### Configuration Management
 
-- **Pydantic Models**: Type-safe configuration validation
+- **Config Manager**: Centralized config loading, saving, and validation
+- **Update Queue**: Config updates are queued and applied after current download completes
 - **Version**: Configuration file version 1.2
-- **Environment Variables**: Credential resolution with priority
+- **Validation**: YAML validation with schema checking
+- **Digest**: SHA256 digest for config change detection
+
+### Process Management
+
+- **Service Manager**: Spawns download service as child process
+- **Crash Detection**: Monitors process health, detects crashes
+- **State Cleanup**: Automatically cleans up plan files on crash
+- **Graceful Shutdown**: Coordinates shutdown between web server and download service
+- **Resource Limits**: Container-level limits apply to both processes
 
 ### Error Handling
 
-- **Custom Exceptions**: `DownloadError`, `SpotifyError`, `ConfigError`
+- **Error Types**: Structured error responses via gRPC
 - **Retry Logic**: Exponential backoff with jitter
 - **Graceful Degradation**: Continues processing on individual item failures
+- **Crash Recovery**: Automatic state cleanup on process crash
+- **Version Compatibility**: Strict version checking prevents incompatible operations
 
 ## Plan Persistence
 
@@ -179,9 +265,9 @@ When `plan_status_reporting_enabled` is true, plans are saved during generation 
 - `optimizing`: Plan optimization in progress
 - `executing`: Plan execution in progress
 
-## Healthcheck Server
+## Web Server Endpoints
 
-The healthcheck server provides HTTP endpoints for monitoring and status display. It runs alongside `download.py` and provides real-time information about plan execution.
+The web server provides HTTP endpoints for monitoring, control, and status display. It runs as the main control plane and provides real-time information about download service execution.
 
 ### Endpoints
 
@@ -222,8 +308,10 @@ The healthcheck server provides HTTP endpoints for monitoring and status display
 ### Configuration
 
 - **Port**: Configurable via `HEALTHCHECK_PORT` environment variable (default: 8080)
+- **gRPC Port**: Internal port for download service (default: 30025, configurable)
 - **Plan Directory**: Uses `MUSICDL_PLAN_PATH` environment variable (default: `/var/lib/musicdl/plans`)
 - **Log File**: Uses `MUSICDL_LOG_PATH` environment variable (default: `/var/lib/musicdl/logs/musicdl.log`)
+- **Config Path**: Uses `CONFIG_PATH` environment variable (default: `/scripts/config.yaml`)
 
 ### Rate Limit Warning Detection
 
@@ -241,11 +329,24 @@ The healthcheck server automatically detects and displays Spotify rate limit war
 
 ### Logging
 
-Application logs are written to both:
-- **Console/Stderr**: For Docker logs (`docker logs musicdl`)
-- **File**: For `/logs` endpoint access (default: `/var/lib/musicdl/logs/musicdl.log`)
+Application logs use structured JSON logging:
 
-Log format: `YYYY-MM-DD HH:MM:SS - logger.name - LEVEL - message`
+- **Format**: JSON lines with timestamp, level, service, operation, message, and optional error
+- **Location**: Single log file shared by web server and download service (default: `/var/lib/musicdl/logs/musicdl.log`)
+- **Service Tags**: Each log entry includes service name (`web-server` or `download-service`)
+- **Streaming**: Real-time log streaming via `/api/logs/stream` endpoint (Server-Sent Events)
+- **Filtering**: Filter by level, time range, search terms, and service
+
+**Log Entry Structure:**
+```json
+{
+  "timestamp": "2024-01-01T12:00:00Z",
+  "level": "INFO",
+  "service": "download-service",
+  "operation": "StartDownload",
+  "message": "Download started successfully"
+}
+```
 
 The log file is automatically created and managed by the application. Logs are accessible via the `/logs` endpoint for convenient viewing and filtering.
 

@@ -57,18 +57,18 @@ Before deploying, ensure you have:
    - Click **"Install via YAML"** (or three-dot menu → Custom App)
    - Enter application name: `musicdl`
    - Paste the contents of `compose.yaml` into the **Custom Config** field
-   - Review and adjust volume paths if needed
+   - Review and adjust volume paths if needed (music library, plans, logs)
    - Click **Save** to deploy
 
-3. **Set up scheduled execution** (see "Scheduling with TrueNAS Cron Jobs" section below)
-
-4. **Verify deployment**:
-   - Check that `musicdl` container exists (will be stopped until manually triggered or scheduled)
+3. **Verify deployment**:
+   - Check that `musicdl` container exists and is running
+   - Access web UI at `http://your-truenas-ip:8080`
    - Check logs for any errors
 
-5. **Test manual execution** (optional):
-   - Via TrueNAS UI: Apps → musicdl → Shell → Execute command
-   - Or via CLI: `docker start musicdl`
+4. **Test download** (optional):
+   - Access web UI and configure your Spotify credentials
+   - Add songs/artists/playlists to config
+   - Start a download via the Dashboard
 
 ## Detailed Deployment
 
@@ -88,13 +88,21 @@ If you want to use a custom configuration file instead of the default one in the
 
 ### Step 2: Customize Volume Paths
 
-Edit `compose.yaml` and adjust the music library path:
+Edit `compose.yaml` and adjust the volume paths:
 
 ```yaml
 volumes:
-  # Replace with your actual TrueNAS dataset path
+  # Music library - replace with your actual TrueNAS dataset path
   - /mnt/your-pool/your-dataset/Music:/download:rw
+  # Plan files directory (shared between web-server and download-service)
+  - ${MUSICDL_PLAN_PATH:-./plans}:/var/lib/musicdl/plans:rw
+  # Logs directory (shared between web-server and download-service)
+  - ${MUSICDL_LOG_PATH_DIR:-./logs}:/var/lib/musicdl/logs:rw
+  # Optional: Custom config file
+  # - /path/to/your/config.yaml:/scripts/config.yaml:ro
 ```
+
+**Note:** The web server and download service run in the same container but as separate processes. They share the volumes for plans and logs.
 
 ### Step 3: Set Up Scheduled Execution
 
@@ -116,6 +124,9 @@ Scheduled execution is configured using TrueNAS Scale's built-in Task Scheduler 
 3. **Configure Environment Variables** (if customizing):
    - `TZ`: Timezone (default: `America/Denver`)
    - `CONFIG_PATH`: Config file path (default: `/scripts/config.yaml`)
+   - `HEALTHCHECK_PORT`: Web server port (default: `8080`)
+   - `MUSICDL_PLAN_PATH`: Plan files directory (default: `/var/lib/musicdl/plans`)
+   - `MUSICDL_LOG_PATH`: Log file path (default: `/var/lib/musicdl/logs/musicdl.log`)
 
 4. **Deploy**:
    - Click **Save** to start deployment
@@ -125,7 +136,8 @@ Scheduled execution is configured using TrueNAS Scale's built-in Task Scheduler 
 ### Step 5: Post-Deployment Verification
 
 1. **Check Container Status**:
-   - `musicdl` container should exist but be **stopped** (will run on schedule or when manually triggered)
+   - `musicdl` container should exist and be **running** (web server runs continuously)
+   - The download service is spawned as a child process when downloads are started
 
 2. **Verify Volume Mounts**:
    - Check that music library path is correct
@@ -191,88 +203,83 @@ playlists: []                   # Playlists: [{name: url}, ...]
 
 ## Usage Examples
 
-### Scheduling with TrueNAS Cron Jobs
+### Starting Downloads
 
-Scheduled execution is configured using TrueNAS Scale's built-in Task Scheduler (Cron Jobs). This is the recommended approach for scheduling musicdl downloads.
+With the new architecture, the web server runs continuously. Downloads are started via the web UI or REST API, not via cron jobs.
 
-#### Step 1: Create a Cron Job
+**Option 1: Web UI (Recommended)**
+
+1. Access the web UI at `http://your-truenas-ip:8080`
+2. Navigate to the Dashboard or Config page
+3. Configure your Spotify credentials and add songs/artists/playlists
+4. Click "Start Download" on the Dashboard
+
+**Option 2: REST API**
+
+Use the REST API to start downloads programmatically:
+
+```bash
+# Start a download
+curl -X POST http://your-truenas-ip:8080/api/download/start
+
+# Check status
+curl http://your-truenas-ip:8080/api/status
+
+# Stop a download
+curl -X POST http://your-truenas-ip:8080/api/download/stop
+```
+
+**Option 3: Scheduled Downloads (via Cron + API)**
+
+If you want scheduled downloads, create a TrueNAS cron job that calls the API:
 
 1. **Navigate to Task Scheduler**:
-   - Open TrueNAS web interface
    - Go to **Tasks** → **Cron Jobs**
    - Click **Add** to create a new cron job
 
 2. **Configure the Cron Job**:
-   - **Description**: Enter a meaningful description (e.g., "Run musicdl downloads")
-   - **Command**: Enter the command to start the musicdl container:
-
+   - **Description**: "Start musicdl download"
+   - **Command**: 
      ```bash
-     docker start musicdl
+     curl -X POST http://localhost:8080/api/download/start
      ```
-
-     Or use a full docker run command if you prefer:
-
-     ```bash
-     docker run --rm --name musicdl-temp \
-       -v /mnt/peace-house-storage-pool/peace-house-storage/Music:/download:rw \
-       -e TZ=America/Denver \
-       ghcr.io/sv4u/musicdl:latest
-     ```
-
-   - **Schedule**: Configure using the cron schedule builder or enter manually
-   - **User**: Select **root** or a user with Docker permissions
-   - **Enabled**: Check this box to enable the cron job
+   - **Schedule**: Configure using the cron schedule builder
+   - **User**: Select **root** or a user with network access
+   - **Enabled**: Check this box
    - Click **Save**
 
-#### Scheduling Examples
+**Scheduling Examples:**
 
-**Daily at 2 AM**:
+- **Daily at 2 AM**: `0 2 * * *`
+- **Every 6 hours**: `0 */6 * * *`
+- **Weekly on Sunday at 3 AM**: `0 3 * * 0`
 
-- Cron expression: `0 2 * * *`
+### Accessing the Web UI
 
-**Every 6 hours**:
+**Via Browser**:
 
-- Cron expression: `0 */6 * * *`
+1. Open your web browser
+2. Navigate to `http://your-truenas-ip:8080`
+3. You'll see the Dashboard with download status and controls
 
-**Weekly on Sunday at 3 AM**:
+**Pages Available**:
 
-- Cron expression: `0 3 * * 0`
-
-**Every 30 minutes** (for testing):
-
-- Cron expression: `*/30 * * * *`
-
-**Twice daily (2 AM and 2 PM)**:
-
-- Cron expression: `0 2,14 * * *`
-
-**Weekdays only at 1 AM**:
-
-- Cron expression: `0 1 * * 1-5`
-
-**Weekly on Monday at midnight** (current default):
-
-- Cron expression: `0 0 * * 1`
-
-### Manual Execution
-
-**Via TrueNAS UI**:
-
-1. Navigate to Apps → musicdl
-2. Click Shell or Execute button
-3. Run: `docker start musicdl`
+- **Dashboard** (`/`): Overview with status, config digest, and quick actions
+- **Status** (`/status`): Detailed status with per-song progress
+- **Config** (`/config`): Configuration editor
+- **Logs** (`/logs`): Log viewer with filtering and real-time streaming
 
 **Via CLI**:
 
 ```bash
-# Start the container
-docker start musicdl
+# Check container status
+docker ps | grep musicdl
 
 # Follow logs
 docker logs -f musicdl
 
-# Check status
-docker ps -a | grep musicdl
+# Access web UI (if port is published)
+curl http://localhost:8080/api/health
 ```
 
 ### Custom Configuration File

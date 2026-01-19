@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -106,48 +107,85 @@ func BroadcastStatus(status map[string]interface{}) {
 
 // getStatusData gets the current status data.
 func (h *Handlers) getStatusData() map[string]interface{} {
-	service, err := h.getService()
-	if err != nil || service == nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	h.serviceMu.RLock()
+	svcManager := h.serviceManager
+	h.serviceMu.RUnlock()
+
+	if !svcManager.IsRunning() {
 		return map[string]interface{}{
 			"state":      "idle",
-			"phase":      nil,
+			"phase":      "idle",
 			"statistics": map[string]interface{}{},
 			"plan_file":  nil,
-			"message":    "Service not initialized",
+			"message":    "Service not running",
 		}
 	}
 
-	status := service.GetStatus()
+	// Get gRPC client
+	client, err := svcManager.GetClient(ctx)
+	if err != nil {
+		return map[string]interface{}{
+			"state":      "error",
+			"phase":      "error",
+			"statistics": map[string]interface{}{},
+			"plan_file":  nil,
+			"message":    "Failed to connect to download service",
+			"error":      err.Error(),
+		}
+	}
 
-	// Get plan if available
+	// Get status via gRPC
+	statusResp, err := client.GetStatus(ctx)
+	if err != nil {
+		return map[string]interface{}{
+			"state":      "error",
+			"phase":      "error",
+			"statistics": map[string]interface{}{},
+			"plan_file":  nil,
+			"message":    "Failed to get status",
+			"error":      err.Error(),
+		}
+	}
+
+	// Get plan items
 	var planData interface{}
-	if plan := service.GetPlan(); plan != nil {
-		stats := plan.GetExecutionStatistics()
+	planItemsResp, err := client.GetPlanItems(ctx, nil)
+	if err == nil && planItemsResp != nil {
 		planData = map[string]interface{}{
-			"statistics": stats,
-			"item_count": len(plan.Items),
+			"item_count": len(planItemsResp.Items),
 		}
 	}
 
 	// Build response
+	statistics := map[string]interface{}{
+		"total":       statusResp.TotalItems,
+		"completed":   statusResp.CompletedItems,
+		"failed":      statusResp.FailedItems,
+		"pending":     statusResp.PendingItems,
+		"in_progress": statusResp.InProgressItems,
+	}
+
 	response := map[string]interface{}{
-		"state":      status["state"],
-		"phase":      status["phase"],
-		"statistics": status["plan_stats"],
-		"plan_file":  status["plan_file"],
+		"state":      statusResp.State.String(),
+		"phase":      statusResp.Phase.String(),
+		"statistics": statistics,
+		"plan_file":  nil,
 		"plan":       planData,
 	}
 
-	if errorMsg, ok := status["error"].(string); ok && errorMsg != "" {
-		response["error"] = errorMsg
+	if statusResp.ErrorMessage != "" {
+		response["error"] = statusResp.ErrorMessage
 	}
 
-	if startedAt, ok := status["started_at"].(string); ok {
-		response["started_at"] = startedAt
+	if statusResp.StartedAt > 0 {
+		response["started_at"] = time.Unix(statusResp.StartedAt, 0).Format(time.RFC3339)
 	}
 
-	if completedAt, ok := status["completed_at"].(string); ok {
-		response["completed_at"] = completedAt
+	if statusResp.CompletedAt != nil {
+		response["completed_at"] = time.Unix(*statusResp.CompletedAt, 0).Format(time.RFC3339)
 	}
 
 	return response

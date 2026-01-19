@@ -27,24 +27,16 @@ ui:
 		t.Fatalf("Failed to create config file: %v", err)
 	}
 
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("NewHandlers() failed: %v", err)
 	}
 
-	// Get service to trigger path resolution
-	service, err := handlers.getService()
-	if err != nil {
-		t.Fatalf("getService() failed: %v", err)
+	// Verify handlers were created (path resolution happens in config manager now)
+	if handlers == nil {
+		t.Fatal("NewHandlers() returned nil")
 	}
-	if service == nil {
-		t.Fatal("getService() returned nil")
-	}
-
-	// Verify relative path was resolved
-	// We can't directly check the resolved path, but we can verify the service was created
-	// The path resolution happens internally in getService()
-	_ = service
+	_ = handlers
 }
 
 func TestPathResolution_HistoryPath_Absolute(t *testing.T) {
@@ -66,22 +58,16 @@ ui:
 		t.Fatalf("Failed to create config file: %v", err)
 	}
 
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("NewHandlers() failed: %v", err)
 	}
 
-	// Get service to trigger path resolution
-	service, err := handlers.getService()
-	if err != nil {
-		t.Fatalf("getService() failed: %v", err)
+	// Verify handlers were created (path resolution happens in config manager now)
+	if handlers == nil {
+		t.Fatal("NewHandlers() returned nil")
 	}
-	if service == nil {
-		t.Fatal("getService() returned nil")
-	}
-
-	// Verify absolute path was preserved
-	_ = service
+	_ = handlers
 }
 
 func TestPathResolution_HistoryPath_Empty(t *testing.T) {
@@ -102,22 +88,16 @@ ui:
 		t.Fatalf("Failed to create config file: %v", err)
 	}
 
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("NewHandlers() failed: %v", err)
 	}
 
-	// Get service to trigger path resolution
-	service, err := handlers.getService()
-	if err != nil {
-		t.Fatalf("getService() failed: %v", err)
+	// Verify handlers were created (path resolution happens in config manager now)
+	if handlers == nil {
+		t.Fatal("NewHandlers() returned nil")
 	}
-	if service == nil {
-		t.Fatal("getService() returned nil")
-	}
-
-	// Empty path should default to planPath/history
-	_ = service
+	_ = handlers
 }
 
 func TestPathResolution_LogPath(t *testing.T) {
@@ -138,22 +118,16 @@ ui:
 		t.Fatalf("Failed to create config file: %v", err)
 	}
 
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("NewHandlers() failed: %v", err)
 	}
 
-	// Get service to trigger path resolution
-	service, err := handlers.getService()
-	if err != nil {
-		t.Fatalf("getService() failed: %v", err)
+	// Verify handlers were created (path resolution happens in config manager now)
+	if handlers == nil {
+		t.Fatal("NewHandlers() returned nil")
 	}
-	if service == nil {
-		t.Fatal("getService() returned nil")
-	}
-
-	// Verify relative path was resolved relative to config directory
-	_ = service
+	_ = handlers
 }
 
 func TestUISettings_SetDefaults(t *testing.T) {

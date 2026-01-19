@@ -27,7 +27,7 @@ download:
 		t.Fatalf("Failed to create config: %v", err)
 	}
 
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("Failed to create handlers: %v", err)
 	}
@@ -66,7 +66,7 @@ download:
 		t.Fatalf("Failed to create config: %v", err)
 	}
 
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("Failed to create handlers: %v", err)
 	}
@@ -99,19 +99,13 @@ download:
 		t.Fatalf("Failed to create config: %v", err)
 	}
 
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("Failed to create handlers: %v", err)
 	}
 
-	// Initialize service (but don't start it)
-	_, err = handlers.getService()
-	if err != nil {
-		t.Fatalf("Failed to get service: %v", err)
-	}
-
-	// Test DownloadStop on idle service
-	// Note: Stopping an idle service returns an error, which the handler converts to 400
+	// Test DownloadStop on idle service (service not running)
+	// Note: Stopping when service is not running returns 400
 	req := httptest.NewRequest("POST", "/api/download/stop", nil)
 	w := httptest.NewRecorder()
 	handlers.DownloadStop(w, req)
@@ -149,7 +143,7 @@ download:
 		t.Fatalf("Failed to create config: %v", err)
 	}
 
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("Failed to create handlers: %v", err)
 	}
@@ -168,113 +162,11 @@ download:
 		t.Fatalf("Failed to decode response: %v", err)
 	}
 
-	// Should return idle state when not initialized
+	// Should return idle state when service not running
 	if response["state"] != "idle" {
 		t.Errorf("Expected state 'idle', got %v", response["state"])
 	}
-
-	// Initialize service and test again
-	_, err = handlers.getService()
-	if err != nil {
-		t.Fatalf("Failed to get service: %v", err)
-	}
-
-	req2 := httptest.NewRequest("GET", "/api/download/status", nil)
-	w2 := httptest.NewRecorder()
-	handlers.DownloadStatus(w2, req2)
-
-	if w2.Code != http.StatusOK {
-		t.Errorf("DownloadStatus() returned status %d, expected %d", w2.Code, http.StatusOK)
-	}
-
-	var response2 map[string]interface{}
-	if err := json.NewDecoder(w2.Body).Decode(&response2); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
-	}
-
-	// Should return service status
-	if response2["state"] == nil {
-		t.Error("Expected state in response")
-	}
-
-	// Verify state is valid
-	state := response2["state"].(string)
-	validStates := map[string]bool{
-		"idle":      true,
-		"running":   true,
-		"stopping":  true,
-		"completed": true,
-		"error":     true,
-	}
-	if !validStates[state] {
-		t.Errorf("Invalid state: %s", state)
-	}
 }
 
-func TestGetService(t *testing.T) {
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config.yaml")
-	planPath := filepath.Join(tmpDir, "plans")
-	logPath := filepath.Join(tmpDir, "logs", "musicdl.log")
-
-	// Create valid config
-	cfg := `version: "1.2"
-download:
-  client_id: "test_id"
-  client_secret: "test_secret"
-  threads: 4
-`
-	if err := os.WriteFile(configPath, []byte(cfg), 0644); err != nil {
-		t.Fatalf("Failed to create config: %v", err)
-	}
-
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
-	if err != nil {
-		t.Fatalf("Failed to create handlers: %v", err)
-	}
-
-	// Test lazy initialization
-	service1, err := handlers.getService()
-	if err != nil {
-		t.Fatalf("getService() failed: %v", err)
-	}
-	if service1 == nil {
-		t.Fatal("getService() returned nil")
-	}
-
-	// Test that subsequent calls return the same service (lazy init)
-	service2, err := handlers.getService()
-	if err != nil {
-		t.Fatalf("getService() failed: %v", err)
-	}
-	if service1 != service2 {
-		t.Error("getService() should return the same instance on subsequent calls")
-	}
-}
-
-func TestGetService_InvalidConfig(t *testing.T) {
-	tmpDir := t.TempDir()
-	configPath := filepath.Join(tmpDir, "config.yaml")
-	planPath := filepath.Join(tmpDir, "plans")
-	logPath := filepath.Join(tmpDir, "logs", "musicdl.log")
-
-	// Create invalid config (missing credentials)
-	cfg := `version: "1.2"
-download:
-  threads: 4
-`
-	if err := os.WriteFile(configPath, []byte(cfg), 0644); err != nil {
-		t.Fatalf("Failed to create config: %v", err)
-	}
-
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
-	if err != nil {
-		t.Fatalf("Failed to create handlers: %v", err)
-	}
-
-	// Test that getService fails with invalid config
-	_, err = handlers.getService()
-	if err == nil {
-		t.Error("getService() should fail with invalid config")
-	}
-}
+// Note: Tests for getService() removed - architecture changed to use gRPC client
+// Service initialization is now handled by the service manager

@@ -1,7 +1,7 @@
 version: '2.4'
 
 services:
-  musicdl:
+  web-server:
     image: ghcr.io/sv4u/musicdl:latest
     container_name: musicdl
     hostname: musicdl
@@ -10,17 +10,23 @@ services:
     ports:
       # Expose control platform web UI and API
       - "8080:8080"
+      # gRPC port for download service (internal, can be exposed if needed)
+      - "30025:30025"
     environment:
       - CONFIG_PATH=${CONFIG_PATH:-/scripts/config.yaml}
       - TZ=${TZ:-America/Denver}
       - HEALTHCHECK_PORT=8080
-      - MUSICDL_PLAN_PATH=/var/lib/musicdl/plans
-      - MUSICDL_LOG_PATH=/var/lib/musicdl/logs/musicdl.log
+      - MUSICDL_PLAN_PATH=${MUSICDL_PLAN_PATH:-/var/lib/musicdl/plans}
+      - MUSICDL_LOG_PATH=${MUSICDL_LOG_PATH:-/var/lib/musicdl/logs/musicdl.log}
       # Note: Spotify API credentials are now configured in the config.yaml file only
       # No environment variables are needed for credentials
     volumes:
       # Music library - adjust path to match your TrueNAS dataset
       - /mnt/peace-house-storage-pool/peace-house-storage/Music:/download:rw
+      # Plan files directory (shared between web-server and download-service process)
+      - ${MUSICDL_PLAN_PATH:-./plans}:/var/lib/musicdl/plans:rw
+      # Logs directory (shared between web-server and download-service process)
+      - ${MUSICDL_LOG_PATH_DIR:-./logs}:/var/lib/musicdl/logs:rw
       # Mount custom config file (if needed):
       # - /path/to/your/config.yaml:/scripts/config.yaml:ro
     working_dir: /download
@@ -31,6 +37,7 @@ services:
         max-file: "3"
     # Resource limits (v2.x syntax for standalone Docker Compose)
     # These limits are enforced in non-Swarm mode (TrueNAS Scale uses standalone mode)
+    # Note: These limits apply to the entire container (web-server + download-service process)
     mem_limit: 1g
     mem_reservation: 256m
     cpus: 2
@@ -40,6 +47,13 @@ services:
     # read_only: true
     # tmpfs:
     #   - /tmp:rw,noexec,nosuid,size=100m
+    # Healthcheck uses the web server's /api/health endpoint
+    healthcheck:
+      test: ["CMD", "/scripts/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
 # Note: Scheduled execution is configured via TrueNAS Scale's built-in Task Scheduler (Cron Jobs)
 # See truenas-scale/README.md for instructions on setting up scheduled execution

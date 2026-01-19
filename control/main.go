@@ -15,6 +15,7 @@ import (
 	"github.com/sv4u/musicdl/download/audio"
 	"github.com/sv4u/musicdl/download/config"
 	"github.com/sv4u/musicdl/download/metadata"
+	"github.com/sv4u/musicdl/download/server"
 	"github.com/sv4u/musicdl/download/spotify"
 )
 
@@ -54,6 +55,8 @@ func main() {
 		serveCommand()
 	case "download":
 		downloadCommand()
+	case "download-service":
+		downloadServiceCommand()
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", command)
 		printUsage()
@@ -68,9 +71,10 @@ USAGE:
     musicdl <command> [flags]
 
 COMMANDS:
-    serve      Start the control platform web server
-    download   Run download service (one-shot or daemon mode)
-    version    Show version information
+    serve           Start the control platform web server
+    download        Run download service (one-shot or daemon mode)
+    download-service  Start the download service gRPC server
+    version         Show version information
 
 FLAGS:
     -h, --help    Show this help message
@@ -101,6 +105,7 @@ func serveCommand() {
 		ConfigPath: *configPath,
 		PlanPath:   *planPath,
 		LogPath:    *logPath,
+		Version:    Version,
 	}
 
 	// Create and start server
@@ -373,4 +378,36 @@ func printCacheStats(service *download.Service) {
 
 	log.Println("================================================================================")
 	log.Println("")
+}
+
+// downloadServiceCommand starts the download service gRPC server.
+func downloadServiceCommand() {
+	fs := flag.NewFlagSet("download-service", flag.ExitOnError)
+	planPath := fs.String("plan-path", defaultPlanPath, "Path to plan directory")
+	logPath := fs.String("log-path", defaultLogPath, "Path to log file")
+	port := fs.String("port", "30025", "gRPC server port")
+	fs.Parse(os.Args[2:])
+
+	log.Printf("musicdl version %s", Version)
+	log.Printf("Starting download service gRPC server on port %s", *port)
+	log.Printf("Plan path: %s", *planPath)
+	log.Printf("Log path: %s", *logPath)
+
+	// Import server package
+	// Note: We need to import the server package from download/server
+	// Since we're in control package, we'll need to call it differently
+	// For now, we'll create a wrapper or move the server code
+	// Actually, the server should be in download/server, so we can call it directly
+	// But we need to import it properly
+
+	// For now, let's create a simple implementation that calls the server
+	// We'll need to import the server package
+	if err := runDownloadService(*port, *planPath, *logPath); err != nil {
+		log.Fatalf("Failed to start download service: %v", err)
+	}
+}
+
+// runDownloadService runs the download service gRPC server.
+func runDownloadService(port, planPath, logPath string) error {
+	return server.RunServer(port, planPath, logPath, Version)
 }

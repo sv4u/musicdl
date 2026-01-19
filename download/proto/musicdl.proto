@@ -1,0 +1,297 @@
+syntax = "proto3";
+
+package proto;
+
+option go_package = "github.com/sv4u/musicdl/download/proto";
+
+// Version information
+message VersionInfo {
+  string version = 1; // Version string (e.g., "v1.2.3" or "dev")
+}
+
+// Music source entry
+message MusicSource {
+  string name = 1;
+  string url = 2;
+  bool create_m3u = 3;
+}
+
+// Download settings
+message DownloadSettings {
+  // Spotify API credentials
+  string client_id = 1;
+  string client_secret = 2;
+
+  // Basic download settings
+  int32 threads = 3;
+  int32 max_retries = 4;
+  string format = 5;
+  string bitrate = 6;
+  string output = 7;
+  repeated string audio_providers = 8;
+  string overwrite = 9; // "skip", "overwrite", "metadata"
+
+  // Cache settings
+  int32 cache_max_size = 10;
+  int32 cache_ttl = 11;
+  int32 audio_search_cache_max_size = 12;
+  int32 audio_search_cache_ttl = 13;
+  int32 file_existence_cache_max_size = 14;
+  int32 file_existence_cache_ttl = 15;
+
+  // Spotify rate limiting settings
+  int32 spotify_max_retries = 16;
+  double spotify_retry_base_delay = 17;
+  double spotify_retry_max_delay = 18;
+  bool spotify_rate_limit_enabled = 19;
+  int32 spotify_rate_limit_requests = 20;
+  double spotify_rate_limit_window = 21;
+
+  // Download rate limiting settings
+  bool download_rate_limit_enabled = 22;
+  int32 download_rate_limit_requests = 23;
+  double download_rate_limit_window = 24;
+  optional int32 download_bandwidth_limit = 25; // nil = unlimited
+
+  // Plan architecture feature flags
+  bool plan_generation_enabled = 26;
+  bool plan_optimization_enabled = 27;
+  bool plan_execution_enabled = 28;
+  bool plan_persistence_enabled = 29;
+  bool plan_status_reporting_enabled = 30;
+}
+
+// UI settings
+message UISettings {
+  string history_path = 1;
+  int32 history_retention = 2;
+  int32 snapshot_interval = 3;
+  string log_path = 4;
+}
+
+// Complete configuration
+message Config {
+  string version = 1; // Config version (e.g., "1.2")
+  DownloadSettings download = 2;
+  UISettings ui = 3;
+  repeated MusicSource songs = 4;
+  repeated MusicSource artists = 5;
+  repeated MusicSource playlists = 6;
+  repeated MusicSource albums = 7;
+}
+
+// Plan item type
+enum PlanItemType {
+  PLAN_ITEM_TYPE_UNSPECIFIED = 0;
+  PLAN_ITEM_TYPE_TRACK = 1;
+  PLAN_ITEM_TYPE_ALBUM = 2;
+  PLAN_ITEM_TYPE_ARTIST = 3;
+  PLAN_ITEM_TYPE_PLAYLIST = 4;
+  PLAN_ITEM_TYPE_M3U = 5;
+}
+
+// Plan item status
+enum PlanItemStatus {
+  PLAN_ITEM_STATUS_UNSPECIFIED = 0;
+  PLAN_ITEM_STATUS_PENDING = 1;
+  PLAN_ITEM_STATUS_IN_PROGRESS = 2;
+  PLAN_ITEM_STATUS_COMPLETED = 3;
+  PLAN_ITEM_STATUS_FAILED = 4;
+  PLAN_ITEM_STATUS_SKIPPED = 5;
+}
+
+// Plan item
+message PlanItem {
+  string item_id = 1;
+  PlanItemType item_type = 2;
+  string spotify_id = 3;
+  string spotify_url = 4;
+  string youtube_url = 5;
+  string parent_id = 6;
+  repeated string child_ids = 7;
+  string name = 8;
+  map<string, string> metadata = 9; // Simplified: all values as strings
+  PlanItemStatus status = 10;
+  string error = 11;
+  string file_path = 12;
+  int64 created_at = 13; // Unix timestamp
+  optional int64 started_at = 14; // Unix timestamp
+  optional int64 completed_at = 15; // Unix timestamp
+  double progress = 16; // 0.0 to 1.0
+}
+
+// Service state
+enum ServiceState {
+  SERVICE_STATE_UNSPECIFIED = 0;
+  SERVICE_STATE_IDLE = 1;
+  SERVICE_STATE_RUNNING = 2;
+  SERVICE_STATE_STOPPING = 3;
+  SERVICE_STATE_ERROR = 4;
+}
+
+// Service phase
+enum ServicePhase {
+  SERVICE_PHASE_UNSPECIFIED = 0;
+  SERVICE_PHASE_IDLE = 1;
+  SERVICE_PHASE_GENERATING = 2;
+  SERVICE_PHASE_OPTIMIZING = 3;
+  SERVICE_PHASE_EXECUTING = 4;
+  SERVICE_PHASE_COMPLETED = 5;
+  SERVICE_PHASE_ERROR = 6;
+}
+
+// Health status
+enum HealthStatus {
+  HEALTH_STATUS_UNSPECIFIED = 0;
+  HEALTH_STATUS_HEALTHY = 1;
+  HEALTH_STATUS_UNHEALTHY = 2;
+  HEALTH_STATUS_UNAVAILABLE = 3;
+}
+
+// Readiness status
+enum ReadinessStatus {
+  READINESS_STATUS_UNSPECIFIED = 0;
+  READINESS_STATUS_READY = 1;
+  READINESS_STATUS_NOT_READY = 2;
+  READINESS_STATUS_UNAVAILABLE = 3;
+}
+
+// Start download request
+message StartDownloadRequest {
+  Config config = 1;
+  string plan_path = 2;
+  string log_path = 3;
+  VersionInfo client_version = 4;
+}
+
+// Start download response
+message StartDownloadResponse {
+  bool success = 1;
+  string error_message = 2;
+  VersionInfo server_version = 3;
+}
+
+// Stop download request
+message StopDownloadRequest {
+  VersionInfo client_version = 1;
+}
+
+// Stop download response
+message StopDownloadResponse {
+  bool success = 1;
+  string error_message = 2;
+  VersionInfo server_version = 3;
+}
+
+// Get status request
+message GetStatusRequest {
+  VersionInfo client_version = 1;
+}
+
+// Get status response
+message GetStatusResponse {
+  ServiceState state = 1;
+  ServicePhase phase = 2;
+  string error_message = 3;
+  int64 started_at = 4; // Unix timestamp, 0 if not started
+  optional int64 completed_at = 5; // Unix timestamp
+  double progress_percentage = 6;
+  int32 total_items = 7;
+  int32 completed_items = 8;
+  int32 failed_items = 9;
+  int32 pending_items = 10;
+  int32 in_progress_items = 11;
+  VersionInfo server_version = 12;
+}
+
+// Plan item filters
+message PlanItemFilters {
+  repeated PlanItemStatus status = 1;
+  repeated PlanItemType type = 2;
+  string search = 3; // Search term for name/URL
+}
+
+// Get plan items request
+message GetPlanItemsRequest {
+  PlanItemFilters filters = 1;
+  VersionInfo client_version = 2;
+}
+
+// Get plan items response
+message GetPlanItemsResponse {
+  repeated PlanItem items = 1;
+  VersionInfo server_version = 2;
+}
+
+// Log level
+enum LogLevel {
+  LOG_LEVEL_UNSPECIFIED = 0;
+  LOG_LEVEL_DEBUG = 1;
+  LOG_LEVEL_INFO = 2;
+  LOG_LEVEL_WARN = 3;
+  LOG_LEVEL_ERROR = 4;
+}
+
+// Stream logs request
+message StreamLogsRequest {
+  repeated LogLevel levels = 1;
+  optional int64 start_time = 2; // Unix timestamp, 0 for all
+  optional int64 end_time = 3; // Unix timestamp, 0 for all
+  string search = 4; // Search term
+  bool follow = 5; // Follow new logs (tail -f)
+  VersionInfo client_version = 6;
+}
+
+// Log entry
+message LogEntry {
+  int64 timestamp = 1; // Unix timestamp
+  LogLevel level = 2;
+  string message = 3;
+  string service = 4; // "web-server" or "download-service"
+  string operation = 5; // Optional operation name
+  string error = 6; // Optional error details
+}
+
+// Validate config request
+message ValidateConfigRequest {
+  Config config = 1;
+  VersionInfo client_version = 2;
+}
+
+// Validation error
+message ValidationError {
+  string field = 1;
+  string message = 2;
+}
+
+// Validation result
+message ValidateConfigResponse {
+  bool valid = 1;
+  repeated ValidationError errors = 2;
+  repeated string warnings = 3;
+  VersionInfo server_version = 4;
+}
+
+// Health check request
+message HealthCheckRequest {
+  VersionInfo client_version = 1;
+}
+
+// Health check response
+message HealthCheckResponse {
+  HealthStatus liveness = 1;
+  ReadinessStatus readiness = 2;
+  HealthStatus service_health = 3;
+  VersionInfo server_version = 4;
+}
+
+// Download service
+service DownloadService {
+  rpc StartDownload(StartDownloadRequest) returns (StartDownloadResponse);
+  rpc StopDownload(StopDownloadRequest) returns (StopDownloadResponse);
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+  rpc GetPlanItems(GetPlanItemsRequest) returns (GetPlanItemsResponse);
+  rpc StreamLogs(StreamLogsRequest) returns (stream LogEntry);
+  rpc ValidateConfig(ValidateConfigRequest) returns (ValidateConfigResponse);
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}

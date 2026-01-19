@@ -1,22 +1,29 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 )
 
 // Status handles GET /api/status - Get download service status and plan progress.
 func (h *Handlers) Status(w http.ResponseWriter, r *http.Request) {
-	// Get service (may not be initialized yet)
-	service, err := h.getService()
-	if err != nil || service == nil {
-		// Service not initialized yet, return idle state
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	h.serviceMu.RLock()
+	svcManager := h.serviceManager
+	h.serviceMu.RUnlock()
+
+	if !svcManager.IsRunning() {
+		// Service not running, return idle state
 		response := map[string]interface{}{
 			"state":      "idle",
-			"phase":      nil,
+			"phase":      "idle",
 			"statistics": map[string]interface{}{},
 			"plan_file":  nil,
-			"message":    "Service not initialized",
+			"message":    "Service not running",
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -24,59 +31,77 @@ func (h *Handlers) Status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get status from service
-	status := service.GetStatus()
+	// Get gRPC client
+	client, err := svcManager.GetClient(ctx)
+	if err != nil {
+		response := map[string]interface{}{
+			"state":      "error",
+			"phase":      "error",
+			"statistics": map[string]interface{}{},
+			"plan_file":  nil,
+			"message":    "Failed to connect to download service",
+			"error":      err.Error(),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
 
-	// Get plan if available
+	// Get status via gRPC
+	statusResp, err := client.GetStatus(ctx)
+	if err != nil {
+		h.logError("Status", err)
+		response := map[string]interface{}{
+			"state":      "error",
+			"phase":      "error",
+			"statistics": map[string]interface{}{},
+			"plan_file":  nil,
+			"message":    "Failed to get status",
+			"error":      err.Error(),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Get plan items for plan data
 	var planData interface{}
-	if plan := service.GetPlan(); plan != nil {
-		stats := plan.GetStatistics()
+	planItemsResp, err := client.GetPlanItems(ctx, nil)
+	if err == nil && planItemsResp != nil {
 		planData = map[string]interface{}{
-			"statistics": stats,
-			"item_count": len(plan.Items),
+			"item_count": len(planItemsResp.Items),
 		}
 	}
 
-	// Safely extract values with defaults
-	state, ok := status["state"].(string)
-	if !ok || state == "" {
-		state = "idle"
-	}
-
-	phase := status["phase"]
-	if phase == nil {
-		phase = "idle"
-	}
-
-	planFile := status["plan_file"]
-	if planFile == nil {
-		planFile = nil
-	}
-
-	// Safely extract plan_stats, default to empty map if not present
-	statistics, ok := status["plan_stats"].(map[string]interface{})
-	if !ok || statistics == nil {
-		statistics = map[string]interface{}{}
+	// Convert proto status to response format
+	statistics := map[string]interface{}{
+		"total":        statusResp.TotalItems,
+		"completed":    statusResp.CompletedItems,
+		"failed":       statusResp.FailedItems,
+		"pending":      statusResp.PendingItems,
+		"in_progress":  statusResp.InProgressItems,
 	}
 
 	response := map[string]interface{}{
-		"state":      state,
-		"phase":      phase,
+		"state":      statusResp.State.String(),
+		"phase":      statusResp.Phase.String(),
 		"statistics": statistics,
-		"plan_file":  planFile,
+		"plan_file":  nil, // Not available in proto response
 		"plan":       planData,
 	}
 
-	if errorMsg, ok := status["error"].(string); ok && errorMsg != "" {
-		response["error"] = errorMsg
+	if statusResp.ErrorMessage != "" {
+		response["error"] = statusResp.ErrorMessage
 	}
 
-	if startedAt, ok := status["started_at"].(string); ok {
-		response["started_at"] = startedAt
+	if statusResp.StartedAt > 0 {
+		response["started_at"] = time.Unix(statusResp.StartedAt, 0).Format(time.RFC3339)
 	}
 
-	if completedAt, ok := status["completed_at"].(string); ok {
-		response["completed_at"] = completedAt
+	if statusResp.CompletedAt != nil {
+		response["completed_at"] = time.Unix(*statusResp.CompletedAt, 0).Format(time.RFC3339)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -205,6 +230,50 @@ func (h *Handlers) StatusPage(w http.ResponseWriter, r *http.Request) {
             padding: 20px;
             color: #666;
         }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+        .info-item {
+            padding: 12px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+        .info-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+        .info-value {
+            font-size: 16px;
+            font-weight: 500;
+        }
+        .message {
+            padding: 12px;
+            border-radius: 4px;
+            margin-top: 16px;
+        }
+        .message-info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .btn {
+            display: inline-block;
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 500;
+            transition: all 0.2s;
+            background-color: #007bff;
+            color: white;
+        }
+        .btn:hover { background-color: #0056b3; }
         table {
             width: 100%;
             border-collapse: collapse;
@@ -248,9 +317,15 @@ func (h *Handlers) StatusPage(w http.ResponseWriter, r *http.Request) {
             </div>
         </div>
         <div class="card">
-            <h2>Plan Details</h2>
+            <h2>Plan Items</h2>
             <div id="plan-container">
-                <div class="loading">Loading plan details...</div>
+                <div class="loading">Loading plan items...</div>
+            </div>
+        </div>
+        <div class="card">
+            <h2>Configuration</h2>
+            <div id="config-container">
+                <div class="loading">Loading configuration info...</div>
             </div>
         </div>
     </div>
@@ -318,16 +393,95 @@ func (h *Handlers) StatusPage(w http.ResponseWriter, r *http.Request) {
         }
         
         function updatePlan(data) {
-            const container = document.getElementById('plan-container');
-            if (data.plan && data.plan.item_count) {
-                container.innerHTML = '<p>Plan contains ' + data.plan.item_count + ' items.</p>';
-            } else {
-                container.innerHTML = '<p>No plan available.</p>';
-            }
+            fetch('/api/plan/items?type=track')
+                .then(function(res) {
+                    return res.json();
+                })
+                .then(function(planData) {
+                    const container = document.getElementById('plan-container');
+                    if (planData.items && planData.items.length > 0) {
+                        let html = '<table><thead><tr><th>Name</th><th>Status</th><th>Progress</th><th>Actions</th></tr></thead><tbody>';
+                        planData.items.forEach(function(item) {
+                            const statusClass = 'status-' + (item.status || 'pending').toLowerCase().replace('_', '-');
+                            const progress = (item.progress || 0).toFixed(1);
+                            html += '<tr>';
+                            html += '<td>' + (item.name || item.item_id) + '</td>';
+                            html += '<td><span class="status-badge ' + statusClass + '">' + (item.status || 'PENDING') + '</span></td>';
+                            html += '<td>' + progress + '%</td>';
+                            html += '<td>';
+                            if (item.status === 'PLAN_ITEM_STATUS_FAILED' || item.status === 'PLAN_ITEM_STATUS_COMPLETED') {
+                                html += '<button class="btn btn-primary" style="padding: 4px 8px; font-size: 12px;" onclick="resetDownload()">Reset</button>';
+                            }
+                            html += '</td>';
+                            html += '</tr>';
+                        });
+                        html += '</tbody></table>';
+                        container.innerHTML = html;
+                    } else {
+                        container.innerHTML = '<p>No plan items available.</p>';
+                    }
+                })
+                .catch(function(err) {
+                    document.getElementById('plan-container').innerHTML = 
+                        '<div style="color: #d32f2f;">Error loading plan items: ' + err.message + '</div>';
+                });
+        }
+        
+        function updateConfig() {
+            fetch('/api/config/digest')
+                .then(function(res) {
+                    return res.json();
+                })
+                .then(function(data) {
+                    const container = document.getElementById('config-container');
+                    let html = '<div class="info-grid">';
+                    html += '<div class="info-item"><div class="info-label">Config Version</div><div class="info-value">' + (data.version || 'N/A') + '</div></div>';
+                    html += '<div class="info-item"><div class="info-label">Config Digest</div><div class="info-value" style="font-family: monospace; font-size: 12px;">' + (data.digest || 'N/A') + '</div></div>';
+                    if (data.config_stats) {
+                        html += '<div class="info-item"><div class="info-label">Songs</div><div class="info-value">' + (data.config_stats.songs || 0) + '</div></div>';
+                        html += '<div class="info-item"><div class="info-label">Artists</div><div class="info-value">' + (data.config_stats.artists || 0) + '</div></div>';
+                        html += '<div class="info-item"><div class="info-label">Playlists</div><div class="info-value">' + (data.config_stats.playlists || 0) + '</div></div>';
+                        html += '<div class="info-item"><div class="info-label">Albums</div><div class="info-value">' + (data.config_stats.albums || 0) + '</div></div>';
+                    }
+                    html += '</div>';
+                    if (data.has_pending) {
+                        html += '<div class="message message-info" style="margin-top: 16px; background-color: #fff3cd; color: #856404; border: 1px solid #ffeaa7;">⚠️ Configuration update pending</div>';
+                    }
+                    container.innerHTML = html;
+                })
+                .catch(function(err) {
+                    document.getElementById('config-container').innerHTML = 
+                        '<div style="color: #d32f2f;">Error loading config info: ' + err.message + '</div>';
+                });
+        }
+        
+        function resetDownload() {
+            if (!confirm('Are you sure you want to reset? This will stop the download, clear all state, and delete plan files.')) return;
+            
+            fetch('/api/download/reset', { method: 'POST' })
+                .then(function(res) {
+                    return res.json().then(function(data) {
+                        if (res.ok) {
+                            alert(data.message || 'Download state reset successfully');
+                        } else {
+                            alert(data.message || data.error || 'Failed to reset download');
+                        }
+                        updateStatus();
+                        updatePlan();
+                        updateConfig();
+                    });
+                })
+                .catch(function(err) {
+                    alert('Error: ' + err.message);
+                });
         }
         
         updateStatus();
-        statusInterval = setInterval(updateStatus, 2000);
+        statusInterval = setInterval(function() {
+            updateStatus();
+            updatePlan();
+            updateConfig();
+        }, 2000);
         window.addEventListener('beforeunload', function() {
             if (statusInterval) clearInterval(statusInterval);
         });

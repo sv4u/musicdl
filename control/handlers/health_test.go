@@ -28,7 +28,7 @@ download:
 	}
 
 	startTime := time.Now()
-	handlers, err := NewHandlers(configPath, planPath, logPath, startTime)
+	handlers, err := NewHandlers(configPath, planPath, logPath, startTime, "v1.0.0")
 	if err != nil {
 		t.Fatalf("Failed to create handlers: %v", err)
 	}
@@ -99,18 +99,12 @@ download:
 		t.Fatalf("Failed to create config: %v", err)
 	}
 
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("Failed to create handlers: %v", err)
 	}
 
-	// Initialize service
-	_, err = handlers.getService()
-	if err != nil {
-		t.Fatalf("Failed to get service: %v", err)
-	}
-
-	// Test Health endpoint with service
+	// Test Health endpoint (service may or may not be running)
 	req := httptest.NewRequest("GET", "/api/health", nil)
 	w := httptest.NewRecorder()
 	handlers.Health(w, req)

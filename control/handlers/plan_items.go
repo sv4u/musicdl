@@ -1,12 +1,15 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
-	"github.com/sv4u/musicdl/download/plan"
+	"github.com/sv4u/musicdl/download/proto"
 )
 
 // PlanItemsResponse represents the response for plan items API.
@@ -39,9 +42,14 @@ type PlanItemView struct {
 
 // PlanItems handles GET /api/plan/items - Get plan items with filtering, sorting, and search.
 func (h *Handlers) PlanItems(w http.ResponseWriter, r *http.Request) {
-	// Get service
-	service, err := h.getService()
-	if err != nil || service == nil {
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	h.serviceMu.RLock()
+	svcManager := h.serviceManager
+	h.serviceMu.RUnlock()
+
+	if !svcManager.IsRunning() {
 		response := PlanItemsResponse{
 			Items:      []PlanItemView{},
 			Total:      0,
@@ -54,9 +62,10 @@ func (h *Handlers) PlanItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get plan
-	currentPlan := service.GetPlan()
-	if currentPlan == nil {
+	// Get gRPC client
+	client, err := svcManager.GetClient(ctx)
+	if err != nil {
+		h.logError("PlanItems", err)
 		response := PlanItemsResponse{
 			Items:      []PlanItemView{},
 			Total:      0,
@@ -71,24 +80,80 @@ func (h *Handlers) PlanItems(w http.ResponseWriter, r *http.Request) {
 
 	// Parse query parameters
 	query := r.URL.Query()
-	filterStatus := query.Get("status")        // Filter by status
-	sortBy := query.Get("sort")                // Sort by: name, status, timestamp
-	sortOrder := query.Get("order")            // Order: asc, desc
-	search := query.Get("search")              // Search by track/album/artist name
-	itemType := query.Get("type")              // Filter by item type
-	showHierarchy := query.Get("hierarchy") == "true" // Show hierarchy
+	filterStatus := query.Get("status")
+	sortBy := query.Get("sort")
+	sortOrder := query.Get("order")
+	search := query.Get("search")
+	itemType := query.Get("type")
+	showHierarchy := query.Get("hierarchy") == "true"
 
-	// Convert plan items to views
-	itemViews := h.convertPlanItemsToViews(currentPlan, showHierarchy)
+	// Build filters for gRPC request
+	var filters *proto.PlanItemFilters
+	if filterStatus != "" || itemType != "" || search != "" {
+		filters = &proto.PlanItemFilters{
+			Search: search,
+		}
 
-	// Apply filters
+		// Convert status filter
+		if filterStatus != "" {
+			switch filterStatus {
+			case "pending":
+				filters.Status = []proto.PlanItemStatus{proto.PlanItemStatus_PLAN_ITEM_STATUS_PENDING}
+			case "in_progress":
+				filters.Status = []proto.PlanItemStatus{proto.PlanItemStatus_PLAN_ITEM_STATUS_IN_PROGRESS}
+			case "completed":
+				filters.Status = []proto.PlanItemStatus{proto.PlanItemStatus_PLAN_ITEM_STATUS_COMPLETED}
+			case "failed":
+				filters.Status = []proto.PlanItemStatus{proto.PlanItemStatus_PLAN_ITEM_STATUS_FAILED}
+			case "skipped":
+				filters.Status = []proto.PlanItemStatus{proto.PlanItemStatus_PLAN_ITEM_STATUS_SKIPPED}
+			}
+		}
+
+		// Convert type filter
+		if itemType != "" {
+			switch itemType {
+			case "track":
+				filters.Type = []proto.PlanItemType{proto.PlanItemType_PLAN_ITEM_TYPE_TRACK}
+			case "album":
+				filters.Type = []proto.PlanItemType{proto.PlanItemType_PLAN_ITEM_TYPE_ALBUM}
+			case "artist":
+				filters.Type = []proto.PlanItemType{proto.PlanItemType_PLAN_ITEM_TYPE_ARTIST}
+			case "playlist":
+				filters.Type = []proto.PlanItemType{proto.PlanItemType_PLAN_ITEM_TYPE_PLAYLIST}
+			case "m3u":
+				filters.Type = []proto.PlanItemType{proto.PlanItemType_PLAN_ITEM_TYPE_M3U}
+			}
+		}
+	}
+
+	// Get plan items via gRPC
+	planItemsResp, err := client.GetPlanItems(ctx, filters)
+	if err != nil {
+		h.logError("PlanItems", err)
+		response := PlanItemsResponse{
+			Items:      []PlanItemView{},
+			Total:      0,
+			Filtered:   0,
+			Statistics: map[string]int{},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Convert proto plan items to views
+	itemViews := h.convertProtoPlanItemsToViews(planItemsResp.Items, showHierarchy)
+
+	// Apply additional client-side filtering (for complex filters not supported by server)
 	filtered := h.filterItems(itemViews, filterStatus, itemType, search)
 
 	// Apply sorting
 	h.sortItems(filtered, sortBy, sortOrder)
 
-	// Get statistics
-	stats := currentPlan.GetExecutionStatistics()
+	// Calculate statistics from items
+	stats := h.calculateStatistics(itemViews)
 
 	response := PlanItemsResponse{
 		Items:      filtered,
@@ -102,25 +167,22 @@ func (h *Handlers) PlanItems(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// convertPlanItemsToViews converts plan items to view models with enriched information.
-func (h *Handlers) convertPlanItemsToViews(p *plan.DownloadPlan, showHierarchy bool) []PlanItemView {
+// convertProtoPlanItemsToViews converts proto plan items to view models.
+func (h *Handlers) convertProtoPlanItemsToViews(items []*proto.PlanItem, showHierarchy bool) []PlanItemView {
 	views := make([]PlanItemView, 0)
 
-	// Build a map for quick lookup
-	itemMap := make(map[string]*plan.PlanItem)
-	for _, item := range p.Items {
-		itemMap[item.ItemID] = item
-	}
+	// Build maps for relationships
+	itemMap := make(map[string]*proto.PlanItem)
+	parentMap := make(map[string][]string)
 
-	// Build parent-child relationships for finding playlists
-	parentMap := make(map[string][]string) // parent -> children
-	for _, item := range p.Items {
-		if item.ParentID != "" {
-			parentMap[item.ParentID] = append(parentMap[item.ParentID], item.ItemID)
+	for _, item := range items {
+		itemMap[item.ItemId] = item
+		if item.ParentId != "" {
+			parentMap[item.ParentId] = append(parentMap[item.ParentId], item.ItemId)
 		}
 	}
 
-	// Helper to find all playlists for a track
+	// Helper to find playlists for a track
 	findPlaylists := func(itemID string) []string {
 		playlists := make([]string, 0)
 		visited := make(map[string]bool)
@@ -137,12 +199,12 @@ func (h *Handlers) convertPlanItemsToViews(p *plan.DownloadPlan, showHierarchy b
 				return
 			}
 
-			if item.ItemType == plan.PlanItemTypePlaylist {
+			if item.ItemType == proto.PlanItemType_PLAN_ITEM_TYPE_PLAYLIST {
 				playlists = append(playlists, item.Name)
 			}
 
-			if item.ParentID != "" {
-				traverse(item.ParentID)
+			if item.ParentId != "" {
+				traverse(item.ParentId)
 			}
 		}
 
@@ -151,71 +213,97 @@ func (h *Handlers) convertPlanItemsToViews(p *plan.DownloadPlan, showHierarchy b
 	}
 
 	// Convert items to views
-	for _, item := range p.Items {
-		// Thread-safe access using getter methods
-		status := string(item.GetStatus())
-		progress := item.GetProgress()
-		errorMsg := item.GetError()
-		filePath := item.GetFilePath()
-		createdAt, startedAt, completedAt := item.GetTimestamps()
-		metadata := item.GetMetadata()
-		
-		// These fields are immutable after creation, safe to access directly
-		name := item.Name
-		itemType := string(item.ItemType)
-		parentID := item.ParentID
-		childIDs := item.ChildIDs
-
+	for _, item := range items {
 		view := PlanItemView{
-			ItemID:      item.ItemID,
-			ItemType:    itemType,
-			Name:        name,
-			Status:      status,
-			Progress:    progress * 100.0, // Convert to percentage
-			Error:       errorMsg,
-			FilePath:    filePath,
-			CreatedAt:   createdAt.Format("2006-01-02T15:04:05Z07:00"),
-			ParentID:    parentID,
-			ChildIDs:    childIDs,
-			Metadata:    metadata,
+			ItemID:    item.ItemId,
+			ItemType:  item.ItemType.String(),
+			Name:      item.Name,
+			Status:    item.Status.String(),
+			Progress:  item.Progress * 100.0,
+			Error:     item.Error,
+			FilePath:  item.FilePath,
+			ParentID:  item.ParentId,
+			ChildIDs:  item.ChildIds,
+			CreatedAt: time.Unix(item.CreatedAt, 0).Format(time.RFC3339),
 		}
 
-		if startedAt != nil {
-			view.StartedAt = startedAt.Format("2006-01-02T15:04:05Z07:00")
+		if item.StartedAt != nil {
+			view.StartedAt = time.Unix(*item.StartedAt, 0).Format(time.RFC3339)
 		}
-		if completedAt != nil {
-			view.CompletedAt = completedAt.Format("2006-01-02T15:04:05Z07:00")
+		if item.CompletedAt != nil {
+			view.CompletedAt = time.Unix(*item.CompletedAt, 0).Format(time.RFC3339)
 		}
 
-		// Extract artist and album from metadata
-		if artist, ok := metadata["artist"].(string); ok {
-			view.Artist = artist
-		} else if enhancement, ok := metadata["spotify_enhancement"].(map[string]interface{}); ok {
-			if artist, ok := enhancement["artist"].(string); ok {
+		// Convert metadata (proto has string values, convert back to interface{})
+		if len(item.Metadata) > 0 {
+			metadata := make(map[string]interface{})
+			for k, v := range item.Metadata {
+				// Try to parse as number, boolean, or keep as string
+				if num, err := strconv.ParseFloat(v, 64); err == nil {
+					metadata[k] = num
+				} else if b, err := strconv.ParseBool(v); err == nil {
+					metadata[k] = b
+				} else {
+					metadata[k] = v
+				}
+			}
+			view.Metadata = metadata
+
+			// Extract artist and album
+			if artist, ok := metadata["artist"].(string); ok {
 				view.Artist = artist
 			}
-		}
-
-		if album, ok := metadata["album"].(string); ok {
-			view.Album = album
-		} else if enhancement, ok := metadata["spotify_enhancement"].(map[string]interface{}); ok {
-			if album, ok := enhancement["album"].(string); ok {
+			if album, ok := metadata["album"].(string); ok {
 				view.Album = album
 			}
 		}
 
 		// Find playlists for tracks
-		if item.ItemType == plan.PlanItemTypeTrack {
-			view.Playlists = findPlaylists(item.ItemID)
+		if item.ItemType == proto.PlanItemType_PLAN_ITEM_TYPE_TRACK {
+			view.Playlists = findPlaylists(item.ItemId)
 		}
 
 		// Filter based on hierarchy display preference
-		if showHierarchy || item.ItemType == plan.PlanItemTypeTrack {
+		if showHierarchy || item.ItemType == proto.PlanItemType_PLAN_ITEM_TYPE_TRACK {
 			views = append(views, view)
 		}
 	}
 
 	return views
+}
+
+// calculateStatistics calculates statistics from plan item views.
+func (h *Handlers) calculateStatistics(items []PlanItemView) map[string]int {
+	stats := map[string]int{
+		"total":    0,
+		"completed": 0,
+		"failed":   0,
+		"pending":  0,
+		"in_progress": 0,
+	}
+
+	for _, item := range items {
+		if item.ItemType == "PLAN_ITEM_TYPE_TRACK" {
+			stats["total"]++
+			switch item.Status {
+			case "PLAN_ITEM_STATUS_COMPLETED":
+				stats["completed"]++
+			case "PLAN_ITEM_STATUS_FAILED":
+				stats["failed"]++
+			case "PLAN_ITEM_STATUS_PENDING":
+				stats["pending"]++
+			case "PLAN_ITEM_STATUS_IN_PROGRESS":
+				stats["in_progress"]++
+			}
+		}
+	}
+
+	return stats
+}
+
+// convertPlanItemsToViews converts plan items to view models with enriched information (legacy - kept for compatibility).
+func (h *Handlers) convertPlanItemsToViews(items []*proto.PlanItem, showHierarchy bool) []PlanItemView {
+	return h.convertProtoPlanItemsToViews(items, showHierarchy)
 }
 
 // filterItems applies filters to the item views.

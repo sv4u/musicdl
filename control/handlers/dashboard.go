@@ -143,10 +143,36 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
             color: #721c24;
             border: 1px solid #f5c6cb;
         }
+        .message-info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
         .loading {
             text-align: center;
             padding: 20px;
             color: #666;
+        }
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+        .info-item {
+            padding: 12px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+        .info-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+        .info-value {
+            font-size: 16px;
+            font-weight: 500;
         }
     </style>
 </head>
@@ -170,6 +196,12 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
             </div>
             <div class="actions" id="actions-container"></div>
             <div id="message-container"></div>
+        </div>
+        <div class="card">
+            <h2>Configuration</h2>
+            <div id="config-container">
+                <div class="loading">Loading configuration info...</div>
+            </div>
         </div>
         <div class="card">
             <h2>Statistics</h2>
@@ -197,11 +229,11 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
                     
                     const actionsContainer = document.getElementById('actions-container');
                     if (state === 'idle' || state === 'error') {
-                        actionsContainer.innerHTML = '<button class="btn btn-primary" onclick="startDownload()">Start Download</button>';
+                        actionsContainer.innerHTML = '<button class="btn btn-primary" onclick="startDownload()">Start Download</button> <button class="btn btn-danger" onclick="resetDownload()">Reset</button>';
                     } else if (state === 'running') {
-                        actionsContainer.innerHTML = '<button class="btn btn-danger" onclick="stopDownload()">Stop Download</button>';
+                        actionsContainer.innerHTML = '<button class="btn btn-danger" onclick="stopDownload()">Stop Download</button> <button class="btn btn-danger" onclick="resetDownload()">Reset</button>';
                     } else {
-                        actionsContainer.innerHTML = '<button class="btn btn-primary" disabled>Stopping...</button>';
+                        actionsContainer.innerHTML = '<button class="btn btn-primary" disabled>Stopping...</button> <button class="btn btn-danger" onclick="resetDownload()">Reset</button>';
                     }
                     
                     updateStats(data);
@@ -209,6 +241,32 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
                 .catch(err => {
                     document.getElementById('status-container').innerHTML = 
                         '<div class="message message-error">Error loading status: ' + err.message + '</div>';
+                });
+        }
+        
+        function updateConfig() {
+            fetch('/api/config/digest')
+                .then(res => res.json())
+                .then(data => {
+                    const container = document.getElementById('config-container');
+                    let html = '<div class="info-grid">';
+                    html += '<div class="info-item"><div class="info-label">Config Version</div><div class="info-value">' + (data.version || 'N/A') + '</div></div>';
+                    html += '<div class="info-item"><div class="info-label">Config Digest</div><div class="info-value" style="font-family: monospace; font-size: 12px;">' + (data.digest || 'N/A') + '</div></div>';
+                    if (data.config_stats) {
+                        html += '<div class="info-item"><div class="info-label">Songs</div><div class="info-value">' + (data.config_stats.songs || 0) + '</div></div>';
+                        html += '<div class="info-item"><div class="info-label">Artists</div><div class="info-value">' + (data.config_stats.artists || 0) + '</div></div>';
+                        html += '<div class="info-item"><div class="info-label">Playlists</div><div class="info-value">' + (data.config_stats.playlists || 0) + '</div></div>';
+                        html += '<div class="info-item"><div class="info-label">Albums</div><div class="info-value">' + (data.config_stats.albums || 0) + '</div></div>';
+                    }
+                    html += '</div>';
+                    if (data.has_pending) {
+                        html += '<div class="message message-info" style="margin-top: 16px; background-color: #fff3cd; color: #856404; border: 1px solid #ffeaa7;">⚠️ Configuration update pending - will be applied after current download completes</div>';
+                    }
+                    container.innerHTML = html;
+                })
+                .catch(err => {
+                    document.getElementById('config-container').innerHTML = 
+                        '<div class="message message-error">Error loading config info: ' + err.message + '</div>';
                 });
         }
         
@@ -282,11 +340,35 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
                 });
         }
         
+        function resetDownload() {
+            if (!confirm('Are you sure you want to reset? This will stop the download, clear all state, and delete plan files.')) return;
+            
+            fetch('/api/download/reset', { method: 'POST' })
+                .then(function(res) {
+                    return res.json().then(function(data) {
+                        if (res.ok) {
+                            showMessage(data.message || 'Download state reset successfully', false);
+                        } else {
+                            showMessage(data.message || data.error || 'Failed to reset download', true);
+                        }
+                        updateStatus();
+                        updateConfig();
+                    });
+                })
+                .catch(function(err) {
+                    showMessage('Error: ' + err.message, true);
+                });
+        }
+        
         // Initial load
         updateStatus();
+        updateConfig();
         
         // Auto-refresh every 2 seconds
-        statusInterval = setInterval(updateStatus, 2000);
+        statusInterval = setInterval(function() {
+            updateStatus();
+            updateConfig();
+        }, 2000);
         
         // Cleanup on page unload
         window.addEventListener('beforeunload', () => {

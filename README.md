@@ -17,8 +17,11 @@ musicdl - Control platform for downloading music from Spotify using YouTube and 
 # Control platform (web UI and API)
 musicdl serve [flags]
 
-# Download service (long-running)
+# Download service (one-shot or daemon mode)
 musicdl download [flags]
+
+# Download service gRPC server (internal, spawned by web server)
+musicdl download-service [flags]
 ```
 
 ## DESCRIPTION
@@ -26,12 +29,15 @@ musicdl download [flags]
 musicdl is a Go-based control platform for downloading music from Spotify by sourcing audio from YouTube, YouTube Music, and SoundCloud, then embedding metadata into downloaded files. It provides a web-based UI and REST API for managing downloads, configuration, and monitoring.
 
 **Key Features:**
+- Decoupled architecture: Web server and download service run as separate processes
+- gRPC communication between web server and download service
 - Web-based control platform with real-time status dashboard
 - REST API for programmatic control
 - Plan-based architecture with parallel execution
 - Config-only credentials (no environment variables)
-- Real-time progress tracking and log viewing
+- Real-time progress tracking and log streaming
 - Configuration editor with validation
+- Graceful shutdown coordination
 
 ## INSTALLATION
 
@@ -199,24 +205,46 @@ Access the web UI at `http://localhost:8080`:
 
 ### Download Service
 
-Start the download service (long-running):
+The download service runs as a separate process managed by the web server. When you start a download via the web UI or API, the web server automatically spawns the download service as a child process.
+
+**Manual execution (for testing):**
 
 ```bash
+# One-shot mode (runs until completion)
 musicdl download --config config.yaml
+
+# Daemon mode (long-running)
+musicdl download --config config.yaml --daemon
 ```
+
+**Note:** In normal operation, the web server manages the download service automatically. Manual execution is primarily for testing or standalone use.
 
 ### API Endpoints
 
 The control platform provides REST API endpoints:
 
+**Health & Status:**
 - `GET /api/health` - Health check
+- `GET /api/health/stats` - Detailed health statistics
 - `GET /api/status` - Download service status
+- `GET /api/status/stream` - Server-Sent Events stream for real-time status updates
+
+**Download Control:**
 - `POST /api/download/start` - Start download
 - `POST /api/download/stop` - Stop download
+- `GET /api/download/status` - Get download status
+- `POST /api/download/reset` - Reset download state (stops service, clears plan files)
+
+**Configuration:**
 - `GET /api/config` - Get configuration
-- `PUT /api/config` - Update configuration
+- `PUT /api/config` - Update configuration (queued for next download)
 - `POST /api/config/validate` - Validate configuration
-- `GET /api/logs` - Get logs (with filtering)
+- `GET /api/config/digest` - Get configuration digest and version
+
+**Plan & Logs:**
+- `GET /api/plan/items` - Get plan items with filtering
+- `GET /api/logs` - Get logs (with filtering: level, time range, search)
+- `GET /api/logs/stream` - Server-Sent Events stream for real-time log streaming
 
 ## EXAMPLES
 
@@ -348,24 +376,43 @@ The Docker image runs the control platform by default. Access the web UI at:
 - `http://localhost:8080/api/status` - Download service status
 - `http://localhost:8080/api/download/start` - Start download
 - `http://localhost:8080/api/download/stop` - Stop download
+- `http://localhost:8080/api/download/reset` - Reset download state
 - `http://localhost:8080/api/config` - Get/update configuration
+- `http://localhost:8080/api/config/digest` - Get config digest and version
+- `http://localhost:8080/api/logs` - Get logs with filtering
+- `http://localhost:8080/api/logs/stream` - Real-time log streaming (SSE)
 
 **Docker Compose:**
 
 ```yaml
+version: '2.4'
+
 services:
-  musicdl:
+  web-server:
     image: ghcr.io/sv4u/musicdl:latest
+    container_name: musicdl
     ports:
-      - "8080:8080"
+      - "8080:8080"      # Web UI and API
+      - "30025:30025"   # gRPC (optional, for external access)
     volumes:
       - /path/to/music/library:/download:rw
+      - ./plans:/var/lib/musicdl/plans:rw
+      - ./logs:/var/lib/musicdl/logs:rw
       - /path/to/config.yaml:/scripts/config.yaml:ro
     environment:
       - CONFIG_PATH=/scripts/config.yaml
       - HEALTHCHECK_PORT=8080
+      - MUSICDL_PLAN_PATH=/var/lib/musicdl/plans
+      - MUSICDL_LOG_PATH=/var/lib/musicdl/logs/musicdl.log
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/scripts/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 ```
+
+**Note:** The web server automatically manages the download service as a child process. Both run in the same container, sharing volumes for plans and logs.
 
 ## SEE ALSO
 

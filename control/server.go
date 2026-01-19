@@ -19,6 +19,7 @@ type ServerConfig struct {
 	ConfigPath string
 	PlanPath   string
 	LogPath    string
+	Version    string
 }
 
 // Server represents the control platform HTTP server.
@@ -36,7 +37,11 @@ func NewServer(config *ServerConfig) (*Server, error) {
 
 	// Create handlers with server start time
 	startTime := time.Now()
-	h, err := handlers.NewHandlers(config.ConfigPath, config.PlanPath, config.LogPath, startTime)
+	version := config.Version
+	if version == "" {
+		version = "dev"
+	}
+	h, err := handlers.NewHandlers(config.ConfigPath, config.PlanPath, config.LogPath, startTime, version)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create handlers: %w", err)
 	}
@@ -86,11 +91,13 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/download/start", s.handlers.DownloadStart).Methods("POST")
 	api.HandleFunc("/download/stop", s.handlers.DownloadStop).Methods("POST")
 	api.HandleFunc("/download/status", s.handlers.DownloadStatus).Methods("GET")
+	api.HandleFunc("/download/reset", s.handlers.DownloadReset).Methods("POST")
 
 	// Config management endpoints
 	api.HandleFunc("/config", s.handlers.ConfigGet).Methods("GET")
 	api.HandleFunc("/config", s.handlers.ConfigPut).Methods("PUT")
 	api.HandleFunc("/config/validate", s.handlers.ConfigValidate).Methods("POST")
+	api.HandleFunc("/config/digest", s.handlers.ConfigDigest).Methods("GET")
 
 	// Log endpoints
 	api.HandleFunc("/logs", s.handlers.Logs).Methods("GET")
@@ -112,8 +119,15 @@ func (s *Server) Start() error {
 	return s.httpServer.ListenAndServe()
 }
 
-// Shutdown gracefully shuts down the server.
+// Shutdown gracefully shuts down the server and download service.
 func (s *Server) Shutdown(ctx context.Context) error {
+	// Stop download service if running
+	if err := s.handlers.Shutdown(ctx); err != nil {
+		log.Printf("Error shutting down download service: %v", err)
+		// Continue with HTTP server shutdown even if download service shutdown fails
+	}
+
+	// Shutdown HTTP server
 	return s.httpServer.Shutdown(ctx)
 }
 

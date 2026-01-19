@@ -1,39 +1,91 @@
 package handlers
 
 import (
-	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"log"
 	"net/http"
-	"os"
+	"strconv"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/sv4u/musicdl/download/proto"
 )
 
-// Logs handles GET /api/logs - Stream/fetch logs with filtering.
+// Logs handles GET /api/logs - Fetch logs with filtering.
 func (h *Handlers) Logs(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
 	// Parse query parameters
 	query := r.URL.Query()
 	logLevel := query.Get("level")
 	searchQuery := query.Get("search")
-	startTime := query.Get("start_time")
-	endTime := query.Get("end_time")
-	maxLines := 1000 // Default max lines
-	if maxLinesStr := query.Get("max_lines"); maxLinesStr != "" {
-		if parsed, err := fmt.Sscanf(maxLinesStr, "%d", &maxLines); err != nil || parsed != 1 {
-			maxLines = 1000
+	startTimeStr := query.Get("start_time")
+	endTimeStr := query.Get("end_time")
+
+	// Build StreamLogsRequest
+	req := &proto.StreamLogsRequest{
+		Search: searchQuery,
+		Follow: false, // Don't follow for regular fetch
+	}
+
+	// Parse log levels
+	if logLevel != "" {
+		switch strings.ToUpper(logLevel) {
+		case "DEBUG":
+			req.Levels = []proto.LogLevel{proto.LogLevel_LOG_LEVEL_DEBUG}
+		case "INFO":
+			req.Levels = []proto.LogLevel{proto.LogLevel_LOG_LEVEL_INFO}
+		case "WARN", "WARNING":
+			req.Levels = []proto.LogLevel{proto.LogLevel_LOG_LEVEL_WARN}
+		case "ERROR":
+			req.Levels = []proto.LogLevel{proto.LogLevel_LOG_LEVEL_ERROR}
 		}
 	}
 
-	// Read and filter logs
-	reader := NewLogReader(h.logPath)
-	entries, err := reader.ReadLogs(logLevel, searchQuery, startTime, endTime, maxLines)
-	if err != nil {
+	// Parse time filters
+	if startTimeStr != "" {
+		if ts, err := strconv.ParseInt(startTimeStr, 10, 64); err == nil {
+			req.StartTime = &ts
+		}
+	}
+	if endTimeStr != "" {
+		if ts, err := strconv.ParseInt(endTimeStr, 10, 64); err == nil {
+			req.EndTime = &ts
+		}
+	}
+
+	h.serviceMu.RLock()
+	svcManager := h.serviceManager
+	h.serviceMu.RUnlock()
+
+	// Check if service is running
+	if !svcManager.IsRunning() {
+		// Service not running, return empty logs
 		response := map[string]interface{}{
-			"error":   "Failed to read logs",
+			"logs":    []interface{}{},
+			"count":   0,
+			"filters": map[string]interface{}{
+				"level":      logLevel,
+				"search":     searchQuery,
+				"start_time": startTimeStr,
+				"end_time":   endTimeStr,
+			},
+			"message": "Download service is not running",
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	// Get gRPC client
+	client, err := svcManager.GetClient(ctx)
+	if err != nil {
+		h.logError("Logs", err)
+		response := map[string]interface{}{
+			"error":   "Failed to connect to download service",
 			"message": err.Error(),
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -42,15 +94,49 @@ func (h *Handlers) Logs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convert entries to JSON-serializable format
-	logsJSON := make([]map[string]interface{}, len(entries))
-	for i, entry := range entries {
-		logsJSON[i] = map[string]interface{}{
-			"timestamp": entry.Timestamp.Unix(),
-			"level":     entry.Level,
-			"message":   entry.Message,
-			"fields":    entry.Fields,
-			"raw":       entry.Raw,
+	// Stream logs (non-following mode)
+	logChan, errChan := client.StreamLogs(ctx, req)
+
+	// Collect entries
+	logsJSON := make([]map[string]interface{}, 0)
+	maxLines := 1000
+	if maxLinesStr := query.Get("max_lines"); maxLinesStr != "" {
+		if parsed, err := strconv.Atoi(maxLinesStr); err == nil && parsed > 0 {
+			maxLines = parsed
+		}
+	}
+
+	done := false
+	for !done && len(logsJSON) < maxLines {
+		select {
+		case entry, ok := <-logChan:
+			if !ok {
+				done = true
+				break
+			}
+			logsJSON = append(logsJSON, map[string]interface{}{
+				"timestamp": entry.Timestamp,
+				"level":     entry.Level.String(),
+				"message":   entry.Message,
+				"service":   entry.Service,
+				"operation": entry.Operation,
+				"error":     entry.Error,
+			})
+		case err := <-errChan:
+			if err != nil {
+				h.logError("Logs", err)
+				response := map[string]interface{}{
+					"error":   "Failed to stream logs",
+					"message": err.Error(),
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(response)
+				return
+			}
+			done = true
+		case <-ctx.Done():
+			done = true
 		}
 	}
 
@@ -60,9 +146,8 @@ func (h *Handlers) Logs(w http.ResponseWriter, r *http.Request) {
 		"filters": map[string]interface{}{
 			"level":      logLevel,
 			"search":     searchQuery,
-			"start_time": startTime,
-			"end_time":   endTime,
-			"max_lines":  maxLines,
+			"start_time": startTimeStr,
+			"end_time":   endTimeStr,
 		},
 	}
 
@@ -73,11 +158,6 @@ func (h *Handlers) Logs(w http.ResponseWriter, r *http.Request) {
 
 // LogsStream handles GET /api/logs/stream - Server-Sent Events (SSE) for real-time logs.
 func (h *Handlers) LogsStream(w http.ResponseWriter, r *http.Request) {
-	// Parse query parameters for filtering
-	query := r.URL.Query()
-	logLevel := query.Get("level")
-	searchQuery := query.Get("search")
-
 	// Set up SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -90,6 +170,11 @@ func (h *Handlers) LogsStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Parse query parameters for filtering
+	query := r.URL.Query()
+	logLevel := query.Get("level")
+	searchQuery := query.Get("search")
+
 	// Send initial connection message
 	initialMsg := map[string]interface{}{
 		"type":    "connected",
@@ -100,12 +185,17 @@ func (h *Handlers) LogsStream(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "data: %s\n\n", data)
 	flusher.Flush()
 
-	// Check if log file exists
-	if _, err := os.Stat(h.logPath); os.IsNotExist(err) {
-		// File doesn't exist, send message and close
+	ctx := r.Context()
+
+	h.serviceMu.RLock()
+	svcManager := h.serviceManager
+	h.serviceMu.RUnlock()
+
+	// Check if service is running
+	if !svcManager.IsRunning() {
 		msg := map[string]interface{}{
 			"type":    "error",
-			"message": "Log file does not exist",
+			"message": "Download service is not running",
 		}
 		data, _ := json.Marshal(msg)
 		fmt.Fprintf(w, "data: %s\n\n", data)
@@ -113,140 +203,79 @@ func (h *Handlers) LogsStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Channel to signal when client disconnects
-	ctx := r.Context()
-	done := make(chan bool)
-	var mu sync.Mutex
-	closed := false
-
-	// Monitor client connection
-	go func() {
-		<-ctx.Done()
-		mu.Lock()
-		closed = true
-		mu.Unlock()
-		done <- true
-	}()
-
-	reader := NewLogReader(h.logPath)
-	
-	// Poll for new lines (simple approach - can be optimized with file watching)
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-
-	// Track last file position
-	var lastPos int64 = 0
-	fileInfo, err := os.Stat(h.logPath)
-	if err == nil {
-		lastPos = fileInfo.Size()
+	// Get gRPC client
+	client, err := svcManager.GetClient(ctx)
+	if err != nil {
+		h.logError("LogsStream", err)
+		msg := map[string]interface{}{
+			"type":    "error",
+			"message": "Failed to connect to download service: " + err.Error(),
+		}
+		data, _ := json.Marshal(msg)
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		flusher.Flush()
+		return
 	}
 
+	// Build StreamLogsRequest
+	req := &proto.StreamLogsRequest{
+		Search: searchQuery,
+		Follow: true, // Follow mode for streaming
+	}
+
+	// Parse log levels
+	if logLevel != "" {
+		switch strings.ToUpper(logLevel) {
+		case "DEBUG":
+			req.Levels = []proto.LogLevel{proto.LogLevel_LOG_LEVEL_DEBUG}
+		case "INFO":
+			req.Levels = []proto.LogLevel{proto.LogLevel_LOG_LEVEL_INFO}
+		case "WARN", "WARNING":
+			req.Levels = []proto.LogLevel{proto.LogLevel_LOG_LEVEL_WARN}
+		case "ERROR":
+			req.Levels = []proto.LogLevel{proto.LogLevel_LOG_LEVEL_ERROR}
+		}
+	}
+
+	// Stream logs via gRPC
+	logChan, errChan := client.StreamLogs(ctx, req)
+
+	// Forward log entries to SSE
 	for {
 		select {
-		case <-done:
+		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			mu.Lock()
-			if closed {
-				mu.Unlock()
+		case entry, ok := <-logChan:
+			if !ok {
 				return
 			}
-			mu.Unlock()
-
-			// Check current file size
-			fileInfo, err := os.Stat(h.logPath)
+			logMsg := map[string]interface{}{
+				"type":      "log",
+				"timestamp": entry.Timestamp,
+				"level":     entry.Level.String(),
+				"message":   entry.Message,
+				"service":   entry.Service,
+				"operation": entry.Operation,
+				"error":     entry.Error,
+			}
+			data, err := json.Marshal(logMsg)
 			if err != nil {
 				continue
 			}
-
-			currentSize := fileInfo.Size()
-			
-			// If file was truncated or reset, start from beginning
-			if currentSize < lastPos {
-				lastPos = 0
-			}
-
-			// If file has grown, read new content
-			if currentSize > lastPos {
-				file, err := os.Open(h.logPath)
-				if err != nil {
-					continue
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+		case err := <-errChan:
+			if err != nil {
+				h.logError("LogsStream", err)
+				msg := map[string]interface{}{
+					"type":    "error",
+					"message": "Error streaming logs: " + err.Error(),
 				}
-
-				// Read file content (extracted to ensure file is closed properly)
-				// Returns true if reading was successful, false otherwise
-				readSuccess := func() bool {
-					defer file.Close() // Close file when this function returns
-
-					// Seek to last known position
-					if _, err := file.Seek(lastPos, io.SeekStart); err != nil {
-						log.Printf("WARN: failed_to_seek_log_file pos=%d error=%v", lastPos, err)
-						return false // Failed to seek, don't update lastPos
-					}
-
-					scanner := bufio.NewScanner(file)
-
-					// Read new lines
-					for scanner.Scan() {
-						line := scanner.Text()
-						if line == "" {
-							continue
-						}
-
-						entry := reader.parseLogLine(line)
-						if entry == nil {
-							continue
-						}
-
-						// Apply filters
-						if logLevel != "" && !strings.EqualFold(entry.Level, logLevel) {
-							continue
-						}
-
-						if searchQuery != "" {
-							if !strings.Contains(strings.ToLower(entry.Message), strings.ToLower(searchQuery)) &&
-								!strings.Contains(strings.ToLower(entry.Raw), strings.ToLower(searchQuery)) {
-								continue
-							}
-						}
-
-						// Send log entry via SSE
-						logMsg := map[string]interface{}{
-							"type":      "log",
-							"timestamp": entry.Timestamp.Unix(),
-							"level":     entry.Level,
-							"message":   entry.Message,
-							"fields":    entry.Fields,
-							"raw":       entry.Raw,
-						}
-						data, err := json.Marshal(logMsg)
-						if err != nil {
-							continue
-						}
-
-						mu.Lock()
-						if !closed {
-							fmt.Fprintf(w, "data: %s\n\n", data)
-							flusher.Flush()
-						}
-						mu.Unlock()
-					}
-
-					// Check for scanner errors
-					if err := scanner.Err(); err != nil {
-						log.Printf("WARN: error_reading_log_file error=%v", err)
-						return false // Scanner error, don't update lastPos
-					}
-
-					return true // Successfully read content
-				}()
-
-				// Only update lastPos if reading was successful
-				// This prevents skipping log entries when seek fails
-				if readSuccess {
-					lastPos = currentSize
-				}
+				data, _ := json.Marshal(msg)
+				fmt.Fprintf(w, "data: %s\n\n", data)
+				flusher.Flush()
 			}
+			return
 		}
 	}
 }

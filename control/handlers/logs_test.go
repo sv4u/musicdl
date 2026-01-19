@@ -34,7 +34,7 @@ func TestLogs(t *testing.T) {
 
 	os.WriteFile(configPath, []byte("version: \"1.2\"\n"), 0644)
 
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("Failed to create handlers: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestLogs_NonExistentFile(t *testing.T) {
 
 	os.WriteFile(configPath, []byte("version: \"1.2\"\n"), 0644)
 
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("Failed to create handlers: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestLogsPage(t *testing.T) {
 
 	os.WriteFile(configPath, []byte("version: \"1.2\"\n"), 0644)
 
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("Failed to create handlers: %v", err)
 	}

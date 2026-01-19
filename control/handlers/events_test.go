@@ -77,7 +77,7 @@ download:
 		t.Fatalf("Failed to create config file: %v", err)
 	}
 
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("NewHandlers() failed: %v", err)
 	}
@@ -161,7 +161,7 @@ download:
 		t.Fatalf("Failed to create config file: %v", err)
 	}
 
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("NewHandlers() failed: %v", err)
 	}
@@ -197,7 +197,7 @@ download:
 		t.Fatalf("Failed to create config file: %v", err)
 	}
 
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("NewHandlers() failed: %v", err)
 	}
@@ -305,7 +305,7 @@ download:
 		t.Fatalf("Failed to create config file: %v", err)
 	}
 
-	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now())
+	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
 		t.Fatalf("NewHandlers() failed: %v", err)
 	}

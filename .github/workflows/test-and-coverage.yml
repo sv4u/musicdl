@@ -38,6 +38,21 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
+      - name: Install Protocol Buffers compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+          protoc --version
+
+      - name: Install Go protobuf plugins
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+      - name: Generate Protocol Buffers code
+        run: |
+          make proto || (echo "Proto generation failed" && exit 1)
+
       - name: Install yt-dlp for integration tests
         run: |
           sudo pip3 install yt-dlp || sudo pip install yt-dlp || echo "Warning: yt-dlp installation failed, integration tests will be skipped"

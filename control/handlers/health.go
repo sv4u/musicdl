@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -12,23 +13,54 @@ import (
 
 // Health handles GET /api/health - JSON healthcheck endpoint for Docker HEALTHCHECK.
 func (h *Handlers) Health(w http.ResponseWriter, r *http.Request) {
-	// Try to get service status first (if service is initialized)
-	service, err := h.getService()
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
 	var planStatus map[string]interface{}
 	var planFile string
 	var planStats map[string]interface{}
-	
-	if err == nil && service != nil {
-		// Service is available, use its status
-		status := service.GetStatus()
-		planStatus = status
-		if pf, ok := status["plan_file"].(string); ok {
-			planFile = pf
+	var downloadServiceHealth string
+	var downloadServiceVersion string
+
+	h.serviceMu.RLock()
+	svcManager := h.serviceManager
+	h.serviceMu.RUnlock()
+
+	if svcManager.IsRunning() {
+		// Service is running - get status via gRPC
+		client, err := svcManager.GetClient(ctx)
+		if err == nil {
+			statusResp, err := client.GetStatus(ctx)
+			if err == nil && statusResp != nil {
+				planStatus = map[string]interface{}{
+					"state": statusResp.State.String(),
+					"phase": statusResp.Phase.String(),
+				}
+				if statusResp.ErrorMessage != "" {
+					planStatus["error"] = statusResp.ErrorMessage
+				}
+				planStats = map[string]interface{}{
+					"total":       statusResp.TotalItems,
+					"completed":   statusResp.CompletedItems,
+					"failed":      statusResp.FailedItems,
+					"pending":     statusResp.PendingItems,
+					"in_progress": statusResp.InProgressItems,
+				}
+
+				// Get health check
+				healthResp, err := client.HealthCheck(ctx)
+				if err == nil && healthResp != nil {
+					downloadServiceHealth = healthResp.ServiceHealth.String()
+					if healthResp.ServerVersion != nil {
+						downloadServiceVersion = healthResp.ServerVersion.Version
+					}
+				}
+			}
 		}
-		if ps, ok := status["plan_stats"].(map[string]interface{}); ok {
-			planStats = ps
-		}
-	} else if h.planPath != "" {
+	}
+
+	// Fallback: try to load plan file directly if service not running
+	if planStatus == nil && h.planPath != "" {
 		// Service not available, try to load plan file directly
 		progressPath := filepath.Join(h.planPath, "download_plan_progress.json")
 		if _, err := os.Stat(progressPath); err == nil {
@@ -86,6 +118,15 @@ func (h *Handlers) Health(w http.ResponseWriter, r *http.Request) {
 		"plan_file":     planFile,
 		"statistics":    planStats,
 		"server_health": "healthy",
+		"services": map[string]interface{}{
+			"web_server": map[string]interface{}{
+				"status": "healthy",
+			},
+			"download_service": map[string]interface{}{
+				"status":  downloadServiceHealth,
+				"version": downloadServiceVersion,
+			},
+		},
 	}
 
 	// Add phase if available
@@ -106,10 +147,11 @@ func (h *Handlers) Health(w http.ResponseWriter, r *http.Request) {
 
 // HealthStats handles GET /api/health/stats - Detailed health metrics.
 func (h *Handlers) HealthStats(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
 	uptime := time.Since(h.startTime).Seconds()
 	
-	// Try to get service status and plan statistics
-	service, err := h.getService()
 	var planStats map[string]interface{}
 	var planStatus string
 	var totalProcessed int
@@ -117,19 +159,34 @@ func (h *Handlers) HealthStats(w http.ResponseWriter, r *http.Request) {
 	var failureCount int
 	var successRate float64
 	var failureRate float64
-	
-	if err == nil && service != nil {
-		// Service is available, use its status
-		status := service.GetStatus()
-		if ps, ok := status["plan_stats"].(map[string]interface{}); ok {
-			planStats = ps
+
+	h.serviceMu.RLock()
+	svcManager := h.serviceManager
+	h.serviceMu.RUnlock()
+
+	if svcManager.IsRunning() {
+		// Service is running - get status via gRPC
+		client, err := svcManager.GetClient(ctx)
+		if err == nil {
+			statusResp, err := client.GetStatus(ctx)
+			if err == nil && statusResp != nil {
+				planStatus = statusResp.Phase.String()
+				planStats = map[string]interface{}{
+					"total":       statusResp.TotalItems,
+					"completed":   statusResp.CompletedItems,
+					"failed":      statusResp.FailedItems,
+					"pending":     statusResp.PendingItems,
+					"in_progress": statusResp.InProgressItems,
+				}
+				totalProcessed = int(statusResp.TotalItems)
+				successCount = int(statusResp.CompletedItems)
+				failureCount = int(statusResp.FailedItems)
+			}
 		}
-		if phase, ok := status["phase"].(string); ok {
-			planStatus = phase
-		} else {
-			planStatus = "idle"
-		}
-	} else if h.planPath != "" {
+	}
+
+	// Fallback: try to load plan file directly
+	if planStats == nil && h.planPath != "" {
 		// Service not available, try to load plan file directly
 		progressPath := filepath.Join(h.planPath, "download_plan_progress.json")
 		if _, err := os.Stat(progressPath); err == nil {
@@ -151,8 +208,9 @@ func (h *Handlers) HealthStats(w http.ResponseWriter, r *http.Request) {
 	// Calculate statistics from plan
 	// Try to get plan directly to calculate execution stats
 	var loadedPlan *plan.DownloadPlan
-	if err == nil && service != nil {
-		loadedPlan = service.GetPlan()
+	if svcManager.IsRunning() {
+		// Get plan items via gRPC and reconstruct plan structure if needed
+		// For now, use stats from status response
 	} else if h.planPath != "" {
 		progressPath := filepath.Join(h.planPath, "download_plan_progress.json")
 		if _, err := os.Stat(progressPath); err == nil {
