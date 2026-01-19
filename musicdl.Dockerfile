@@ -1,5 +1,5 @@
 # Stage 1: Build Go binary
-FROM golang:1.24-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 # Accept VERSION as build argument (optional - if not provided, will use Git tags)
 ARG VERSION
