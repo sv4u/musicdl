@@ -24,11 +24,17 @@ func TestAddSnapshot_RaceCondition(t *testing.T) {
 	var wg sync.WaitGroup
 	done := make(chan bool)
 
+	// Reduce iterations when running with race detector to prevent OOM
+	iterations := 1000
+	if testing.RaceEnabled() {
+		iterations = 100
+	}
+
 	// Goroutine 1: Continuously add snapshots
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 1000; i++ {
+		for i := 0; i < iterations; i++ {
 			select {
 			case <-done:
 				return

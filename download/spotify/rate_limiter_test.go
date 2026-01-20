@@ -101,10 +101,16 @@ func TestRateLimiter_ContextCancellation(t *testing.T) {
 func TestRateLimiter_Concurrent(t *testing.T) {
 	rl := NewRateLimiter(true, 10, 1.0) // 10 requests per second
 	var wg sync.WaitGroup
-	errors := make(chan error, 20)
+	
+	// Reduce memory usage when running with race detector
+	numGoroutines := 20
+	if testing.RaceEnabled() {
+		numGoroutines = 10
+	}
+	errors := make(chan error, numGoroutines)
 
-	// Make 20 concurrent requests
-	for i := 0; i < 20; i++ {
+	// Make concurrent requests
+	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

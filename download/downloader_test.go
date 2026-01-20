@@ -205,8 +205,13 @@ func TestDownloader_FileExistsCached_ConcurrentAccess(t *testing.T) {
 	downloader := NewDownloader(cfg, nil, nil, nil)
 
 	// Test concurrent access (should be safe due to RWMutex)
-	done := make(chan bool, 10)
-	for i := 0; i < 10; i++ {
+	// Reduce memory usage when running with race detector
+	numGoroutines := 10
+	if testing.RaceEnabled() {
+		numGoroutines = 5
+	}
+	done := make(chan bool, numGoroutines)
+	for i := 0; i < numGoroutines; i++ {
 		go func() {
 			downloader.fileExistsCached(testFile)
 			done <- true
@@ -214,7 +219,7 @@ func TestDownloader_FileExistsCached_ConcurrentAccess(t *testing.T) {
 	}
 
 	// Wait for all goroutines
-	for i := 0; i < 10; i++ {
+	for i := 0; i < numGoroutines; i++ {
 		<-done
 	}
 
