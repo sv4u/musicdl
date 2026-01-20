@@ -532,7 +532,7 @@ jobs:
           # We want to extract just the version section
           # Use character class to avoid YAML linter false positive with '---'
           DASH_CHAR="-"
-          SEPARATOR_PATTERN="^${DASH_CHAR}${DASH_CHAR}${DASH_CHAR}\$"
+          SEPARATOR_PATTERN="^${DASH_CHAR}${DASH_CHAR}${DASH_CHAR} \$"
           VERSION_SECTION=$(echo "$ORIGINAL_CHANGELOG" | sed -n '/^## \[/,$p' | sed "/${SEPARATOR_PATTERN}/,\$d")
           
           # Append Docker image links and SBOM note to changelog for release notes

@@ -68,9 +68,86 @@ jobs:
           fi
 
       - name: Functional Test - Control Platform API
+        env:
+          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIGO_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIGO_CLIENT_SECRET }}
         run: |
           echo "Testing control platform API..."
           set -e
+          
+          # Validate that secrets are set
+          if [ -z "$SPOTIFY_CLIENT_ID" ] || [ -z "$SPOTIFY_CLIENT_SECRET" ]; then
+            echo "✗ Error: Spotify credentials not found in secrets"
+            echo "Please ensure SPOTIGO_CLIENT_ID and SPOTIGO_CLIENT_SECRET are set in repository secrets"
+            exit 1
+          fi
+          
+          # Create test config file with credentials
+          TEST_CONFIG_DIR=$(mktemp -d)
+          TEST_CONFIG_FILE="$TEST_CONFIG_DIR/config.yaml"
+          
+          # Generate config template first (without secrets to avoid variable expansion issues)
+          cat > "$TEST_CONFIG_FILE" <<'CONFIG_TEMPLATE'
+          version: "1.2"
+          
+          download:
+            client_id: "CLIENT_ID_PLACEHOLDER"
+            client_secret: "CLIENT_SECRET_PLACEHOLDER"
+            threads: 1
+            max_retries: 3
+            format: "mp3"
+            bitrate: "128k"
+            output: "{artist}/{album}/{track-number} - {title}.{output-ext}"
+            audio_providers:
+              - "youtube-music"
+              - "youtube"
+            overwrite: "metadata"
+          
+          ui:
+            history_path: ""
+            history_retention: 0
+            snapshot_interval: 10
+            log_path: ""
+          
+          songs:
+            - name: "YYZ"
+              url: "https://open.spotify.com/track/1RKbVxcm267VdsIzqY7msi"
+
+            - name: "Crawling"
+              url: "https://open.spotify.com/track/1BfzeCKzo8xSvJcYLmnP8f"
+          artists:
+            - name: "Aries"
+              url: "https://open.spotify.com/artist/3hOdow4ZPmrby7Q1wfPLEy"
+
+            - name: "Rush"
+              url: "https://open.spotify.com/artist/2Hkut4rAAyrQxRdof7FVJq"
+
+          playlists:
+            - name: "planet namek"
+              url: "https://open.spotify.com/playlist/5Xrt7Y1mwD4q107Ty56xnn"
+
+            - name: "hell"
+              url: "https://open.spotify.com/playlist/74yTlcAU98jlhzIy5Iwu4E"
+              create_m3u: true
+
+          albums:
+            - name: "Moving Pictures"
+              url: "https://open.spotify.com/album/77CZUF57sYqgtznUe3OikQ"
+
+            - name: "hypochondriac"
+              url: "https://open.spotify.com/album/6XV76W17coHAKFdeyiGT08"
+              create_m3u: true
+          CONFIG_TEMPLATE
+          
+          # Replace placeholders with actual secrets (using sed with @ delimiter to avoid conflicts)
+          # Escape special characters in secrets for sed replacement (escape & and \)
+          ESCAPED_CLIENT_ID=$(printf '%s' "$SPOTIFY_CLIENT_ID" | sed 's/[&\\]/\\&/g')
+          ESCAPED_CLIENT_SECRET=$(printf '%s' "$SPOTIFY_CLIENT_SECRET" | sed 's/[&\\]/\\&/g')
+          sed -i "s@CLIENT_ID_PLACEHOLDER@$ESCAPED_CLIENT_ID@g" "$TEST_CONFIG_FILE"
+          sed -i "s@CLIENT_SECRET_PLACEHOLDER@$ESCAPED_CLIENT_SECRET@g" "$TEST_CONFIG_FILE"
+          
+          echo "Created test config file at $TEST_CONFIG_FILE"
+          echo "Config file size: $(wc -l < "$TEST_CONFIG_FILE") lines"
           
           # Cleanup function to ensure container is always stopped and logs are captured
           cleanup() {
@@ -81,11 +158,15 @@ jobs:
               docker stop "$CONTAINER_ID" 2>/dev/null || true
               docker rm "$CONTAINER_ID" 2>/dev/null || true
             fi
+            # Clean up test config directory
+            rm -rf "$TEST_CONFIG_DIR" 2>/dev/null || true
           }
           trap cleanup EXIT
           
-          # Start container in background with port mapping
-          CONTAINER_ID=$(docker run -d -p 8080:8080 "$IMAGE_TAG")
+          # Start container in background with port mapping and mounted config
+          CONTAINER_ID=$(docker run -d -p 8080:8080 \
+            -v "$TEST_CONFIG_FILE:/scripts/config.yaml:ro" \
+            "$IMAGE_TAG")
           if [ -z "$CONTAINER_ID" ]; then
             echo "✗ Failed to start container"
             exit 1
