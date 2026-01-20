@@ -120,42 +120,37 @@ func convertSourceList(sources interface{}, allowM3U bool) ([]MusicSource, error
 			switch itemVal := item.(type) {
 			case map[string]interface{}:
 				// Check if extended format: {name: "...", url: "...", create_m3u: true/false}
-				if allowM3U {
-					if nameVal, hasName := itemVal["name"]; hasName {
-						if urlVal, hasURL := itemVal["url"]; hasURL {
-							name, ok := nameVal.(string)
-							if !ok {
-								return nil, fmt.Errorf("invalid name type in source: expected string")
-							}
-							url, ok := urlVal.(string)
-							if !ok {
-								return nil, fmt.Errorf("invalid URL type in source: expected string")
-							}
-							createM3U := false
+				// Extended format is supported for all source types, but create_m3u only for playlists
+				if nameVal, hasName := itemVal["name"]; hasName {
+					if urlVal, hasURL := itemVal["url"]; hasURL {
+						name, ok := nameVal.(string)
+						if !ok {
+							return nil, fmt.Errorf("invalid name type in source: expected string")
+						}
+						url, ok := urlVal.(string)
+						if !ok {
+							return nil, fmt.Errorf("invalid URL type in source: expected string")
+						}
+						createM3U := false
+						if allowM3U {
 							if m3uVal, hasM3U := itemVal["create_m3u"]; hasM3U {
 								if m3uBool, ok := m3uVal.(bool); ok {
 									createM3U = m3uBool
 								}
 							}
-							result = append(result, MusicSource{
-								Name:      name,
-								URL:       url,
-								CreateM3U: createM3U,
-							})
-							continue
 						}
+						result = append(result, MusicSource{
+							Name:      name,
+							URL:       url,
+							CreateM3U: createM3U,
+						})
+						continue
 					}
 				}
 				// Simple format: {name: url}
 				if len(itemVal) != 1 {
-					if allowM3U {
-						return nil, fmt.Errorf(
-							"invalid source format: dict with %d keys. Use extended format with 'name' and 'url' keys, or simple format with single key-value pair",
-							len(itemVal),
-						)
-					}
 					return nil, fmt.Errorf(
-						"invalid source format: dict with %d keys. Use simple format with single key-value pair",
+						"invalid source format: dict with %d keys. Use extended format with 'name' and 'url' keys, or simple format with single key-value pair",
 						len(itemVal),
 					)
 				}
