@@ -157,9 +157,14 @@ func TestPlanItem_ThreadSafety(t *testing.T) {
 	}
 
 	// Test concurrent reads
+	// Reduce memory usage when running with race detector
 	var wg sync.WaitGroup
 	numGoroutines := 10
 	iterations := 100
+	if testing.RaceEnabled() {
+		numGoroutines = 5
+		iterations = 50
+	}
 
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)

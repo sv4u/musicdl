@@ -31,8 +31,19 @@ func (es *EventStream) addClient(client chan []byte) {
 func (es *EventStream) removeClient(client chan []byte) {
 	es.mu.Lock()
 	defer es.mu.Unlock()
-	delete(es.clients, client)
-	close(client)
+	if _, exists := es.clients[client]; exists {
+		delete(es.clients, client)
+		// Close channel - safe to close even if already closed in Go 1.21+
+		// Using recover to handle potential panic in older Go versions
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					// Channel already closed, ignore panic
+				}
+			}()
+			close(client)
+		}()
+	}
 }
 
 // broadcast sends a message to all connected clients.

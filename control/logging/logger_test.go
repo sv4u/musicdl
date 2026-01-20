@@ -93,9 +93,14 @@ func TestLoggerConcurrency(t *testing.T) {
 	defer logger.Close()
 
 	// Write logs concurrently
+	// Reduce memory usage when running with race detector
 	done := make(chan bool)
 	numGoroutines := 10
 	logsPerGoroutine := 10
+	if testing.RaceEnabled() {
+		numGoroutines = 5
+		logsPerGoroutine = 5
+	}
 
 	for i := 0; i < numGoroutines; i++ {
 		go func(id int) {

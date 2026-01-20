@@ -176,7 +176,14 @@ func (m *Manager) StopService(ctx context.Context) error {
 		case <-time.After(5 * time.Second):
 			// Timeout, force kill
 			m.process.Process.Kill()
-			m.process.Wait()
+			// Wait for the goroutine to complete (it will send to done channel)
+			// Use a second timeout to prevent indefinite wait
+			select {
+			case <-done:
+				// Goroutine completed
+			case <-time.After(1 * time.Second):
+				// Second timeout - goroutine will eventually complete
+			}
 		}
 
 		m.process = nil

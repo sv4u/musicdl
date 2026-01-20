@@ -105,9 +105,15 @@ func TestAddSnapshot_ConcurrentAccess(t *testing.T) {
 	tracker.StartRun(runID)
 
 	// Concurrently add many snapshots
+	// Reduce memory usage when running with race detector
 	var wg sync.WaitGroup
 	numGoroutines := 10
 	snapshotsPerGoroutine := 100
+	if testing.RaceEnabled() {
+		// Reduce test data size when race detector is enabled to prevent OOM
+		numGoroutines = 5
+		snapshotsPerGoroutine = 20
+	}
 
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)

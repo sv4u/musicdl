@@ -532,6 +532,7 @@ func (e *Executor) WaitForShutdown(timeout time.Duration) bool {
 	// Wait for completion with timeout
 	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		// Re-check wg is still valid (could be set to nil by another goroutine)
 		e.executionWgMu.RLock()
 		wg := e.executionWg
@@ -540,13 +541,14 @@ func (e *Executor) WaitForShutdown(timeout time.Duration) bool {
 		if wg != nil {
 			wg.Wait()
 		}
-		close(done)
 	}()
 
 	select {
 	case <-done:
 		return true
 	case <-time.After(timeout):
+		// Timeout occurred - goroutine will continue but will exit when wg.Wait() completes
+		// This is acceptable as the goroutine will eventually clean up
 		return false
 	}
 }

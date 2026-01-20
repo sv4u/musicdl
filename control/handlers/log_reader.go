@@ -55,13 +55,32 @@ func (lr *LogReader) ReadLogs(level, searchQuery, startTimeStr, endTimeStr strin
 	}
 
 	// Read file from end (most recent first)
+	// For large files, we use a sliding window to avoid loading entire file into memory
 	entries := make([]LogEntry, 0)
 	scanner := bufio.NewScanner(file)
-	lines := make([]string, 0)
 	
-	// Read all lines into memory (for small to medium files)
+	// Use a ring buffer to store only the last N lines we need
+	// We'll read more than maxLines to account for filtering, but limit to prevent memory issues
+	readLimit := maxLines * 10 // Read up to 10x maxLines to account for filtering
+	if readLimit > 10000 {
+		readLimit = 10000 // Cap at 10k lines to prevent excessive memory usage
+	}
+	
+	lines := make([]string, 0, readLimit)
+	lineCount := 0
+	
+	// Read lines, keeping only the most recent ones
 	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
+		line := scanner.Text()
+		lineCount++
+		
+		// Use sliding window: keep only the last readLimit lines
+		if len(lines) >= readLimit {
+			// Remove oldest line (shift left)
+			copy(lines, lines[1:])
+			lines = lines[:readLimit-1]
+		}
+		lines = append(lines, line)
 	}
 	
 	if err := scanner.Err(); err != nil {
