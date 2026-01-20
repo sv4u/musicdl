@@ -417,8 +417,10 @@ func TestExecutor_WaitForShutdown_Timeout(t *testing.T) {
 	plan.AddItem(trackItem)
 
 	// Start execution in goroutine
+	done := make(chan bool)
 	go func() {
 		executor.Execute(context.Background(), plan, nil)
+		done <- true
 	}()
 
 	// Wait a bit for execution to start
@@ -428,6 +430,17 @@ func TestExecutor_WaitForShutdown_Timeout(t *testing.T) {
 	completed := executor.WaitForShutdown(100 * time.Millisecond)
 	if completed {
 		t.Error("Expected timeout when downloads take longer than timeout")
+	}
+
+	// Request shutdown to ensure goroutine completes
+	executor.RequestShutdown()
+	
+	// Wait for execution goroutine to finish (with timeout to prevent hanging)
+	select {
+	case <-done:
+		// Execution completed
+	case <-time.After(3 * time.Second):
+		t.Error("Execution goroutine did not complete within timeout")
 	}
 }
 
