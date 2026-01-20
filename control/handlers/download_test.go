@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -90,21 +91,21 @@ download:
 		t.Fatalf("Failed to create config: %v", err)
 	}
 
+	// NewHandlers should fail during initialization because config validation
+	// happens when loading the config in NewConfigManager
 	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
-	if err != nil {
-		t.Fatalf("Failed to create handlers: %v", err)
+	if err == nil {
+		t.Fatal("Expected NewHandlers to fail with invalid config, but it succeeded")
 	}
 
-	// Test DownloadStart with invalid config and short timeout context
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	req := httptest.NewRequest("POST", "/api/download/start", nil).WithContext(ctx)
-	w := httptest.NewRecorder()
-	handlers.DownloadStart(w, req)
+	// Verify the error message mentions missing credentials
+	if !strings.Contains(err.Error(), "client_id") || !strings.Contains(err.Error(), "client_secret") {
+		t.Errorf("Expected error about missing credentials, got: %v", err)
+	}
 
-	// Should fail with internal server error
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("DownloadStart() returned status %d, expected %d", w.Code, http.StatusInternalServerError)
+	// Handlers should be nil when creation fails
+	if handlers != nil {
+		t.Error("Expected handlers to be nil when creation fails")
 	}
 }
 
