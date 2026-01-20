@@ -121,7 +121,7 @@ func TestRateLimitTracker_GetInfo_ConcurrentExpired(t *testing.T) {
 	// Launch multiple concurrent GetInfo() calls
 	// Reduce memory usage when running with race detector
 	numGoroutines := 10
-	if testing.RaceEnabled() {
+	if isRaceDetectorEnabled() {
 		numGoroutines = 5
 	}
 	done := make(chan bool, numGoroutines)

@@ -3,6 +3,7 @@ package download
 import (
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -12,6 +13,20 @@ import (
 	"github.com/sv4u/musicdl/download/plan"
 	"github.com/sv4u/musicdl/download/spotify"
 )
+
+// isRaceDetectorEnabled checks if the race detector is enabled at runtime
+func isRaceDetectorEnabled() bool {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return false
+	}
+	for _, setting := range info.Settings {
+		if setting.Key == "-race" {
+			return true
+		}
+	}
+	return false
+}
 
 func TestNewDownloader(t *testing.T) {
 	cfg := &config.DownloadSettings{
@@ -207,7 +222,7 @@ func TestDownloader_FileExistsCached_ConcurrentAccess(t *testing.T) {
 	// Test concurrent access (should be safe due to RWMutex)
 	// Reduce memory usage when running with race detector
 	numGoroutines := 10
-	if testing.RaceEnabled() {
+	if isRaceDetectorEnabled() {
 		numGoroutines = 5
 	}
 	done := make(chan bool, numGoroutines)

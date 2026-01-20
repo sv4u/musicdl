@@ -1,10 +1,25 @@
 package plan
 
 import (
+	"runtime/debug"
 	"sync"
 	"testing"
 	"time"
 )
+
+// isRaceDetectorEnabled checks if the race detector is enabled at runtime
+func isRaceDetectorEnabled() bool {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return false
+	}
+	for _, setting := range info.Settings {
+		if setting.Key == "-race" {
+			return true
+		}
+	}
+	return false
+}
 
 func TestPlanItem_GetProgress(t *testing.T) {
 	item := &PlanItem{
@@ -161,7 +176,7 @@ func TestPlanItem_ThreadSafety(t *testing.T) {
 	var wg sync.WaitGroup
 	numGoroutines := 10
 	iterations := 100
-	if testing.RaceEnabled() {
+	if isRaceDetectorEnabled() {
 		numGoroutines = 5
 		iterations = 50
 	}

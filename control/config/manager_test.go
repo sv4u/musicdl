@@ -3,10 +3,25 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"testing"
 
 	"github.com/sv4u/musicdl/download/config"
 )
+
+// isRaceDetectorEnabled checks if the race detector is enabled at runtime
+func isRaceDetectorEnabled() bool {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return false
+	}
+	for _, setting := range info.Settings {
+		if setting.Key == "-race" {
+			return true
+		}
+	}
+	return false
+}
 
 func TestNewConfigManager(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -512,7 +527,7 @@ download:
 	// Concurrent access
 	// Reduce memory usage when running with race detector
 	numGoroutines := 10
-	if testing.RaceEnabled() {
+	if isRaceDetectorEnabled() {
 		numGoroutines = 5
 	}
 	done := make(chan bool, numGoroutines)

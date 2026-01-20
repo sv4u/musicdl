@@ -2,10 +2,25 @@ package history
 
 import (
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 	"testing"
 	"time"
 )
+
+// isRaceDetectorEnabled checks if the race detector is enabled at runtime
+func isRaceDetectorEnabled() bool {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return false
+	}
+	for _, setting := range info.Settings {
+		if setting.Key == "-race" {
+			return true
+		}
+	}
+	return false
+}
 
 // TestAddSnapshot_RaceCondition tests that AddSnapshot doesn't panic when StopRun is called concurrently.
 func TestAddSnapshot_RaceCondition(t *testing.T) {
@@ -26,7 +41,7 @@ func TestAddSnapshot_RaceCondition(t *testing.T) {
 
 	// Reduce iterations when running with race detector to prevent OOM
 	iterations := 1000
-	if testing.RaceEnabled() {
+	if isRaceDetectorEnabled() {
 		iterations = 100
 	}
 
@@ -115,7 +130,7 @@ func TestAddSnapshot_ConcurrentAccess(t *testing.T) {
 	var wg sync.WaitGroup
 	numGoroutines := 10
 	snapshotsPerGoroutine := 100
-	if testing.RaceEnabled() {
+	if isRaceDetectorEnabled() {
 		// Reduce test data size when race detector is enabled to prevent OOM
 		numGoroutines = 5
 		snapshotsPerGoroutine = 20

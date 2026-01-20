@@ -2,10 +2,25 @@ package spotify
 
 import (
 	"context"
+	"runtime/debug"
 	"sync"
 	"testing"
 	"time"
 )
+
+// isRaceDetectorEnabled checks if the race detector is enabled at runtime
+func isRaceDetectorEnabled() bool {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return false
+	}
+	for _, setting := range info.Settings {
+		if setting.Key == "-race" {
+			return true
+		}
+	}
+	return false
+}
 
 func TestRateLimiter_Disabled(t *testing.T) {
 	rl := NewRateLimiter(false, 10, 1.0)
@@ -104,7 +119,7 @@ func TestRateLimiter_Concurrent(t *testing.T) {
 	
 	// Reduce memory usage when running with race detector
 	numGoroutines := 20
-	if testing.RaceEnabled() {
+	if isRaceDetectorEnabled() {
 		numGoroutines = 10
 	}
 	errors := make(chan error, numGoroutines)

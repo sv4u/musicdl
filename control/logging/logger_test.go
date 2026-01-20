@@ -5,8 +5,23 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"testing"
 )
+
+// isRaceDetectorEnabled checks if the race detector is enabled at runtime
+func isRaceDetectorEnabled() bool {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return false
+	}
+	for _, setting := range info.Settings {
+		if setting.Key == "-race" {
+			return true
+		}
+	}
+	return false
+}
 
 func TestNewLogger(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -97,7 +112,7 @@ func TestLoggerConcurrency(t *testing.T) {
 	done := make(chan bool)
 	numGoroutines := 10
 	logsPerGoroutine := 10
-	if testing.RaceEnabled() {
+	if isRaceDetectorEnabled() {
 		numGoroutines = 5
 		logsPerGoroutine = 5
 	}
