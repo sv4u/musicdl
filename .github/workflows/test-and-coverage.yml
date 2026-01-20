@@ -63,8 +63,11 @@ jobs:
         continue-on-error: false
 
       - name: Run tests with race detector
-        run: go test ./... -race -timeout 15m -v
+        run: go test ./... -race -p 1 -timeout 15m -v
         continue-on-error: false
+        env:
+          GOMAXPROCS: 2
+          GORACE: "history_size=0"
 
       - name: Run integration tests
         continue-on-error: true
