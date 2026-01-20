@@ -3,6 +3,7 @@
 package metadata
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -52,7 +53,7 @@ func TestEmbedder_EmbedFLAC_Integration(t *testing.T) {
 	}
 
 	// Embed metadata
-	err = embedder.Embed(testFile, song, "")
+	err = embedder.Embed(context.Background(), testFile, song, "")
 	if err != nil {
 		t.Fatalf("Failed to embed metadata: %v", err)
 	}

@@ -134,7 +134,7 @@ func (d *Downloader) downloadSpotifyTrack(ctx context.Context, item *plan.PlanIt
 	if fileExists && d.config.Overwrite == config.OverwriteMetadata {
 		// File exists, update metadata only
 		log.Printf("INFO: metadata_update_start spotify_id=%s track=%s path=%s", track.ID, song.Title, outputPath)
-		if err := d.metadataEmbedder.Embed(outputPath, song, song.CoverURL); err != nil {
+		if err := d.metadataEmbedder.Embed(ctx, outputPath, song, song.CoverURL); err != nil {
 			log.Printf("ERROR: metadata_update_failed spotify_id=%s track=%s path=%s error=%v", track.ID, song.Title, outputPath, err)
 			return false, "", fmt.Errorf("failed to update metadata: %w", err)
 		}
@@ -159,7 +159,7 @@ func (d *Downloader) downloadSpotifyTrack(ctx context.Context, item *plan.PlanIt
 	}
 
 	// 5. Embed metadata
-	if err := d.metadataEmbedder.Embed(downloadedPath, song, song.CoverURL); err != nil {
+	if err := d.metadataEmbedder.Embed(ctx, downloadedPath, song, song.CoverURL); err != nil {
 		// Log warning but don't fail - file is downloaded
 		log.Printf("WARN: metadata_embed_failed spotify_id=%s track=%s path=%s error=%v", track.ID, song.Title, downloadedPath, err)
 	} else {
@@ -221,7 +221,7 @@ func (d *Downloader) downloadYouTubeTrack(ctx context.Context, item *plan.PlanIt
 	if fileExists && d.config.Overwrite == config.OverwriteMetadata {
 		// File exists, update metadata only
 		log.Printf("INFO: metadata_update_start youtube_id=%s track=%s path=%s", videoID, song.Title, outputPath)
-		if err := d.metadataEmbedder.Embed(outputPath, song, song.CoverURL); err != nil {
+		if err := d.metadataEmbedder.Embed(ctx, outputPath, song, song.CoverURL); err != nil {
 			log.Printf("ERROR: metadata_update_failed youtube_id=%s track=%s path=%s error=%v", videoID, song.Title, outputPath, err)
 			return false, "", fmt.Errorf("failed to update metadata: %w", err)
 		}
@@ -240,7 +240,7 @@ func (d *Downloader) downloadYouTubeTrack(ctx context.Context, item *plan.PlanIt
 	}
 
 	// 6. Embed metadata
-	if err := d.metadataEmbedder.Embed(downloadedPath, song, song.CoverURL); err != nil {
+	if err := d.metadataEmbedder.Embed(ctx, downloadedPath, song, song.CoverURL); err != nil {
 		// Log warning but don't fail - file is downloaded
 		log.Printf("WARN: metadata_embed_failed youtube_id=%s track=%s path=%s error=%v", videoID, song.Title, downloadedPath, err)
 	} else {

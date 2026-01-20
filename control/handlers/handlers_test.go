@@ -9,6 +9,19 @@ import (
 	"time"
 )
 
+// createValidTestConfig creates a valid test config file with required fields
+func createValidTestConfig(t *testing.T, configPath string) {
+	cfg := `version: "1.2"
+download:
+  client_id: "test_id"
+  client_secret: "test_secret"
+  threads: 4
+`
+	if err := os.WriteFile(configPath, []byte(cfg), 0644); err != nil {
+		t.Fatalf("Failed to create config file: %v", err)
+	}
+}
+
 func TestNewHandlers(t *testing.T) {
 	// Create temporary directories for testing
 	tmpDir := t.TempDir()
@@ -16,10 +29,8 @@ func TestNewHandlers(t *testing.T) {
 	planPath := filepath.Join(tmpDir, "plans")
 	logPath := filepath.Join(tmpDir, "logs", "musicdl.log")
 
-	// Create config file
-	if err := os.WriteFile(configPath, []byte("version: \"1.2\"\n"), 0644); err != nil {
-		t.Fatalf("Failed to create config file: %v", err)
-	}
+	// Create valid config file
+	createValidTestConfig(t, configPath)
 
 	// Test successful creation
 	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
@@ -44,7 +55,7 @@ func TestHealth(t *testing.T) {
 	planPath := filepath.Join(tmpDir, "plans")
 	logPath := filepath.Join(tmpDir, "logs", "musicdl.log")
 
-	os.WriteFile(configPath, []byte("version: \"1.2\"\n"), 0644)
+	createValidTestConfig(t, configPath)
 
 	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
@@ -72,7 +83,7 @@ func TestDashboard(t *testing.T) {
 	planPath := filepath.Join(tmpDir, "plans")
 	logPath := filepath.Join(tmpDir, "logs", "musicdl.log")
 
-	os.WriteFile(configPath, []byte("version: \"1.2\"\n"), 0644)
+	createValidTestConfig(t, configPath)
 
 	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {

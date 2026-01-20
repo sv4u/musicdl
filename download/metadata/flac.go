@@ -1,6 +1,7 @@
 package metadata
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -12,7 +13,7 @@ import (
 )
 
 // embedFLAC embeds metadata in FLAC file using mutagen subprocess.
-func (e *Embedder) embedFLAC(filePath string, song *Song, coverURL string) error {
+func (e *Embedder) embedFLAC(ctx context.Context, filePath string, song *Song, coverURL string) error {
 	// Use mutagen subprocess for FLAC metadata embedding
 	// Mutagen supports FLAC natively via Vorbis comments
 	
@@ -20,7 +21,7 @@ func (e *Embedder) embedFLAC(filePath string, song *Song, coverURL string) error
 	var coverPath string
 	if coverURL != "" {
 		var err error
-		coverPath, err = e.downloadCoverArt(coverURL)
+		coverPath, err = e.downloadCoverArt(ctx, coverURL)
 		if err != nil {
 			log.Printf("WARN: metadata_embed_cover_failed file=%s cover_url=%s error=%v", filePath, coverURL, err)
 			// Continue without cover art
@@ -35,11 +36,11 @@ func (e *Embedder) embedFLAC(filePath string, song *Song, coverURL string) error
 	// Use mutagen to set metadata
 	// mutagen-inspect can read, but we need to use Python script with mutagen library
 	// Create a temporary Python script to set metadata
-	return e.embedFLACWithMutagen(filePath, song, coverPath)
+	return e.embedFLACWithMutagen(ctx, filePath, song, coverPath)
 }
 
 // embedFLACWithMutagen embeds metadata in FLAC file using mutagen Python library via subprocess.
-func (e *Embedder) embedFLACWithMutagen(filePath string, song *Song, coverPath string) error {
+func (e *Embedder) embedFLACWithMutagen(ctx context.Context, filePath string, song *Song, coverPath string) error {
 	// Create temporary Python script
 	tmpDir := filepath.Dir(filePath)
 	tmpScript := filepath.Join(tmpDir, fmt.Sprintf(".flac_metadata_%d.py", time.Now().UnixNano()))
@@ -111,10 +112,17 @@ except Exception as e:
 		}
 	}
 	
-	// Execute Python script
-	cmd := exec.Command("python3", tmpScript)
+	// Execute Python script with context support
+	cmd := exec.CommandContext(ctx, "python3", tmpScript)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		// Check if context was cancelled
+		if ctx.Err() != nil {
+			return &MetadataError{
+				Message:  fmt.Sprintf("Context cancelled during FLAC metadata embedding: %v", ctx.Err()),
+				Original: ctx.Err(),
+			}
+		}
 		return &MetadataError{
 			Message:  fmt.Sprintf("Failed to embed FLAC metadata: %s", string(output)),
 			Original: err,
@@ -125,11 +133,15 @@ except Exception as e:
 }
 
 // downloadCoverArt downloads cover art from URL to a temporary file.
-func (e *Embedder) downloadCoverArt(coverURL string) (string, error) {
+func (e *Embedder) downloadCoverArt(ctx context.Context, coverURL string) (string, error) {
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
-	resp, err := client.Get(coverURL)
+	req, err := http.NewRequestWithContext(ctx, "GET", coverURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to download cover art: %w", err)
 	}

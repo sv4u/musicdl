@@ -50,8 +50,8 @@ proto-clean: ## Clean generated proto code
 	@rm -f download/proto/*.pb.go
 	@echo "✓ Proto code cleaned"
 
-test: ## Run all tests (excludes integration and e2e by default)
-	@$(GO) test ./... -v
+test: ## Run all unit tests (excludes integration and e2e by default)
+	@$(GO) test ./... -tags="!integration !e2e" -v
 
 test-unit: ## Run only unit tests (fast, no external dependencies)
 	@$(GO) test ./... -v -tags="!integration !e2e"
@@ -64,21 +64,21 @@ test-e2e: ## Run only end-to-end tests (requires full environment)
 	@echo "⚠ E2E tests require full environment setup"
 	@$(GO) test ./... -v -tags=e2e
 
-test-coverage: ## Run all tests with coverage report (terminal output)
-	@$(GO) test ./... -coverprofile=$(COV_OUT)
+test-coverage: ## Run unit tests with coverage report (terminal output)
+	@$(GO) test ./... -tags="!integration !e2e" -coverprofile=$(COV_OUT)
 	@$(GO) tool cover -func=$(COV_OUT)
 
-test-cov-html: ## Run tests and generate HTML coverage report
+test-cov-html: ## Run unit tests and generate HTML coverage report
 	@echo "Generating HTML coverage report..."
 	@mkdir -p $(COV_DIR)
-	@$(GO) test ./... -coverprofile=$(COV_OUT)
+	@$(GO) test ./... -tags="!integration !e2e" -coverprofile=$(COV_OUT)
 	@$(GO) tool cover -html=$(COV_OUT) -o $(COV_HTML)
 	@echo "✓ Coverage report generated in $(COV_HTML)"
 
-test-cov-xml: ## Run tests and generate XML coverage report (for CI)
+test-cov-xml: ## Run unit tests and generate XML coverage report (for CI)
 	@echo "Generating XML coverage report..."
 	@mkdir -p $(COV_DIR)
-	@$(GO) test ./... -coverprofile=$(COV_OUT)
+	@$(GO) test ./... -tags="!integration !e2e" -coverprofile=$(COV_OUT)
 	@if ! command -v gocov >/dev/null 2>&1; then \
 		echo "Installing gocov tools..."; \
 		$(GO) install github.com/axw/gocov/gocov@latest; \
@@ -87,9 +87,9 @@ test-cov-xml: ## Run tests and generate XML coverage report (for CI)
 	@gocov convert $(COV_OUT) | gocov-xml > $(COV_XML)
 	@echo "✓ Coverage report generated in $(COV_XML)"
 
-test-race: ## Run tests with race detector
-	@echo "Running tests with race detector..."
-	@$(GO) test ./... -race -v
+test-race: ## Run unit tests with race detector (excludes integration/e2e)
+	@echo "Running unit tests with race detector..."
+	@$(GO) test ./... -tags="!integration !e2e" -race -v
 
 test-verbose: ## Run tests with verbose output
 	@$(GO) test ./... -v

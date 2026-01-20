@@ -1,6 +1,7 @@
 package metadata
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -34,7 +35,7 @@ func TestEmbedder_Embed_UnsupportedFormat(t *testing.T) {
 	file.Close()
 
 	// Should not error on unsupported format (just returns nil)
-	err = embedder.Embed(testFile, song, "")
+	err = embedder.Embed(context.Background(), testFile, song, "")
 	if err != nil {
 		t.Errorf("Expected no error for unsupported format, got: %v", err)
 	}
@@ -47,7 +48,7 @@ func TestEmbedder_Embed_FileNotFound(t *testing.T) {
 		Artist: "Test Artist",
 	}
 
-	err := embedder.Embed("/nonexistent/file.mp3", song, "")
+	err := embedder.Embed(context.Background(), "/nonexistent/file.mp3", song, "")
 	if err == nil {
 		t.Error("Expected error for nonexistent file")
 	}
@@ -64,7 +65,7 @@ func TestEmbedder_EmbedFLAC_FileNotFound(t *testing.T) {
 		Artist: "Test Artist",
 	}
 
-	err := embedder.embedFLAC("/nonexistent/file.flac", song, "")
+	err := embedder.embedFLAC(context.Background(), "/nonexistent/file.flac", song, "")
 	if err == nil {
 		t.Error("Expected error for nonexistent file")
 	}
@@ -81,7 +82,7 @@ func TestEmbedder_EmbedVorbis_FileNotFound(t *testing.T) {
 		Artist: "Test Artist",
 	}
 
-	err := embedder.embedVorbis("/nonexistent/file.ogg", song, "")
+	err := embedder.embedVorbis(context.Background(), "/nonexistent/file.ogg", song, "")
 	if err == nil {
 		t.Error("Expected error for nonexistent file")
 	}
@@ -98,7 +99,7 @@ func TestEmbedder_EmbedM4A_FileNotFound(t *testing.T) {
 		Artist: "Test Artist",
 	}
 
-	err := embedder.embedM4A("/nonexistent/file.m4a", song, "")
+	err := embedder.embedM4A(context.Background(), "/nonexistent/file.m4a", song, "")
 	if err == nil {
 		t.Error("Expected error for nonexistent file")
 	}
@@ -112,7 +113,7 @@ func TestEmbedder_DownloadCoverArt(t *testing.T) {
 	embedder := NewEmbedder()
 	
 	// Test with invalid URL (should fail)
-	_, err := embedder.downloadCoverArt("http://invalid-url-that-does-not-exist.example.com/cover.jpg")
+	_, err := embedder.downloadCoverArt(context.Background(), "http://invalid-url-that-does-not-exist.example.com/cover.jpg")
 	if err == nil {
 		t.Error("Expected error for invalid URL")
 	}
@@ -136,7 +137,7 @@ func TestEmbedder_Embed_CoverURLFallback(t *testing.T) {
 	file.Close()
 
 	// Test Embed with empty coverURL parameter - should use song.CoverURL
-	err = embedder.Embed(testFile, song, "")
+	err = embedder.Embed(context.Background(), testFile, song, "")
 	if err != nil {
 		// Error is expected for unsupported format, but should not error on coverURL fallback
 		if err.Error() != "" && !strings.Contains(err.Error(), "unsupported") {
@@ -145,7 +146,7 @@ func TestEmbedder_Embed_CoverURLFallback(t *testing.T) {
 	}
 
 	// Test Embed with explicit coverURL parameter - should use parameter
-	err = embedder.Embed(testFile, song, "http://example.com/explicit-cover.jpg")
+	err = embedder.Embed(context.Background(), testFile, song, "http://example.com/explicit-cover.jpg")
 	if err != nil {
 		// Error is expected for unsupported format
 		if !strings.Contains(err.Error(), "unsupported") {
@@ -168,7 +169,7 @@ func TestEmbedder_Embed_EmptySong(t *testing.T) {
 	file.Close()
 
 	// Should not error on empty song (unsupported format returns nil)
-	err = embedder.Embed(testFile, song, "")
+	err = embedder.Embed(context.Background(), testFile, song, "")
 	if err != nil {
 		t.Errorf("Expected no error for empty song with unsupported format, got: %v", err)
 	}

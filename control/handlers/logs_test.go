@@ -32,7 +32,16 @@ func TestLogs(t *testing.T) {
 		t.Fatalf("Failed to create log file: %v", err)
 	}
 
-	os.WriteFile(configPath, []byte("version: \"1.2\"\n"), 0644)
+	// Create valid config file
+	cfg := `version: "1.2"
+download:
+  client_id: "test_id"
+  client_secret: "test_secret"
+  threads: 4
+`
+	if err := os.WriteFile(configPath, []byte(cfg), 0644); err != nil {
+		t.Fatalf("Failed to create config: %v", err)
+	}
 
 	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
@@ -102,7 +111,16 @@ func TestLogs_NonExistentFile(t *testing.T) {
 	planPath := filepath.Join(tmpDir, "plans")
 	logPath := filepath.Join(tmpDir, "logs", "nonexistent.log")
 
-	os.WriteFile(configPath, []byte("version: \"1.2\"\n"), 0644)
+	// Create valid config file
+	cfg := `version: "1.2"
+download:
+  client_id: "test_id"
+  client_secret: "test_secret"
+  threads: 4
+`
+	if err := os.WriteFile(configPath, []byte(cfg), 0644); err != nil {
+		t.Fatalf("Failed to create config: %v", err)
+	}
 
 	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {
@@ -141,7 +159,16 @@ func TestLogsPage(t *testing.T) {
 	planPath := filepath.Join(tmpDir, "plans")
 	logPath := filepath.Join(tmpDir, "logs", "musicdl.log")
 
-	os.WriteFile(configPath, []byte("version: \"1.2\"\n"), 0644)
+	// Create valid config file
+	cfg := `version: "1.2"
+download:
+  client_id: "test_id"
+  client_secret: "test_secret"
+  threads: 4
+`
+	if err := os.WriteFile(configPath, []byte(cfg), 0644); err != nil {
+		t.Fatalf("Failed to create config: %v", err)
+	}
 
 	handlers, err := NewHandlers(configPath, planPath, logPath, time.Now(), "v1.0.0")
 	if err != nil {

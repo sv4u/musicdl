@@ -1,6 +1,7 @@
 package metadata
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -11,7 +12,7 @@ import (
 
 // embedVorbis embeds metadata in OGG/Opus files using mutagen subprocess.
 // OGG/Opus use Vorbis comments similar to FLAC.
-func (e *Embedder) embedVorbis(filePath string, song *Song, coverURL string) error {
+func (e *Embedder) embedVorbis(ctx context.Context, filePath string, song *Song, coverURL string) error {
 	// Use mutagen subprocess for OGG/Opus metadata embedding
 	// Mutagen supports OGG/Opus natively via Vorbis comments
 	
@@ -19,7 +20,7 @@ func (e *Embedder) embedVorbis(filePath string, song *Song, coverURL string) err
 	var coverPath string
 	if coverURL != "" {
 		var err error
-		coverPath, err = e.downloadCoverArt(coverURL)
+		coverPath, err = e.downloadCoverArt(ctx, coverURL)
 		if err != nil {
 			log.Printf("WARN: metadata_embed_cover_failed file=%s cover_url=%s error=%v", filePath, coverURL, err)
 			// Continue without cover art
@@ -31,11 +32,11 @@ func (e *Embedder) embedVorbis(filePath string, song *Song, coverURL string) err
 		}()
 	}
 	
-	return e.embedVorbisWithMutagen(filePath, song, coverPath)
+	return e.embedVorbisWithMutagen(ctx, filePath, song, coverPath)
 }
 
 // embedVorbisWithMutagen embeds metadata in OGG/Opus file using mutagen Python library via subprocess.
-func (e *Embedder) embedVorbisWithMutagen(filePath string, song *Song, coverPath string) error {
+func (e *Embedder) embedVorbisWithMutagen(ctx context.Context, filePath string, song *Song, coverPath string) error {
 	// Create temporary Python script
 	tmpDir := filepath.Dir(filePath)
 	tmpScript := filepath.Join(tmpDir, fmt.Sprintf(".vorbis_metadata_%d.py", time.Now().UnixNano()))
@@ -113,10 +114,17 @@ except Exception as e:
 		}
 	}
 	
-	// Execute Python script
-	cmd := exec.Command("python3", tmpScript)
+	// Execute Python script with context support
+	cmd := exec.CommandContext(ctx, "python3", tmpScript)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		// Check if context was cancelled
+		if ctx.Err() != nil {
+			return &MetadataError{
+				Message:  fmt.Sprintf("Context cancelled during OGG/Opus metadata embedding: %v", ctx.Err()),
+				Original: ctx.Err(),
+			}
+		}
 		return &MetadataError{
 			Message:  fmt.Sprintf("Failed to embed OGG/Opus metadata: %s", string(output)),
 			Original: err,

@@ -106,13 +106,31 @@ func (m *Manager) StartService(ctx context.Context) error {
 
 	// Wait for gRPC server to be ready
 	if err := m.WaitForReady(ctx, 30*time.Second); err != nil {
-		m.processMu.Lock()
+		// Cancel monitor goroutine before cleanup
+		if m.monitorCancel != nil {
+			m.monitorCancel()
+		}
+		
+		// Clean up process
 		if m.process != nil {
 			m.process.Process.Kill()
 			m.process = nil
 		}
 		m.processState = ProcessStateError
-		m.processMu.Unlock()
+		
+		// Wait for monitor goroutine to exit (with timeout to prevent deadlock)
+		done := make(chan struct{})
+		go func() {
+			m.monitorWg.Wait()
+			close(done)
+		}()
+		select {
+		case <-done:
+			// Monitor goroutine exited
+		case <-time.After(500 * time.Millisecond):
+			// Timeout - continue anyway (goroutine will exit when context is canceled)
+		}
+		
 		return fmt.Errorf("service failed to become ready: %w", err)
 	}
 
@@ -247,8 +265,8 @@ func (m *Manager) WaitForReady(ctx context.Context, timeout time.Duration) error
 				return fmt.Errorf("timeout waiting for service to be ready")
 			}
 
-			// Check health
-			healthCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			// Check health (use parent context to respect cancellation)
+			healthCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 			resp, err := client.HealthCheck(healthCtx)
 			cancel()
 
@@ -258,9 +276,9 @@ func (m *Manager) WaitForReady(ctx context.Context, timeout time.Duration) error
 				}
 			}
 
-			// Retry connection if needed
+			// Retry connection if needed (use parent context to respect cancellation)
 			if !client.IsConnected() {
-				connectCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				connectCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 				client.Connect(connectCtx)
 				cancel()
 			}
@@ -332,7 +350,21 @@ func (m *Manager) Cleanup() error {
 	if m.process != nil {
 		// Process still exists, try to stop it
 		m.process.Process.Kill()
-		m.process.Wait()
+		
+		// Wait for process to exit with timeout to prevent hanging
+		done := make(chan error, 1)
+		go func() {
+			done <- m.process.Wait()
+		}()
+		
+		select {
+		case <-done:
+			// Process exited
+		case <-time.After(5 * time.Second):
+			// Timeout - process didn't exit, continue anyway
+			// The process has been killed, so it should eventually exit
+		}
+		
 		m.process = nil
 		m.processPID = 0
 		m.processState = ProcessStateStopped
