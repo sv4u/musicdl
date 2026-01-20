@@ -200,3 +200,53 @@ playlists: []
 		t.Error("Expected create_m3u to be true")
 	}
 }
+
+func TestLoadConfig_PlaylistsWithM3U(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	// Test extended playlist format with create_m3u
+	configYAML := `version: "1.2"
+download:
+  client_id: "test_id"
+  client_secret: "test_secret"
+playlists:
+  - name: "Playlist 1"
+    url: "https://open.spotify.com/playlist/1"
+    create_m3u: true
+  - name: "Playlist 2"
+    url: "https://open.spotify.com/playlist/2"
+songs: []
+artists: []
+albums: []
+`
+
+	if err := os.WriteFile(configPath, []byte(configYAML), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	config, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() failed: %v", err)
+	}
+
+	if len(config.Playlists) != 2 {
+		t.Fatalf("Expected 2 playlists, got %d", len(config.Playlists))
+	}
+
+	if !config.Playlists[0].CreateM3U {
+		t.Error("Expected first playlist create_m3u to be true")
+	}
+
+	if config.Playlists[1].CreateM3U {
+		t.Error("Expected second playlist create_m3u to be false")
+	}
+
+	if config.Playlists[0].Name != "Playlist 1" {
+		t.Errorf("Expected first playlist name 'Playlist 1', got '%s'", config.Playlists[0].Name)
+	}
+
+	if config.Playlists[1].Name != "Playlist 2" {
+		t.Errorf("Expected second playlist name 'Playlist 2', got '%s'", config.Playlists[1].Name)
+	}
+}

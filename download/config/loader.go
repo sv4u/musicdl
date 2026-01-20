@@ -73,8 +73,8 @@ func LoadConfig(path string) (*MusicDLConfig, error) {
 
 // convertSources converts songs/artists/playlists/albums from various formats to list format.
 func convertSources(raw map[string]interface{}) error {
-	// Convert songs, artists, playlists (same format)
-	for _, key := range []string{"songs", "artists", "playlists"} {
+	// Convert songs, artists (simple format, no create_m3u)
+	for _, key := range []string{"songs", "artists"} {
 		if sources, ok := raw[key]; ok {
 			converted, err := convertSourceList(sources, false)
 			if err != nil {
@@ -82,6 +82,15 @@ func convertSources(raw map[string]interface{}) error {
 			}
 			raw[key] = converted
 		}
+	}
+
+	// Convert playlists (supports create_m3u and extended format)
+	if playlists, ok := raw["playlists"]; ok {
+		converted, err := convertSourceList(playlists, true)
+		if err != nil {
+			return fmt.Errorf("error converting playlists: %w", err)
+		}
+		raw["playlists"] = converted
 	}
 
 	// Convert albums (supports create_m3u)
@@ -106,11 +115,50 @@ func convertSourceList(sources interface{}, allowM3U bool) ([]MusicSource, error
 
 	switch v := sources.(type) {
 	case []interface{}:
-		// Handle list format: [{name: url}, ...] or [url, ...]
+		// Handle list format: [{name: url}, ...] or [url, ...] or extended format
 		for _, item := range v {
 			switch itemVal := item.(type) {
 			case map[string]interface{}:
-				// Handle [{name: url}, ...]
+				// Check if extended format: {name: "...", url: "...", create_m3u: true/false}
+				if allowM3U {
+					if nameVal, hasName := itemVal["name"]; hasName {
+						if urlVal, hasURL := itemVal["url"]; hasURL {
+							name, ok := nameVal.(string)
+							if !ok {
+								return nil, fmt.Errorf("invalid name type in source: expected string")
+							}
+							url, ok := urlVal.(string)
+							if !ok {
+								return nil, fmt.Errorf("invalid URL type in source: expected string")
+							}
+							createM3U := false
+							if m3uVal, hasM3U := itemVal["create_m3u"]; hasM3U {
+								if m3uBool, ok := m3uVal.(bool); ok {
+									createM3U = m3uBool
+								}
+							}
+							result = append(result, MusicSource{
+								Name:      name,
+								URL:       url,
+								CreateM3U: createM3U,
+							})
+							continue
+						}
+					}
+				}
+				// Simple format: {name: url}
+				if len(itemVal) != 1 {
+					if allowM3U {
+						return nil, fmt.Errorf(
+							"invalid source format: dict with %d keys. Use extended format with 'name' and 'url' keys, or simple format with single key-value pair",
+							len(itemVal),
+						)
+					}
+					return nil, fmt.Errorf(
+						"invalid source format: dict with %d keys. Use simple format with single key-value pair",
+						len(itemVal),
+					)
+				}
 				for name, urlVal := range itemVal {
 					url, ok := urlVal.(string)
 					if !ok {
@@ -127,7 +175,7 @@ func convertSourceList(sources interface{}, allowM3U bool) ([]MusicSource, error
 				result = append(result, MusicSource{
 					Name:      itemVal,
 					URL:       itemVal,
-					CreateM3U:  false,
+					CreateM3U: false,
 				})
 			default:
 				return nil, fmt.Errorf("invalid source item type: expected map or string")
