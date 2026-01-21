@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // DownloadStart handles POST /api/download/start - Trigger download with config.
@@ -49,7 +50,14 @@ func (h *Handlers) DownloadStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Start download service process
-	if err := svcManager.StartService(ctx); err != nil {
+	// Use a background context with timeout for service startup, not the HTTP request context
+	// The HTTP request context can be canceled if the client disconnects, which would
+	// cause the service startup to fail. We use a separate context for the long-running
+	// service startup operation.
+	startCtx, startCancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer startCancel()
+	
+	if err := svcManager.StartService(startCtx); err != nil {
 		h.logError("DownloadStart", err)
 		response := map[string]interface{}{
 			"error":   "Failed to start download service",
