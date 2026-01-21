@@ -1,8 +1,10 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -88,6 +90,11 @@ func (m *Manager) StartService(ctx context.Context) error {
 	// Set environment variables
 	cmd.Env = os.Environ()
 
+	// Capture stdout and stderr to diagnose startup issues
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
 	// Start process
 	if err := cmd.Start(); err != nil {
 		m.processState = ProcessStateError
@@ -98,6 +105,12 @@ func (m *Manager) StartService(ctx context.Context) error {
 	m.processPID = cmd.Process.Pid
 	m.processState = ProcessStateStarting
 
+	// Check if process exited immediately (in a goroutine to avoid blocking)
+	processExited := make(chan error, 1)
+	go func() {
+		processExited <- cmd.Wait()
+	}()
+
 	// Start monitoring goroutine
 	monitorCtx, cancel := context.WithCancel(context.Background())
 	m.monitorCancel = cancel
@@ -105,17 +118,21 @@ func (m *Manager) StartService(ctx context.Context) error {
 	go m.monitorProcess(monitorCtx)
 
 	// Wait for gRPC server to be ready
-	if err := m.WaitForReady(ctx, 30*time.Second); err != nil {
+	readyErr := m.WaitForReady(ctx, 30*time.Second)
+	
+	// Check if process exited before becoming ready
+	select {
+	case exitErr := <-processExited:
+		// Process exited - capture output for diagnostics
+		stdoutStr := stdout.String()
+		stderrStr := stderr.String()
+		
 		// Cancel monitor goroutine before cleanup
 		if m.monitorCancel != nil {
 			m.monitorCancel()
 		}
 		
-		// Clean up process
-		if m.process != nil {
-			m.process.Process.Kill()
-			m.process = nil
-		}
+		m.process = nil
 		m.processState = ProcessStateError
 		
 		// Wait for monitor goroutine to exit (with timeout to prevent deadlock)
@@ -131,7 +148,55 @@ func (m *Manager) StartService(ctx context.Context) error {
 			// Timeout - continue anyway (goroutine will exit when context is canceled)
 		}
 		
-		return fmt.Errorf("service failed to become ready: %w", err)
+		// Log process output for debugging
+		if stdoutStr != "" {
+			log.Printf("download-service stdout: %s", stdoutStr)
+		}
+		if stderrStr != "" {
+			log.Printf("download-service stderr: %s", stderrStr)
+		}
+		
+		if exitErr != nil {
+			return fmt.Errorf("service process exited with error: %w (stdout: %s, stderr: %s)", exitErr, stdoutStr, stderrStr)
+		}
+		return fmt.Errorf("service process exited unexpectedly (stdout: %s, stderr: %s)", stdoutStr, stderrStr)
+	default:
+		// Process is still running
+		if readyErr != nil {
+			// Cancel monitor goroutine before cleanup
+			if m.monitorCancel != nil {
+				m.monitorCancel()
+			}
+			
+			// Clean up process
+			if m.process != nil {
+				m.process.Process.Kill()
+				m.process = nil
+			}
+			m.processState = ProcessStateError
+			
+			// Wait for monitor goroutine to exit (with timeout to prevent deadlock)
+			done := make(chan struct{})
+			go func() {
+				m.monitorWg.Wait()
+				close(done)
+			}()
+			select {
+			case <-done:
+				// Monitor goroutine exited
+			case <-time.After(500 * time.Millisecond):
+				// Timeout - continue anyway (goroutine will exit when context is canceled)
+			}
+			
+			// Capture any output that might have been written
+			stdoutStr := stdout.String()
+			stderrStr := stderr.String()
+			if stdoutStr != "" || stderrStr != "" {
+				log.Printf("download-service output (stdout: %s, stderr: %s)", stdoutStr, stderrStr)
+			}
+			
+			return fmt.Errorf("service failed to become ready: %w", readyErr)
+		}
 	}
 
 	m.processMu.Lock()
