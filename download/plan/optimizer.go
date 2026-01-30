@@ -52,7 +52,7 @@ func (o *Optimizer) removeDuplicates(plan *DownloadPlan) {
 				if parentItem.ItemType == PlanItemTypeTrack {
 					continue // Skip tracks, only check containers
 				}
-				
+
 				// Check if this parent references the duplicate item
 				hasDuplicate := false
 				hasExisting := false

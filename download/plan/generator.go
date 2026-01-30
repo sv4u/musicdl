@@ -34,13 +34,13 @@ type Generator struct {
 		Search(ctx context.Context, query, searchType string, opts *spotigo.SearchOptions) (*spotigo.SearchResponse, error)
 	}
 	// For playlist tracks, we need direct access to the spotigo client
-	playlistTracksFunc func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error)
-	audioProvider      YouTubeMetadataProvider
-	seenTrackIDs       map[string]bool
-	seenAlbumIDs       map[string]bool
-	seenPlaylistIDs    map[string]bool
-	seenArtistIDs      map[string]bool
-	seenYouTubeVideoIDs map[string]bool
+	playlistTracksFunc     func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error)
+	audioProvider          YouTubeMetadataProvider
+	seenTrackIDs           map[string]bool
+	seenAlbumIDs           map[string]bool
+	seenPlaylistIDs        map[string]bool
+	seenArtistIDs          map[string]bool
+	seenYouTubeVideoIDs    map[string]bool
 	seenYouTubePlaylistIDs map[string]bool
 }
 
@@ -60,10 +60,10 @@ type SpotifyClientInterface interface {
 // NewGenerator creates a new plan generator.
 func NewGenerator(cfg *config.MusicDLConfig, spotifyClient SpotifyClientInterface, playlistTracksFunc func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error), audioProvider YouTubeMetadataProvider) *Generator {
 	return &Generator{
-		config:                cfg,
-		spotifyClient:         spotifyClient,
-		playlistTracksFunc:    playlistTracksFunc,
-		audioProvider:         audioProvider,
+		config:                 cfg,
+		spotifyClient:          spotifyClient,
+		playlistTracksFunc:     playlistTracksFunc,
+		audioProvider:          audioProvider,
 		seenTrackIDs:           make(map[string]bool),
 		seenAlbumIDs:           make(map[string]bool),
 		seenPlaylistIDs:        make(map[string]bool),
@@ -263,7 +263,7 @@ func (g *Generator) processYouTubeVideo(ctx context.Context, plan *DownloadPlan,
 		Metadata: map[string]interface{}{
 			"source_name":      song.Name,
 			"source_url":       song.URL,
-			"youtube_metadata":  videoMetadata,
+			"youtube_metadata": videoMetadata,
 		},
 	}
 
@@ -1079,8 +1079,8 @@ func (g *Generator) processYouTubePlaylist(ctx context.Context, plan *DownloadPl
 		Name:       playlistName,
 		Status:     PlanItemStatusPending,
 		Metadata: map[string]interface{}{
-			"source_name":        playlist.Name,
-			"source_url":         playlist.URL,
+			"source_name":           playlist.Name,
+			"source_url":            playlist.URL,
 			"youtube_playlist_info": playlistInfo,
 		},
 	}
@@ -1268,10 +1268,10 @@ func (g *Generator) processAlbum(ctx context.Context, plan *DownloadPlan, album 
 	// Process album tracks
 	// Create a simplified album for processAlbumTracks
 	simplifiedAlbum := spotigo.SimplifiedAlbum{
-		ID:          albumID,
-		Name:        albumName,
-		AlbumType:   albumData.AlbumType,
-		ReleaseDate: albumData.ReleaseDate,
+		ID:           albumID,
+		Name:         albumName,
+		AlbumType:    albumData.AlbumType,
+		ReleaseDate:  albumData.ReleaseDate,
 		ExternalURLs: albumData.ExternalURLs,
 	}
 

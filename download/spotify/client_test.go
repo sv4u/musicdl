@@ -32,12 +32,11 @@ func TestSpotifyClient_GetRateLimitInfo(t *testing.T) {
 	defer client.Close()
 
 	// Initially, no rate limit should return nil (this is expected)
-	info := client.GetRateLimitInfo()
-	// nil is valid when there's no active rate limit
+	_ = client.GetRateLimitInfo()
 
 	// Simulate a rate limit by updating the tracker directly
 	client.rateLimitTracker.Update(10)
-	info = client.GetRateLimitInfo()
+	info := client.GetRateLimitInfo()
 	if info == nil {
 		t.Error("GetRateLimitInfo() should return info when rate limit is active")
 	}
@@ -92,8 +91,8 @@ func TestSpotifyClient_GetCacheStats(t *testing.T) {
 
 func TestSpotifyClient_Close(t *testing.T) {
 	config := &Config{
-		ClientID:            "test_id",
-		ClientSecret:        "test_secret",
+		ClientID:             "test_id",
+		ClientSecret:         "test_secret",
 		CacheCleanupInterval: 1 * time.Second,
 	}
 	client, err := NewSpotifyClient(config)
@@ -237,9 +236,9 @@ func TestSpotifyClient_ExtractRetryAfter_WithRetryAfter(t *testing.T) {
 	defer client.Close()
 
 	mockErr := &mockHTTPError{
-		statusCode:  http.StatusTooManyRequests,
-		retryAfter:  5,
-		message:     "429 Too Many Requests",
+		statusCode: http.StatusTooManyRequests,
+		retryAfter: 5,
+		message:    "429 Too Many Requests",
 	}
 
 	retryAfter := client.extractRetryAfter(mockErr)

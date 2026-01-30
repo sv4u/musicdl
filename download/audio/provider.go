@@ -44,13 +44,13 @@ type Config struct {
 
 // Provider represents an audio provider that uses yt-dlp.
 type Provider struct {
-	config            *Config
-	searchCache       *spotify.TTLCache
-	rateLimiters      map[string]*spotify.RateLimiter
+	config             *Config
+	searchCache        *spotify.TTLCache
+	rateLimiters       map[string]*spotify.RateLimiter
 	generalRateLimiter interface {
 		WaitForRequest(ctx context.Context) error
 	}
-	tempDir           string
+	tempDir string
 }
 
 // NewProvider creates a new audio provider.
@@ -60,7 +60,7 @@ func NewProvider(config *Config) (*Provider, error) {
 
 	// Create per-provider rate limiters
 	rateLimiters := make(map[string]*spotify.RateLimiter)
-	
+
 	if config.YouTubeRateLimitEnabled {
 		rateLimiters["youtube"] = spotify.NewRateLimiter(
 			config.YouTubeRateLimitEnabled,
@@ -92,11 +92,11 @@ func NewProvider(config *Config) (*Provider, error) {
 	}
 
 	return &Provider{
-		config:            config,
-		searchCache:       searchCache,
-		rateLimiters:      rateLimiters,
+		config:             config,
+		searchCache:        searchCache,
+		rateLimiters:       rateLimiters,
 		generalRateLimiter: config.GeneralRateLimiter,
-		tempDir:           tempDir,
+		tempDir:            tempDir,
 	}, nil
 }
 

@@ -1,6 +1,7 @@
 package metadata
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -11,7 +12,15 @@ import (
 )
 
 // embedMP3 embeds metadata in MP3 file.
-func (e *Embedder) embedMP3(filePath string, song *Song, coverURL string) error {
+func (e *Embedder) embedMP3(ctx context.Context, filePath string, song *Song, coverURL string) error {
+	// Check context cancellation
+	if err := ctx.Err(); err != nil {
+		return &MetadataError{
+			Message:  fmt.Sprintf("Context cancelled: %v", err),
+			Original: err,
+		}
+	}
+
 	// Open or create ID3 tag
 	tag, err := id3v2.Open(filePath, id3v2.Options{Parse: true})
 	if err != nil {
@@ -24,7 +33,7 @@ func (e *Embedder) embedMP3(filePath string, song *Song, coverURL string) error 
 			}
 		}
 	}
-	defer tag.Close()
+	defer func() { _ = tag.Close() }()
 
 	// Set encoding to UTF-8
 	tag.SetDefaultEncoding(id3v2.EncodingUTF8)
@@ -67,7 +76,7 @@ func (e *Embedder) embedMP3(filePath string, song *Song, coverURL string) error 
 
 	// Cover art
 	if coverURL != "" {
-		if err := e.embedCoverMP3(tag, coverURL); err != nil {
+		if err := e.embedCoverMP3(ctx, tag, coverURL); err != nil {
 			log.Printf("WARN: cover_art_download_failed file=%s cover_url=%s error=%v", filePath, coverURL, err)
 		}
 	}
@@ -85,16 +94,20 @@ func (e *Embedder) embedMP3(filePath string, song *Song, coverURL string) error 
 }
 
 // embedCoverMP3 embeds cover art in MP3 file.
-func (e *Embedder) embedCoverMP3(tag *id3v2.Tag, coverURL string) error {
+func (e *Embedder) embedCoverMP3(ctx context.Context, tag *id3v2.Tag, coverURL string) error {
 	// Download cover art
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
-	resp, err := client.Get(coverURL)
+	req, err := http.NewRequestWithContext(ctx, "GET", coverURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to download cover art: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to download cover art: status %d", resp.StatusCode)

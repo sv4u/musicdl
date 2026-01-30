@@ -17,9 +17,9 @@ type Config struct {
 	ClientSecret string
 
 	// Cache configuration
-	CacheMaxSize          int
-	CacheTTL              int
-	CacheCleanupInterval  time.Duration // 0 = disabled
+	CacheMaxSize         int
+	CacheTTL             int
+	CacheCleanupInterval time.Duration // 0 = disabled
 
 	// Rate limiting configuration
 	RateLimitEnabled  bool
@@ -42,14 +42,14 @@ type Config struct {
 // - Response caching
 // - Rate limit state tracking
 type SpotifyClient struct {
-	client            *spotigo.Client
-	cache             *TTLCache
-	rateLimiter       *RateLimiter
-	rateLimitTracker  *RateLimitTracker
+	client             *spotigo.Client
+	cache              *TTLCache
+	rateLimiter        *RateLimiter
+	rateLimitTracker   *RateLimitTracker
 	generalRateLimiter interface {
 		WaitForRequest(ctx context.Context) error
 	}
-	config            *Config
+	config *Config
 }
 
 // NewSpotifyClient creates a new Spotify client wrapper.
@@ -81,12 +81,12 @@ func NewSpotifyClient(config *Config) (*SpotifyClient, error) {
 	tracker := NewRateLimitTracker()
 
 	return &SpotifyClient{
-		client:            spotigoClient,
-		cache:             cache,
-		rateLimiter:       rateLimiter,
-		rateLimitTracker:  tracker,
+		client:             spotigoClient,
+		cache:              cache,
+		rateLimiter:        rateLimiter,
+		rateLimitTracker:   tracker,
 		generalRateLimiter: config.GeneralRateLimiter,
-		config:            config,
+		config:             config,
 	}, nil
 }
 

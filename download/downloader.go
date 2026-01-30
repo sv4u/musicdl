@@ -20,21 +20,21 @@ import (
 
 // Downloader downloads tracks using Spotify, audio provider, and metadata embedder.
 type Downloader struct {
-	config         *config.DownloadSettings
-	spotifyClient  *spotify.SpotifyClient
-	audioProvider  *audio.Provider
-	metadataEmbedder *metadata.Embedder
+	config             *config.DownloadSettings
+	spotifyClient      *spotify.SpotifyClient
+	audioProvider      *audio.Provider
+	metadataEmbedder   *metadata.Embedder
 	fileExistenceCache map[string]bool
-	cacheMu        sync.RWMutex
+	cacheMu            sync.RWMutex
 }
 
 // NewDownloader creates a new downloader.
 func NewDownloader(cfg *config.DownloadSettings, spotifyClient *spotify.SpotifyClient, audioProvider *audio.Provider, metadataEmbedder *metadata.Embedder) *Downloader {
 	return &Downloader{
-		config:            cfg,
-		spotifyClient:     spotifyClient,
-		audioProvider:     audioProvider,
-		metadataEmbedder:  metadataEmbedder,
+		config:             cfg,
+		spotifyClient:      spotifyClient,
+		audioProvider:      audioProvider,
+		metadataEmbedder:   metadataEmbedder,
 		fileExistenceCache: make(map[string]bool),
 	}
 }
@@ -134,7 +134,7 @@ func (d *Downloader) downloadSpotifyTrack(ctx context.Context, item *plan.PlanIt
 	if fileExists && d.config.Overwrite == config.OverwriteMetadata {
 		// File exists, update metadata only
 		log.Printf("INFO: metadata_update_start spotify_id=%s track=%s path=%s", track.ID, song.Title, outputPath)
-		if err := d.metadataEmbedder.Embed(outputPath, song, song.CoverURL); err != nil {
+		if err := d.metadataEmbedder.Embed(ctx, outputPath, song, song.CoverURL); err != nil {
 			log.Printf("ERROR: metadata_update_failed spotify_id=%s track=%s path=%s error=%v", track.ID, song.Title, outputPath, err)
 			return false, "", fmt.Errorf("failed to update metadata: %w", err)
 		}
@@ -159,7 +159,7 @@ func (d *Downloader) downloadSpotifyTrack(ctx context.Context, item *plan.PlanIt
 	}
 
 	// 5. Embed metadata
-	if err := d.metadataEmbedder.Embed(downloadedPath, song, song.CoverURL); err != nil {
+	if err := d.metadataEmbedder.Embed(ctx, downloadedPath, song, song.CoverURL); err != nil {
 		// Log warning but don't fail - file is downloaded
 		log.Printf("WARN: metadata_embed_failed spotify_id=%s track=%s path=%s error=%v", track.ID, song.Title, downloadedPath, err)
 	} else {
@@ -221,7 +221,7 @@ func (d *Downloader) downloadYouTubeTrack(ctx context.Context, item *plan.PlanIt
 	if fileExists && d.config.Overwrite == config.OverwriteMetadata {
 		// File exists, update metadata only
 		log.Printf("INFO: metadata_update_start youtube_id=%s track=%s path=%s", videoID, song.Title, outputPath)
-		if err := d.metadataEmbedder.Embed(outputPath, song, song.CoverURL); err != nil {
+		if err := d.metadataEmbedder.Embed(ctx, outputPath, song, song.CoverURL); err != nil {
 			log.Printf("ERROR: metadata_update_failed youtube_id=%s track=%s path=%s error=%v", videoID, song.Title, outputPath, err)
 			return false, "", fmt.Errorf("failed to update metadata: %w", err)
 		}
@@ -240,7 +240,7 @@ func (d *Downloader) downloadYouTubeTrack(ctx context.Context, item *plan.PlanIt
 	}
 
 	// 6. Embed metadata
-	if err := d.metadataEmbedder.Embed(downloadedPath, song, song.CoverURL); err != nil {
+	if err := d.metadataEmbedder.Embed(ctx, downloadedPath, song, song.CoverURL); err != nil {
 		// Log warning but don't fail - file is downloaded
 		log.Printf("WARN: metadata_embed_failed youtube_id=%s track=%s path=%s error=%v", videoID, song.Title, downloadedPath, err)
 	} else {
@@ -361,7 +361,7 @@ func extractYouTubeMetadata(item *plan.PlanItem) (*audio.YouTubeVideoMetadata, e
 	case map[string]interface{}:
 		// Convert map to structured type
 		meta := &audio.YouTubeVideoMetadata{}
-		
+
 		if id, ok := v["video_id"].(string); ok {
 			meta.VideoID = id
 		}
@@ -407,7 +407,7 @@ func extractYouTubeMetadata(item *plan.PlanItem) (*audio.YouTubeVideoMetadata, e
 				}
 			}
 		}
-		
+
 		return meta, nil
 	default:
 		return nil, fmt.Errorf("youtube_metadata has unexpected type: %T", v)
@@ -657,15 +657,15 @@ func (d *Downloader) invalidateFileCache(filePath string) {
 func (d *Downloader) GetFileExistenceCacheStats() map[string]interface{} {
 	d.cacheMu.RLock()
 	defer d.cacheMu.RUnlock()
-	
+
 	size := len(d.fileExistenceCache)
 	maxSize := d.config.FileExistenceCacheMaxSize
 	if maxSize == 0 {
 		maxSize = 10000 // Default
 	}
-	
+
 	return map[string]interface{}{
-		"size":    size,
+		"size":     size,
 		"max_size": maxSize,
 	}
 }

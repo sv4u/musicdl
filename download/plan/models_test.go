@@ -157,27 +157,27 @@ func TestDownloadPlan_GetExecutionStatistics_EmptyPlan(t *testing.T) {
 func TestDownloadPlan_GetExecutionStatistics_OnlyTracks(t *testing.T) {
 	plan := NewDownloadPlan(nil)
 	plan.AddItem(&PlanItem{
-		ItemID:   "track:1",
-		ItemType: PlanItemTypeTrack,
-		Status:   PlanItemStatusPending,
+		ItemID:    "track:1",
+		ItemType:  PlanItemTypeTrack,
+		Status:    PlanItemStatusPending,
 		CreatedAt: time.Now(),
 	})
 	plan.AddItem(&PlanItem{
-		ItemID:   "track:2",
-		ItemType: PlanItemTypeTrack,
-		Status:   PlanItemStatusCompleted,
+		ItemID:    "track:2",
+		ItemType:  PlanItemTypeTrack,
+		Status:    PlanItemStatusCompleted,
 		CreatedAt: time.Now(),
 	})
 	plan.AddItem(&PlanItem{
-		ItemID:   "track:3",
-		ItemType: PlanItemTypeTrack,
-		Status:   PlanItemStatusFailed,
+		ItemID:    "track:3",
+		ItemType:  PlanItemTypeTrack,
+		Status:    PlanItemStatusFailed,
 		CreatedAt: time.Now(),
 	})
 	plan.AddItem(&PlanItem{
-		ItemID:   "track:4",
-		ItemType: PlanItemTypeTrack,
-		Status:   PlanItemStatusInProgress,
+		ItemID:    "track:4",
+		ItemType:  PlanItemTypeTrack,
+		Status:    PlanItemStatusInProgress,
 		CreatedAt: time.Now(),
 	})
 
@@ -203,21 +203,21 @@ func TestDownloadPlan_GetExecutionStatistics_OnlyTracks(t *testing.T) {
 func TestDownloadPlan_GetExecutionStatistics_ExcludesSkipped(t *testing.T) {
 	plan := NewDownloadPlan(nil)
 	plan.AddItem(&PlanItem{
-		ItemID:   "track:1",
-		ItemType: PlanItemTypeTrack,
-		Status:   PlanItemStatusPending,
+		ItemID:    "track:1",
+		ItemType:  PlanItemTypeTrack,
+		Status:    PlanItemStatusPending,
 		CreatedAt: time.Now(),
 	})
 	plan.AddItem(&PlanItem{
-		ItemID:   "track:2",
-		ItemType: PlanItemTypeTrack,
-		Status:   PlanItemStatusSkipped,
+		ItemID:    "track:2",
+		ItemType:  PlanItemTypeTrack,
+		Status:    PlanItemStatusSkipped,
 		CreatedAt: time.Now(),
 	})
 	plan.AddItem(&PlanItem{
-		ItemID:   "track:3",
-		ItemType: PlanItemTypeTrack,
-		Status:   PlanItemStatusCompleted,
+		ItemID:    "track:3",
+		ItemType:  PlanItemTypeTrack,
+		Status:    PlanItemStatusCompleted,
 		CreatedAt: time.Now(),
 	})
 
@@ -238,27 +238,27 @@ func TestDownloadPlan_GetExecutionStatistics_ExcludesSkipped(t *testing.T) {
 func TestDownloadPlan_GetExecutionStatistics_ExcludesNonTracks(t *testing.T) {
 	plan := NewDownloadPlan(nil)
 	plan.AddItem(&PlanItem{
-		ItemID:   "track:1",
-		ItemType: PlanItemTypeTrack,
-		Status:   PlanItemStatusPending,
+		ItemID:    "track:1",
+		ItemType:  PlanItemTypeTrack,
+		Status:    PlanItemStatusPending,
 		CreatedAt: time.Now(),
 	})
 	plan.AddItem(&PlanItem{
-		ItemID:   "album:1",
-		ItemType: PlanItemTypeAlbum,
-		Status:   PlanItemStatusCompleted,
+		ItemID:    "album:1",
+		ItemType:  PlanItemTypeAlbum,
+		Status:    PlanItemStatusCompleted,
 		CreatedAt: time.Now(),
 	})
 	plan.AddItem(&PlanItem{
-		ItemID:   "playlist:1",
-		ItemType: PlanItemTypePlaylist,
-		Status:   PlanItemStatusInProgress,
+		ItemID:    "playlist:1",
+		ItemType:  PlanItemTypePlaylist,
+		Status:    PlanItemStatusInProgress,
 		CreatedAt: time.Now(),
 	})
 	plan.AddItem(&PlanItem{
-		ItemID:   "m3u:1",
-		ItemType: PlanItemTypeM3U,
-		Status:   PlanItemStatusCompleted,
+		ItemID:    "m3u:1",
+		ItemType:  PlanItemTypeM3U,
+		Status:    PlanItemStatusCompleted,
 		CreatedAt: time.Now(),
 	})
 
@@ -280,64 +280,64 @@ func TestDownloadPlan_GetExecutionStatistics_MixedScenario(t *testing.T) {
 	plan := NewDownloadPlan(nil)
 	// Add various track items with different statuses
 	plan.AddItem(&PlanItem{
-		ItemID:   "track:1",
-		ItemType: PlanItemTypeTrack,
-		Status:   PlanItemStatusPending,
+		ItemID:    "track:1",
+		ItemType:  PlanItemTypeTrack,
+		Status:    PlanItemStatusPending,
 		CreatedAt: time.Now(),
 	})
 	plan.AddItem(&PlanItem{
-		ItemID:   "track:2",
-		ItemType: PlanItemTypeTrack,
-		Status:   PlanItemStatusPending,
+		ItemID:    "track:2",
+		ItemType:  PlanItemTypeTrack,
+		Status:    PlanItemStatusPending,
 		CreatedAt: time.Now(),
 	})
 	plan.AddItem(&PlanItem{
-		ItemID:   "track:3",
-		ItemType: PlanItemTypeTrack,
-		Status:   PlanItemStatusCompleted,
+		ItemID:    "track:3",
+		ItemType:  PlanItemTypeTrack,
+		Status:    PlanItemStatusCompleted,
 		CreatedAt: time.Now(),
 	})
 	plan.AddItem(&PlanItem{
-		ItemID:   "track:4",
-		ItemType: PlanItemTypeTrack,
-		Status:   PlanItemStatusCompleted,
+		ItemID:    "track:4",
+		ItemType:  PlanItemTypeTrack,
+		Status:    PlanItemStatusCompleted,
 		CreatedAt: time.Now(),
 	})
 	plan.AddItem(&PlanItem{
-		ItemID:   "track:5",
-		ItemType: PlanItemTypeTrack,
-		Status:   PlanItemStatusCompleted,
+		ItemID:    "track:5",
+		ItemType:  PlanItemTypeTrack,
+		Status:    PlanItemStatusCompleted,
 		CreatedAt: time.Now(),
 	})
 	plan.AddItem(&PlanItem{
-		ItemID:   "track:6",
-		ItemType: PlanItemTypeTrack,
-		Status:   PlanItemStatusFailed,
+		ItemID:    "track:6",
+		ItemType:  PlanItemTypeTrack,
+		Status:    PlanItemStatusFailed,
 		CreatedAt: time.Now(),
 	})
 	plan.AddItem(&PlanItem{
-		ItemID:   "track:7",
-		ItemType: PlanItemTypeTrack,
-		Status:   PlanItemStatusInProgress,
+		ItemID:    "track:7",
+		ItemType:  PlanItemTypeTrack,
+		Status:    PlanItemStatusInProgress,
 		CreatedAt: time.Now(),
 	})
 	plan.AddItem(&PlanItem{
-		ItemID:   "track:8",
-		ItemType: PlanItemTypeTrack,
-		Status:   PlanItemStatusSkipped,
+		ItemID:    "track:8",
+		ItemType:  PlanItemTypeTrack,
+		Status:    PlanItemStatusSkipped,
 		CreatedAt: time.Now(),
 	})
 	// Add non-track items (should be ignored)
 	plan.AddItem(&PlanItem{
-		ItemID:   "album:1",
-		ItemType: PlanItemTypeAlbum,
-		Status:   PlanItemStatusCompleted,
+		ItemID:    "album:1",
+		ItemType:  PlanItemTypeAlbum,
+		Status:    PlanItemStatusCompleted,
 		CreatedAt: time.Now(),
 	})
 	plan.AddItem(&PlanItem{
-		ItemID:   "m3u:1",
-		ItemType: PlanItemTypeM3U,
-		Status:   PlanItemStatusCompleted,
+		ItemID:    "m3u:1",
+		ItemType:  PlanItemTypeM3U,
+		Status:    PlanItemStatusCompleted,
 		CreatedAt: time.Now(),
 	})
 
@@ -366,10 +366,10 @@ func TestDownloadPlan_SaveLoad(t *testing.T) {
 		"config_version": "1.0",
 	})
 	item := &PlanItem{
-		ItemID:   "test:1",
-		ItemType: PlanItemTypeTrack,
-		Name:     "Test Track",
-		Status:   PlanItemStatusPending,
+		ItemID:    "test:1",
+		ItemType:  PlanItemTypeTrack,
+		Name:      "Test Track",
+		Status:    PlanItemStatusPending,
 		CreatedAt: time.Now(),
 	}
 	plan.AddItem(item)

@@ -14,9 +14,10 @@ jobs:
   test-and-coverage:
     name: Run Tests and Generate Coverage
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # This job runs:
-    # 1. Unit tests (all packages, no build tags)
-    # 2. Race detector tests (to catch concurrency issues)
+    # 1. Unit tests (excludes integration/e2e via build tags)
+    # 2. Race detector tests on unit tests only (excludes integration/e2e)
     # 3. Integration tests (with -tags=integration, requires yt-dlp)
     # 4. Coverage reports (merged from unit + integration tests)
     steps:
@@ -43,12 +44,15 @@ jobs:
           sudo pip3 install yt-dlp || sudo pip install yt-dlp || echo "Warning: yt-dlp installation failed, integration tests will be skipped"
 
       - name: Run unit tests
-        run: go test ./... -v
+        run: go test ./... -tags="!integration !e2e" -timeout 10m -v
         continue-on-error: false
 
-      - name: Run tests with race detector
-        run: go test ./... -race -v
+      - name: Run tests with race detector (unit tests only)
+        run: go test ./... -tags="!integration !e2e" -race -p 1 -timeout 15m -v
         continue-on-error: false
+        env:
+          GOMAXPROCS: 1
+          GORACE: "history_size=0"
 
       - name: Run integration tests
         continue-on-error: true
@@ -62,7 +66,7 @@ jobs:
 
       - name: Generate coverage profile (unit tests)
         run: |
-          go test ./... -coverprofile=coverage-unit.out
+          go test ./... -tags="!integration !e2e" -timeout 10m -coverprofile=coverage-unit.out
           if [ ! -f coverage-unit.out ]; then
             echo "Warning: coverage-unit.out was not created, creating empty file"
             touch coverage-unit.out

@@ -24,13 +24,13 @@ func TestPlanWorkflow_GenerateOptimizeExecute_SingleSong(t *testing.T) {
 
 	mockClient := newMockSpotifyClient()
 	mockClient.tracks["track123"] = createMockTrack("track123", "Test Song", "Test Artist")
-	
+
 	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
 		return nil, nil
 	}
 
 	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
-	
+
 	// Step 1: Generate plan
 	plan, err := generator.GeneratePlan(context.Background())
 	if err != nil {
@@ -104,13 +104,13 @@ func TestPlanWorkflow_GenerateOptimizeExecute_WithDuplicates(t *testing.T) {
 
 	mockClient := newMockSpotifyClient()
 	mockClient.tracks["track123"] = createMockTrack("track123", "Test Song", "Test Artist")
-	
+
 	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
 		return nil, nil
 	}
 
 	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
-	
+
 	// Step 1: Generate plan
 	plan, err := generator.GeneratePlan(context.Background())
 	if err != nil {
@@ -187,7 +187,7 @@ func TestPlanWorkflow_GenerateOptimizeExecute_WithArtist(t *testing.T) {
 	}
 
 	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
-	
+
 	// Step 1: Generate plan
 	plan, err := generator.GeneratePlan(context.Background())
 	if err != nil {

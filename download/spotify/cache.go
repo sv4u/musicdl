@@ -27,25 +27,25 @@ type cacheEntry struct {
 
 // TTLCache is a thread-safe TTL cache with LRU eviction.
 type TTLCache struct {
-	mu         sync.RWMutex
-	cache      map[string]*cacheEntry
-	lruList    *list.List // Doubly-linked list for LRU
-	maxSize    int
-	ttlSeconds int
-	hits       int64
-	misses     int64
-	evictions  int64
-	stopCleanup chan struct{}
+	mu             sync.RWMutex
+	cache          map[string]*cacheEntry
+	lruList        *list.List // Doubly-linked list for LRU
+	maxSize        int
+	ttlSeconds     int
+	hits           int64
+	misses         int64
+	evictions      int64
+	stopCleanup    chan struct{}
 	cleanupRunning bool
 }
 
 // NewTTLCache creates a new TTL cache.
 func NewTTLCache(maxSize, ttlSeconds int) *TTLCache {
 	return &TTLCache{
-		cache:      make(map[string]*cacheEntry),
-		lruList:    list.New(),
-		maxSize:    maxSize,
-		ttlSeconds: ttlSeconds,
+		cache:       make(map[string]*cacheEntry),
+		lruList:     list.New(),
+		maxSize:     maxSize,
+		ttlSeconds:  ttlSeconds,
 		stopCleanup: make(chan struct{}),
 	}
 }

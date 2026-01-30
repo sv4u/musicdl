@@ -1,6 +1,7 @@
 package metadata
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -10,36 +11,36 @@ import (
 )
 
 // embedM4A embeds metadata in M4A file using mutagen subprocess.
-func (e *Embedder) embedM4A(filePath string, song *Song, coverURL string) error {
+func (e *Embedder) embedM4A(ctx context.Context, filePath string, song *Song, coverURL string) error {
 	// Use mutagen subprocess for M4A metadata embedding
 	// Mutagen supports M4A/MP4 natively via MP4 tags
-	
+
 	// Download cover art if provided
 	var coverPath string
 	if coverURL != "" {
 		var err error
-		coverPath, err = e.downloadCoverArt(coverURL)
+		coverPath, err = e.downloadCoverArt(ctx, coverURL)
 		if err != nil {
 			log.Printf("WARN: metadata_embed_cover_failed file=%s cover_url=%s error=%v", filePath, coverURL, err)
 			// Continue without cover art
 		}
 		defer func() {
 			if coverPath != "" {
-				os.Remove(coverPath)
+				_ = os.Remove(coverPath)
 			}
 		}()
 	}
-	
-	return e.embedM4AWithMutagen(filePath, song, coverPath)
+
+	return e.embedM4AWithMutagen(ctx, filePath, song, coverPath)
 }
 
 // embedM4AWithMutagen embeds metadata in M4A file using mutagen Python library via subprocess.
-func (e *Embedder) embedM4AWithMutagen(filePath string, song *Song, coverPath string) error {
+func (e *Embedder) embedM4AWithMutagen(ctx context.Context, filePath string, song *Song, coverPath string) error {
 	// Create temporary Python script
 	tmpDir := filepath.Dir(filePath)
 	tmpScript := filepath.Join(tmpDir, fmt.Sprintf(".m4a_metadata_%d.py", time.Now().UnixNano()))
-	defer os.Remove(tmpScript)
-	
+	defer func() { _ = os.Remove(tmpScript) }()
+
 	// Generate Python script content
 	script := fmt.Sprintf(`#!/usr/bin/env python3
 import sys
@@ -55,7 +56,7 @@ try:
     audio['\xa9nam'] = [%q]  # Title
     audio['\xa9ART'] = [%q]  # Artist
 `, filePath, song.Title, song.Artist)
-	
+
 	if song.Album != "" {
 		script += fmt.Sprintf("    audio['\\xa9alb'] = [%q]  # Album\n", song.Album)
 	}
@@ -87,7 +88,7 @@ try:
 	if song.SpotifyURL != "" {
 		script += fmt.Sprintf("    audio['\\xa9cmt'] = [%q]  # Comment\n", fmt.Sprintf("Spotify: %s", song.SpotifyURL))
 	}
-	
+
 	// Add cover art if provided
 	if coverPath != "" {
 		script += fmt.Sprintf(`
@@ -97,7 +98,7 @@ try:
         audio['covr'] = [cover_data]
 `, coverPath)
 	}
-	
+
 	script += `
     audio.save()
     sys.exit(0)
@@ -105,7 +106,7 @@ except Exception as e:
     print(f"Error: {e}", file=sys.stderr)
     sys.exit(1)
 `
-	
+
 	// Write script to file
 	if err := os.WriteFile(tmpScript, []byte(script), 0755); err != nil {
 		return &MetadataError{
@@ -113,16 +114,23 @@ except Exception as e:
 			Original: err,
 		}
 	}
-	
-	// Execute Python script
-	cmd := exec.Command("python3", tmpScript)
+
+	// Execute Python script with context support
+	cmd := exec.CommandContext(ctx, "python3", tmpScript)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		// Check if context was cancelled
+		if ctx.Err() != nil {
+			return &MetadataError{
+				Message:  fmt.Sprintf("Context cancelled during M4A metadata embedding: %v", ctx.Err()),
+				Original: ctx.Err(),
+			}
+		}
 		return &MetadataError{
 			Message:  fmt.Sprintf("Failed to embed M4A metadata: %s", string(output)),
 			Original: err,
 		}
 	}
-	
+
 	return nil
 }

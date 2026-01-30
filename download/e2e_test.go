@@ -61,13 +61,13 @@ func TestE2E_SingleTrackDownload(t *testing.T) {
 
 	// Create real Spotify client
 	spotifyConfig := &spotify.Config{
-		ClientID:            clientID,
-		ClientSecret:        clientSecret,
-		CacheMaxSize:        100,
-		CacheTTL:            3600,
-		RateLimitEnabled:    true,
+		ClientID:             clientID,
+		ClientSecret:         clientSecret,
+		CacheMaxSize:         100,
+		CacheTTL:             3600,
+		RateLimitEnabled:     true,
 		RateLimitRequests:    10,
-		RateLimitWindow:     1.0,
+		RateLimitWindow:      1.0,
 		CacheCleanupInterval: 5 * time.Minute,
 	}
 	spotifyClient, err := spotify.NewSpotifyClient(spotifyConfig)
@@ -78,8 +78,8 @@ func TestE2E_SingleTrackDownload(t *testing.T) {
 
 	// Create audio provider
 	audioConfig := &audio.Config{
-		OutputFormat: "mp3",
-		Bitrate:      "128k",
+		OutputFormat:   "mp3",
+		Bitrate:        "128k",
 		AudioProviders: []string{"youtube-music"},
 	}
 	audioProvider, err := audio.NewProvider(audioConfig)
@@ -189,13 +189,13 @@ func TestE2E_PlanWorkflow_WithRealSpotify(t *testing.T) {
 
 	// Create real components
 	spotifyConfig := &spotify.Config{
-		ClientID:            clientID,
-		ClientSecret:        clientSecret,
-		CacheMaxSize:        100,
-		CacheTTL:            3600,
-		RateLimitEnabled:    true,
+		ClientID:             clientID,
+		ClientSecret:         clientSecret,
+		CacheMaxSize:         100,
+		CacheTTL:             3600,
+		RateLimitEnabled:     true,
 		RateLimitRequests:    10,
-		RateLimitWindow:     1.0,
+		RateLimitWindow:      1.0,
 		CacheCleanupInterval: 5 * time.Minute,
 	}
 	spotifyClient, err := spotify.NewSpotifyClient(spotifyConfig)
@@ -205,8 +205,8 @@ func TestE2E_PlanWorkflow_WithRealSpotify(t *testing.T) {
 	defer spotifyClient.Close()
 
 	audioConfig := &audio.Config{
-		OutputFormat: "mp3",
-		Bitrate:      "128k",
+		OutputFormat:   "mp3",
+		Bitrate:        "128k",
 		AudioProviders: []string{"youtube-music"},
 	}
 	audioProvider, err := audio.NewProvider(audioConfig)
@@ -289,13 +289,13 @@ func TestE2E_PlanPersistence_WithRealDownload(t *testing.T) {
 
 	// Create real components
 	spotifyConfig := &spotify.Config{
-		ClientID:            clientID,
-		ClientSecret:        clientSecret,
-		CacheMaxSize:        100,
-		CacheTTL:            3600,
-		RateLimitEnabled:    true,
+		ClientID:             clientID,
+		ClientSecret:         clientSecret,
+		CacheMaxSize:         100,
+		CacheTTL:             3600,
+		RateLimitEnabled:     true,
 		RateLimitRequests:    10,
-		RateLimitWindow:     1.0,
+		RateLimitWindow:      1.0,
 		CacheCleanupInterval: 5 * time.Minute,
 	}
 	spotifyClient, err := spotify.NewSpotifyClient(spotifyConfig)
@@ -305,8 +305,8 @@ func TestE2E_PlanPersistence_WithRealDownload(t *testing.T) {
 	defer spotifyClient.Close()
 
 	audioConfig := &audio.Config{
-		OutputFormat: "mp3",
-		Bitrate:      "128k",
+		OutputFormat:   "mp3",
+		Bitrate:        "128k",
 		AudioProviders: []string{"youtube-music"},
 	}
 	audioProvider, err := audio.NewProvider(audioConfig)
