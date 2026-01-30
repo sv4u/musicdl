@@ -167,6 +167,7 @@ If both are present, legacy fields take precedence. The `output` field must cont
 - `{album}` – Album name  
 - `{title}` – Track title  
 - `{track-number}` – Track number (zero-padded)  
+- `{disc-number}` – Disc number (zero-padded; 00 when unknown or single disc)  
 - `{output-ext}` – File extension (e.g. mp3, flac)
 
 ### Music sources

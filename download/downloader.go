@@ -542,6 +542,7 @@ func (d *Downloader) getOutputPath(song *metadata.Song) string {
 	output = strings.ReplaceAll(output, "{album}", sanitizeFilename(song.Album))
 	output = strings.ReplaceAll(output, "{title}", sanitizeFilename(song.Title))
 	output = strings.ReplaceAll(output, "{track-number}", fmt.Sprintf("%02d", song.TrackNumber))
+	output = strings.ReplaceAll(output, "{disc-number}", fmt.Sprintf("%02d", song.DiscNumber))
 	output = strings.ReplaceAll(output, "{output-ext}", d.config.Format)
 
 	// Clean path to prevent directory traversal attacks

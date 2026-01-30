@@ -159,6 +159,30 @@ func TestDownloader_GetOutputPath_WithTrackNumber(t *testing.T) {
 	}
 }
 
+func TestDownloader_GetOutputPath_WithDiscNumber(t *testing.T) {
+	cfg := &config.DownloadSettings{
+		Format:  "mp3",
+		Bitrate: "128k",
+		Output:  "{artist}/{album}/Disc {disc-number}/{track-number} - {title}.{output-ext}",
+	}
+
+	downloader := NewDownloader(cfg, nil, nil, nil)
+
+	song := &metadata.Song{
+		Title:       "Test Song",
+		Artist:      "Test Artist",
+		Album:       "Test Album",
+		TrackNumber: 3,
+		DiscNumber:  2,
+	}
+
+	outputPath := downloader.getOutputPath(song)
+	expected := "Test Artist/Test Album/Disc 02/03 - Test Song.mp3"
+	if outputPath != expected {
+		t.Errorf("Expected output path '%s', got '%s'", expected, outputPath)
+	}
+}
+
 func TestDownloader_GetOutputPath_DefaultTemplate(t *testing.T) {
 	cfg := &config.DownloadSettings{
 		Format:  "mp3",
