@@ -12,9 +12,9 @@ import (
 
 // ytDlpSearchResult represents the result from yt-dlp search.
 type ytDlpSearchResult struct {
-	URL        string `json:"url,omitempty"`
-	WebpageURL string `json:"webpage_url,omitempty"`
-	ID         string `json:"id,omitempty"`
+	URL        string              `json:"url,omitempty"`
+	WebpageURL string              `json:"webpage_url,omitempty"`
+	ID         string              `json:"id,omitempty"`
 	Entries    []ytDlpSearchResult `json:"entries,omitempty"`
 }
 
@@ -35,13 +35,13 @@ type YouTubeVideoMetadata struct {
 
 // YouTubePlaylistInfo represents structured metadata for a YouTube playlist.
 type YouTubePlaylistInfo struct {
-	PlaylistID  string   `json:"playlist_id"`
-	Title       string   `json:"title"`
-	Description string   `json:"description,omitempty"`
-	Uploader    string   `json:"uploader,omitempty"`
-	VideoCount  int      `json:"video_count,omitempty"`
-	WebpageURL  string   `json:"webpage_url,omitempty"`
-	Thumbnail   string   `json:"thumbnail,omitempty"`
+	PlaylistID  string                 `json:"playlist_id"`
+	Title       string                 `json:"title"`
+	Description string                 `json:"description,omitempty"`
+	Uploader    string                 `json:"uploader,omitempty"`
+	VideoCount  int                    `json:"video_count,omitempty"`
+	WebpageURL  string                 `json:"webpage_url,omitempty"`
+	Thumbnail   string                 `json:"thumbnail,omitempty"`
 	Entries     []YouTubeVideoMetadata `json:"entries,omitempty"`
 }
 
@@ -62,9 +62,9 @@ func (p *Provider) runYtDlpSearch(ctx context.Context, searchQuery string) (stri
 	if err != nil {
 		outputStr := string(output)
 		// Check if it's a rate limit error
-		if strings.Contains(outputStr, "429") || 
-		   strings.Contains(outputStr, "rate limit") ||
-		   strings.Contains(outputStr, "HTTP Error 429") {
+		if strings.Contains(outputStr, "429") ||
+			strings.Contains(outputStr, "rate limit") ||
+			strings.Contains(outputStr, "HTTP Error 429") {
 			return "", &SearchError{
 				Message:  "Rate limited by provider",
 				Original: err,
@@ -98,14 +98,14 @@ func (p *Provider) runYtDlpSearch(ctx context.Context, searchQuery string) (stri
 	if url == "" {
 		url = result.WebpageURL
 	}
-		if url == "" && result.ID != "" {
-			// Construct URL from ID
-			if strings.HasPrefix(searchQuery, "ytsearch") {
-				url = fmt.Sprintf("https://www.youtube.com/watch?v=%s", result.ID)
-			} else if strings.HasPrefix(searchQuery, "scsearch") {
-				url = fmt.Sprintf("https://soundcloud.com/%s", result.ID)
-			}
+	if url == "" && result.ID != "" {
+		// Construct URL from ID
+		if strings.HasPrefix(searchQuery, "ytsearch") {
+			url = fmt.Sprintf("https://www.youtube.com/watch?v=%s", result.ID)
+		} else if strings.HasPrefix(searchQuery, "scsearch") {
+			url = fmt.Sprintf("https://soundcloud.com/%s", result.ID)
 		}
+	}
 
 	// Handle entries (playlist results)
 	if len(result.Entries) > 0 && url == "" {
@@ -173,7 +173,7 @@ func (p *Provider) runYtDlpDownload(ctx context.Context, url, outputPath string)
 		args = append(args,
 			"--postprocessor-args", fmt.Sprintf("ffmpeg:-b:a %s", p.config.Bitrate),
 		)
-		
+
 		// Add format-specific postprocessor
 		switch p.config.OutputFormat {
 		case "mp3":

@@ -47,6 +47,11 @@ func LoadConfig(path string) (*MusicDLConfig, error) {
 		return nil, err
 	}
 
+	// Normalize spec layout: top-level spotify, threads, rate_limits into download
+	if err := normalizeSpecLayout(raw); err != nil {
+		return nil, err
+	}
+
 	// Unmarshal into struct
 	var config MusicDLConfig
 	// Re-marshal to YAML for proper struct unmarshaling
@@ -73,8 +78,8 @@ func LoadConfig(path string) (*MusicDLConfig, error) {
 
 // convertSources converts songs/artists/playlists/albums from various formats to list format.
 func convertSources(raw map[string]interface{}) error {
-	// Convert songs, artists, playlists (same format)
-	for _, key := range []string{"songs", "artists", "playlists"} {
+	// Convert songs, artists (simple format, no create_m3u)
+	for _, key := range []string{"songs", "artists"} {
 		if sources, ok := raw[key]; ok {
 			converted, err := convertSourceList(sources, false)
 			if err != nil {
@@ -82,6 +87,15 @@ func convertSources(raw map[string]interface{}) error {
 			}
 			raw[key] = converted
 		}
+	}
+
+	// Convert playlists (supports create_m3u and extended format)
+	if playlists, ok := raw["playlists"]; ok {
+		converted, err := convertSourceList(playlists, true)
+		if err != nil {
+			return fmt.Errorf("error converting playlists: %w", err)
+		}
+		raw["playlists"] = converted
 	}
 
 	// Convert albums (supports create_m3u)
@@ -106,11 +120,45 @@ func convertSourceList(sources interface{}, allowM3U bool) ([]MusicSource, error
 
 	switch v := sources.(type) {
 	case []interface{}:
-		// Handle list format: [{name: url}, ...] or [url, ...]
+		// Handle list format: [{name: url}, ...] or [url, ...] or extended format
 		for _, item := range v {
 			switch itemVal := item.(type) {
 			case map[string]interface{}:
-				// Handle [{name: url}, ...]
+				// Check if extended format: {name: "...", url: "...", create_m3u: true/false}
+				// Extended format is supported for all source types, but create_m3u only for playlists
+				if nameVal, hasName := itemVal["name"]; hasName {
+					if urlVal, hasURL := itemVal["url"]; hasURL {
+						name, ok := nameVal.(string)
+						if !ok {
+							return nil, fmt.Errorf("invalid name type in source: expected string")
+						}
+						url, ok := urlVal.(string)
+						if !ok {
+							return nil, fmt.Errorf("invalid URL type in source: expected string")
+						}
+						createM3U := false
+						if allowM3U {
+							if m3uVal, hasM3U := itemVal["create_m3u"]; hasM3U {
+								if m3uBool, ok := m3uVal.(bool); ok {
+									createM3U = m3uBool
+								}
+							}
+						}
+						result = append(result, MusicSource{
+							Name:      name,
+							URL:       url,
+							CreateM3U: createM3U,
+						})
+						continue
+					}
+				}
+				// Simple format: {name: url}
+				if len(itemVal) != 1 {
+					return nil, fmt.Errorf(
+						"invalid source format: dict with %d keys. Use extended format with 'name' and 'url' keys, or simple format with single key-value pair",
+						len(itemVal),
+					)
+				}
 				for name, urlVal := range itemVal {
 					url, ok := urlVal.(string)
 					if !ok {
@@ -127,7 +175,7 @@ func convertSourceList(sources interface{}, allowM3U bool) ([]MusicSource, error
 				result = append(result, MusicSource{
 					Name:      itemVal,
 					URL:       itemVal,
-					CreateM3U:  false,
+					CreateM3U: false,
 				})
 			default:
 				return nil, fmt.Errorf("invalid source item type: expected map or string")
@@ -239,4 +287,70 @@ func convertAlbumList(albums interface{}) ([]MusicSource, error) {
 	}
 
 	return result, nil
+}
+
+// normalizeSpecLayout copies spec top-level spotify, threads, and rate_limits into download
+// so both spec layout and legacy download.* layout are supported.
+func normalizeSpecLayout(raw map[string]interface{}) error {
+	download, ok := raw["download"].(map[string]interface{})
+	if !ok || download == nil {
+		download = make(map[string]interface{})
+		raw["download"] = download
+	}
+
+	// Top-level spotify -> download.client_id, download.client_secret (fill if missing)
+	if spotify, ok := raw["spotify"].(map[string]interface{}); ok {
+		if cid, ok := spotify["client_id"].(string); ok && cid != "" {
+			if existing, _ := download["client_id"].(string); existing == "" {
+				download["client_id"] = cid
+			}
+		}
+		if csec, ok := spotify["client_secret"].(string); ok && csec != "" {
+			if existing, _ := download["client_secret"].(string); existing == "" {
+				download["client_secret"] = csec
+			}
+		}
+	}
+
+	// Top-level threads -> download.threads
+	if threadsVal, ok := raw["threads"]; ok && threadsVal != nil {
+		if n := toInt(threadsVal); n >= 0 {
+			download["threads"] = n
+		}
+	}
+
+	// Top-level rate_limits -> download equivalents
+	if rateLimits, ok := raw["rate_limits"].(map[string]interface{}); ok {
+		if v, ok := rateLimits["spotify_retries"]; ok && v != nil {
+			if n := toInt(v); n >= 0 {
+				download["spotify_max_retries"] = n
+			}
+		}
+		if v, ok := rateLimits["youtube_retries"]; ok && v != nil {
+			if n := toInt(v); n >= 0 {
+				download["max_retries"] = n
+			}
+		}
+		if v, ok := rateLimits["youtube_bandwidth"]; ok && v != nil {
+			if n := toInt(v); n > 0 {
+				download["download_bandwidth_limit"] = n
+			}
+		}
+	}
+
+	return nil
+}
+
+// toInt converts YAML number (int, int64, float64) to int; returns -1 if not a number.
+func toInt(v interface{}) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	default:
+		return -1
+	}
 }

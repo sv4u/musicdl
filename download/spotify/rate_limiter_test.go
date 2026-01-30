@@ -2,10 +2,25 @@ package spotify
 
 import (
 	"context"
+	"runtime/debug"
 	"sync"
 	"testing"
 	"time"
 )
+
+// isRaceDetectorEnabled checks if the race detector is enabled at runtime
+func isRaceDetectorEnabled() bool {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return false
+	}
+	for _, setting := range info.Settings {
+		if setting.Key == "-race" {
+			return true
+		}
+	}
+	return false
+}
 
 func TestRateLimiter_Disabled(t *testing.T) {
 	rl := NewRateLimiter(false, 10, 1.0)
@@ -28,8 +43,8 @@ func TestRateLimiter_Basic(t *testing.T) {
 
 	// First two requests should not block
 	start := time.Now()
-	rl.WaitIfNeeded(context.Background())
-	rl.WaitIfNeeded(context.Background())
+	_ = rl.WaitIfNeeded(context.Background())
+	_ = rl.WaitIfNeeded(context.Background())
 	duration := time.Since(start)
 
 	if duration > 100*time.Millisecond {
@@ -38,7 +53,7 @@ func TestRateLimiter_Basic(t *testing.T) {
 
 	// Third request should block
 	start = time.Now()
-	rl.WaitIfNeeded(context.Background())
+	_ = rl.WaitIfNeeded(context.Background())
 	duration = time.Since(start)
 
 	if duration < 900*time.Millisecond {
@@ -50,16 +65,16 @@ func TestRateLimiter_WindowSliding(t *testing.T) {
 	rl := NewRateLimiter(true, 2, 1.0) // 2 requests per second
 
 	// Make 2 requests
-	rl.WaitIfNeeded(context.Background())
-	rl.WaitIfNeeded(context.Background())
+	_ = rl.WaitIfNeeded(context.Background())
+	_ = rl.WaitIfNeeded(context.Background())
 
 	// Wait for window to slide
 	time.Sleep(1100 * time.Millisecond)
 
 	// Should be able to make 2 more requests immediately
 	start := time.Now()
-	rl.WaitIfNeeded(context.Background())
-	rl.WaitIfNeeded(context.Background())
+	_ = rl.WaitIfNeeded(context.Background())
+	_ = rl.WaitIfNeeded(context.Background())
 	duration := time.Since(start)
 
 	if duration > 100*time.Millisecond {
@@ -71,11 +86,11 @@ func TestRateLimiter_ContextCancellation(t *testing.T) {
 	rl := NewRateLimiter(true, 1, 1.0) // 1 request per second
 
 	// Make first request
-	rl.WaitIfNeeded(context.Background())
+	_ = rl.WaitIfNeeded(context.Background())
 
 	// Second request should block, but we'll cancel context
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	start := time.Now()
 	done := make(chan error, 1)
 	go func() {
@@ -101,10 +116,16 @@ func TestRateLimiter_ContextCancellation(t *testing.T) {
 func TestRateLimiter_Concurrent(t *testing.T) {
 	rl := NewRateLimiter(true, 10, 1.0) // 10 requests per second
 	var wg sync.WaitGroup
-	errors := make(chan error, 20)
 
-	// Make 20 concurrent requests
-	for i := 0; i < 20; i++ {
+	// Reduce memory usage when running with race detector
+	numGoroutines := 20
+	if isRaceDetectorEnabled() {
+		numGoroutines = 10
+	}
+	errors := make(chan error, numGoroutines)
+
+	// Make concurrent requests
+	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

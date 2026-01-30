@@ -4,8 +4,8 @@ import "fmt"
 
 // RateLimitError represents a rate limit error from Spotify API.
 type RateLimitError struct {
-	RetryAfter int    // Seconds to wait before retrying
-	Original   error  // Original error from spotigo
+	RetryAfter int   // Seconds to wait before retrying
+	Original   error // Original error from spotigo
 }
 
 func (e *RateLimitError) Error() string {
@@ -21,7 +21,7 @@ func (e *RateLimitError) Unwrap() error {
 
 // SpotifyError represents a general Spotify API error.
 type SpotifyError struct {
-	Message string
+	Message  string
 	Original error
 }
 

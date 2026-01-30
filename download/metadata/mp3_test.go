@@ -3,6 +3,7 @@
 package metadata
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -37,7 +38,7 @@ func TestEmbedder_EmbedMP3_Integration(t *testing.T) {
 	// Create a copy of the test file
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test_metadata.mp3")
-	
+
 	// Copy test file
 	data, err := os.ReadFile(testMP3)
 	if err != nil {
@@ -48,7 +49,7 @@ func TestEmbedder_EmbedMP3_Integration(t *testing.T) {
 	}
 
 	// Embed metadata
-	err = embedder.Embed(testFile, song, "")
+	err = embedder.Embed(context.Background(), testFile, song, "")
 	if err != nil {
 		t.Fatalf("Failed to embed metadata: %v", err)
 	}

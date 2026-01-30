@@ -27,6 +27,7 @@ type Tracker struct {
 	// Snapshot ticker
 	snapshotTicker *time.Ticker
 	snapshotStop   chan struct{}
+	snapshotWg     sync.WaitGroup // WaitGroup to ensure goroutine exits before creating new one
 	snapshotMu     sync.Mutex
 }
 
@@ -144,12 +145,21 @@ func (t *Tracker) AddSnapshot(progress float64, statistics map[string]interface{
 	// Hold lock for entire check-and-append operation to prevent TOCTOU race
 	t.currentRunMu.Lock()
 	defer t.currentRunMu.Unlock()
-	
+
 	if t.currentRun == nil {
 		return
 	}
-	
+
 	t.currentRun.Snapshots = append(t.currentRun.Snapshots, snapshot)
+
+	// Limit snapshots to prevent unbounded memory growth
+	// Keep only the most recent 10000 snapshots per run
+	const maxSnapshots = 10000
+	if len(t.currentRun.Snapshots) > maxSnapshots {
+		// Remove oldest snapshots, keeping the most recent ones
+		excess := len(t.currentRun.Snapshots) - maxSnapshots
+		t.currentRun.Snapshots = t.currentRun.Snapshots[excess:]
+	}
 }
 
 // GetCurrentRun returns the current run history.
@@ -336,17 +346,18 @@ func (t *Tracker) startSnapshotTicker() {
 
 	t.snapshotTicker = time.NewTicker(t.snapshotInterval)
 	tickerChan := t.snapshotTicker.C // Capture channel reference before starting goroutine
-	stopChan := t.snapshotStop      // Capture stop channel reference
-	
+	stopChan := t.snapshotStop       // Capture stop channel reference
+
+	t.snapshotWg.Add(1)
 	go func() {
+		defer t.snapshotWg.Done()
 		for {
 			select {
 			case <-tickerChan:
 				// Ticker fired, check if we should continue
 				t.currentRunMu.RLock()
 				if t.currentRun != nil {
-					// Get current statistics from service (will be passed via AddSnapshot)
-					// For now, we'll rely on explicit AddSnapshot calls
+					_ = t.currentRun // placeholder for future AddSnapshot / stats
 				}
 				t.currentRunMu.RUnlock()
 			case <-stopChan:
@@ -365,6 +376,10 @@ func (t *Tracker) stopSnapshotTicker() {
 		t.snapshotTicker.Stop()
 		t.snapshotTicker = nil
 		close(t.snapshotStop)
+		// Wait for goroutine to exit before creating new channel
+		t.snapshotMu.Unlock()
+		t.snapshotWg.Wait()
+		t.snapshotMu.Lock()
 		t.snapshotStop = make(chan struct{})
 	}
 }

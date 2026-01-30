@@ -9,12 +9,12 @@ import (
 
 func TestNewProvider(t *testing.T) {
 	config := &Config{
-		OutputFormat:  "mp3",
-		Bitrate:       "128k",
-		AudioProviders: []string{"youtube-music", "youtube"},
-		CacheMaxSize:  100,
-		CacheTTL:      3600,
-		YouTubeRateLimitEnabled: true,
+		OutputFormat:             "mp3",
+		Bitrate:                  "128k",
+		AudioProviders:           []string{"youtube-music", "youtube"},
+		CacheMaxSize:             100,
+		CacheTTL:                 3600,
+		YouTubeRateLimitEnabled:  true,
 		YouTubeRateLimitRequests: 2,
 		YouTubeRateLimitWindow:   1.0,
 	}
@@ -245,7 +245,7 @@ func TestProvider_FindDownloadedFile(t *testing.T) {
 	}
 
 	// Test: file exists with different extension
-	os.Remove(expectedPath)
+	_ = os.Remove(expectedPath)
 	actualPath := basePath + ".m4a"
 	if err := os.WriteFile(actualPath, []byte("test"), 0644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
@@ -256,7 +256,7 @@ func TestProvider_FindDownloadedFile(t *testing.T) {
 	}
 
 	// Test: file exists with similar name
-	os.Remove(actualPath)
+	_ = os.Remove(actualPath)
 	similarPath := basePath + "_similar.mp3"
 	if err := os.WriteFile(similarPath, []byte("test"), 0644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)

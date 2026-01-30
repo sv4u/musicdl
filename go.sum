@@ -1,7 +1,5 @@
 github.com/bogem/id3v2/v2 v2.1.4 h1:CEwe+lS2p6dd9UZRlPc1zbFNIha2mb2qzT1cCEoNWoI=
 github.com/bogem/id3v2/v2 v2.1.4/go.mod h1:l+gR8MZ6rc9ryPTPkX77smS5Me/36gxkMgDayZ9G1vY=
-github.com/gorilla/mux v1.8.1 h1:TuBL49tXwgrFYWhqrNgrUNEY92u81SPhu7sTdzQEiWY=
-github.com/gorilla/mux v1.8.1/go.mod h1:AKf9I4AEqPTmMytcMc0KkNouC66V3BtZ4qD5fmWSiMQ=
 github.com/joho/godotenv v1.5.1 h1:7eLL/+HRGLY0ldzfGMeQkb7vMd0as4CfYvUVzLqw0N0=
 github.com/joho/godotenv v1.5.1/go.mod h1:f4LDr5Voq0i2e/R5DDNOoa2zzDfwtkZa6DnEwAbqwq4=
 github.com/sv4u/spotigo v1.0.0 h1:PZD9gFSRE8x+pavWdn77FndT//z4AJZNL1KHBupiVF8=

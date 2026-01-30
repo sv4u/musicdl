@@ -1,6 +1,7 @@
 package metadata
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -17,8 +18,16 @@ func NewEmbedder() *Embedder {
 }
 
 // Embed embeds metadata into an audio file.
-func (e *Embedder) Embed(filePath string, song *Song, coverURL string) error {
+func (e *Embedder) Embed(ctx context.Context, filePath string, song *Song, coverURL string) error {
 	log.Printf("INFO: metadata_embed_start file=%s track=%s artist=%s", filePath, song.Title, song.Artist)
+
+	// Check context cancellation
+	if err := ctx.Err(); err != nil {
+		return &MetadataError{
+			Message:  fmt.Sprintf("Context cancelled: %v", err),
+			Original: err,
+		}
+	}
 
 	// Use coverURL from parameter, fallback to song.CoverURL
 	if coverURL == "" {
@@ -41,13 +50,13 @@ func (e *Embedder) Embed(filePath string, song *Song, coverURL string) error {
 	var err error
 	switch ext {
 	case "mp3":
-		err = e.embedMP3(filePath, song, coverURL)
+		err = e.embedMP3(ctx, filePath, song, coverURL)
 	case "flac":
-		err = e.embedFLAC(filePath, song, coverURL)
+		err = e.embedFLAC(ctx, filePath, song, coverURL)
 	case "m4a":
-		err = e.embedM4A(filePath, song, coverURL)
+		err = e.embedM4A(ctx, filePath, song, coverURL)
 	case "ogg", "opus":
-		err = e.embedVorbis(filePath, song, coverURL)
+		err = e.embedVorbis(ctx, filePath, song, coverURL)
 	default:
 		// Unsupported format - log warning but don't error
 		log.Printf("WARN: metadata_embed_unsupported_format file=%s format=%s", filePath, ext)

@@ -22,11 +22,11 @@ const (
 type PlanItemStatus string
 
 const (
-	PlanItemStatusPending     PlanItemStatus = "pending"
-	PlanItemStatusInProgress  PlanItemStatus = "in_progress"
-	PlanItemStatusCompleted   PlanItemStatus = "completed"
-	PlanItemStatusFailed      PlanItemStatus = "failed"
-	PlanItemStatusSkipped     PlanItemStatus = "skipped"
+	PlanItemStatusPending    PlanItemStatus = "pending"
+	PlanItemStatusInProgress PlanItemStatus = "in_progress"
+	PlanItemStatusCompleted  PlanItemStatus = "completed"
+	PlanItemStatusFailed     PlanItemStatus = "failed"
+	PlanItemStatusSkipped    PlanItemStatus = "skipped"
 )
 
 // PlanItem represents a single item in the download plan.
@@ -156,7 +156,7 @@ func (p *PlanItem) GetMetadata() map[string]interface{} {
 
 // DownloadPlan represents a complete download plan.
 type DownloadPlan struct {
-	Items    []*PlanItem        `json:"items"`
+	Items    []*PlanItem            `json:"items"`
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
@@ -198,7 +198,7 @@ func (p *DownloadPlan) GetItemsByType(itemType PlanItemType) []*PlanItem {
 func (p *DownloadPlan) GetStatistics() map[string]interface{} {
 	stats := map[string]interface{}{
 		"total_items": len(p.Items),
-		"by_type": make(map[string]int),
+		"by_type":     make(map[string]int),
 	}
 
 	byType := make(map[string]int)

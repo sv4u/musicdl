@@ -57,7 +57,7 @@ func TestExecutor_Execute_EmptyPlan(t *testing.T) {
 func TestExecutor_Execute_SingleTrack(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.mp3")
-	
+
 	// Create a test file
 	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
@@ -248,27 +248,27 @@ func TestExecutor_UpdateContainerStatus_NoChildren(t *testing.T) {
 
 func TestExecutor_CreateM3UFile(t *testing.T) {
 	tmpDir := t.TempDir()
-	
+
 	// Create test track files
 	track1File := filepath.Join(tmpDir, "track1.mp3")
 	track2File := filepath.Join(tmpDir, "track2.mp3")
-	os.WriteFile(track1File, []byte("test1"), 0644)
-	os.WriteFile(track2File, []byte("test2"), 0644)
+	_ = os.WriteFile(track1File, []byte("test1"), 0644)
+	_ = os.WriteFile(track2File, []byte("test2"), 0644)
 
 	downloader := &mockDownloader{}
 	executor := NewExecutor(downloader, 2)
 
 	track1 := &PlanItem{
-		ItemID:     "track:1",
-		ItemType:   PlanItemTypeTrack,
-		Status:     PlanItemStatusCompleted,
-		FilePath:   track1File,
+		ItemID:   "track:1",
+		ItemType: PlanItemTypeTrack,
+		Status:   PlanItemStatusCompleted,
+		FilePath: track1File,
 	}
 	track2 := &PlanItem{
-		ItemID:     "track:2",
-		ItemType:   PlanItemTypeTrack,
-		Status:     PlanItemStatusCompleted,
-		FilePath:   track2File,
+		ItemID:   "track:2",
+		ItemType: PlanItemTypeTrack,
+		Status:   PlanItemStatusCompleted,
+		FilePath: track2File,
 	}
 
 	tracks := []*PlanItem{track1, track2}
@@ -376,7 +376,7 @@ func TestExecutor_WaitForShutdown_WithActiveExecution(t *testing.T) {
 	// Start execution in goroutine
 	done := make(chan bool)
 	go func() {
-		executor.Execute(context.Background(), plan, nil)
+		_, _ = executor.Execute(context.Background(), plan, nil)
 		done <- true
 	}()
 
@@ -417,8 +417,10 @@ func TestExecutor_WaitForShutdown_Timeout(t *testing.T) {
 	plan.AddItem(trackItem)
 
 	// Start execution in goroutine
+	done := make(chan bool)
 	go func() {
-		executor.Execute(context.Background(), plan, nil)
+		_, _ = executor.Execute(context.Background(), plan, nil)
+		done <- true
 	}()
 
 	// Wait a bit for execution to start
@@ -428,6 +430,17 @@ func TestExecutor_WaitForShutdown_Timeout(t *testing.T) {
 	completed := executor.WaitForShutdown(100 * time.Millisecond)
 	if completed {
 		t.Error("Expected timeout when downloads take longer than timeout")
+	}
+
+	// Request shutdown to ensure goroutine completes
+	executor.RequestShutdown()
+
+	// Wait for execution goroutine to finish (with timeout to prevent hanging)
+	select {
+	case <-done:
+		// Execution completed
+	case <-time.After(3 * time.Second):
+		t.Error("Execution goroutine did not complete within timeout")
 	}
 }
 
@@ -455,7 +468,7 @@ func TestExecutor_WaitForShutdown_NilWG(t *testing.T) {
 	// Start execution
 	done := make(chan bool)
 	go func() {
-		executor.Execute(context.Background(), plan, nil)
+		_, _ = executor.Execute(context.Background(), plan, nil)
 		done <- true
 	}()
 
@@ -488,9 +501,9 @@ func TestExecutor_WaitForShutdown_NilWG(t *testing.T) {
 
 // Helper functions
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && 
-		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr || 
-		 contains(s[1:], substr)))
+	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) &&
+		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
+			contains(s[1:], substr)))
 }
 
 func min(a, b int) int {

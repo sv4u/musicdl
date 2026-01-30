@@ -9,11 +9,11 @@ import (
 func TestRunHistory_ToJSON_FromJSON(t *testing.T) {
 	now := time.Now()
 	run := &RunHistory{
-		RunID:      "test-run-123",
-		StartedAt:  now,
+		RunID:       "test-run-123",
+		StartedAt:   now,
 		CompletedAt: &now,
-		State:      "completed",
-		Phase:      "completed",
+		State:       "completed",
+		Phase:       "completed",
 		Statistics: map[string]interface{}{
 			"completed": 10,
 			"failed":    2,

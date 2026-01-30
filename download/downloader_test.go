@@ -3,6 +3,7 @@ package download
 import (
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -12,6 +13,20 @@ import (
 	"github.com/sv4u/musicdl/download/plan"
 	"github.com/sv4u/musicdl/download/spotify"
 )
+
+// isRaceDetectorEnabled checks if the race detector is enabled at runtime
+func isRaceDetectorEnabled() bool {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return false
+	}
+	for _, setting := range info.Settings {
+		if setting.Key == "-race" {
+			return true
+		}
+	}
+	return false
+}
 
 func TestNewDownloader(t *testing.T) {
 	cfg := &config.DownloadSettings{
@@ -65,7 +80,7 @@ func TestDownloader_SanitizeFilename(t *testing.T) {
 		Album:  "Test",
 	}
 	result := downloader.getOutputPath(song)
-	
+
 	// Should not contain invalid characters
 	if strings.Contains(result, "/") || strings.Contains(result, ":") || strings.Contains(result, "*") {
 		t.Errorf("Output path should not contain invalid characters: %s", result)
@@ -75,9 +90,11 @@ func TestDownloader_SanitizeFilename(t *testing.T) {
 func TestDownloader_FileExistsCached(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.mp3")
-	
+
 	// Create test file
-	os.WriteFile(testFile, []byte("test"), 0644)
+	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 
 	cfg := &config.DownloadSettings{}
 	downloader := NewDownloader(cfg, nil, nil, nil)
@@ -184,12 +201,12 @@ func TestDownloader_GetOutputPath_DirectoryCreation(t *testing.T) {
 
 	outputPath := downloader.getOutputPath(song)
 	expectedDir := filepath.Join(tmpDir, "Test Artist", "Test Album")
-	
+
 	// Directory should be created
 	if _, err := os.Stat(expectedDir); err != nil {
 		t.Errorf("Expected directory to be created: %v", err)
 	}
-	
+
 	expectedPath := filepath.Join(expectedDir, "Test Song.mp3")
 	if outputPath != expectedPath {
 		t.Errorf("Expected output path '%s', got '%s'", expectedPath, outputPath)
@@ -199,14 +216,21 @@ func TestDownloader_GetOutputPath_DirectoryCreation(t *testing.T) {
 func TestDownloader_FileExistsCached_ConcurrentAccess(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.mp3")
-	os.WriteFile(testFile, []byte("test"), 0644)
+	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 
 	cfg := &config.DownloadSettings{}
 	downloader := NewDownloader(cfg, nil, nil, nil)
 
 	// Test concurrent access (should be safe due to RWMutex)
-	done := make(chan bool, 10)
-	for i := 0; i < 10; i++ {
+	// Reduce memory usage when running with race detector
+	numGoroutines := 10
+	if isRaceDetectorEnabled() {
+		numGoroutines = 5
+	}
+	done := make(chan bool, numGoroutines)
+	for i := 0; i < numGoroutines; i++ {
 		go func() {
 			downloader.fileExistsCached(testFile)
 			done <- true
@@ -214,7 +238,7 @@ func TestDownloader_FileExistsCached_ConcurrentAccess(t *testing.T) {
 	}
 
 	// Wait for all goroutines
-	for i := 0; i < 10; i++ {
+	for i := 0; i < numGoroutines; i++ {
 		<-done
 	}
 
@@ -237,7 +261,9 @@ func TestDownloader_FileExistsCached_CacheInvalidation(t *testing.T) {
 	}
 
 	// Create file
-	os.WriteFile(testFile, []byte("test"), 0644)
+	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 
 	// Cache should still say it doesn't exist (cached)
 	if downloader.fileExistsCached(testFile) {
@@ -276,7 +302,7 @@ func TestDownloader_SanitizeFilename_AllInvalidChars(t *testing.T) {
 	downloader := NewDownloader(cfg, nil, nil, nil)
 
 	invalidChars := []string{"/", "\\", ":", "*", "?", "\"", "<", ">", "|"}
-	
+
 	for _, char := range invalidChars {
 		song := &metadata.Song{
 			Title:  "Song" + char + "Test",
@@ -284,7 +310,7 @@ func TestDownloader_SanitizeFilename_AllInvalidChars(t *testing.T) {
 			Album:  "Test",
 		}
 		result := downloader.getOutputPath(song)
-		
+
 		if strings.Contains(result, char) {
 			t.Errorf("Output path should not contain invalid character '%s': %s", char, result)
 		}
@@ -323,7 +349,7 @@ func TestDownloader_ExtractYear_EdgeCases(t *testing.T) {
 		{"2024-12-31", 2024},
 		{"1999-01-01", 1999},
 		{"2000", 2000},
-		{"abc-2024", 0}, // Invalid format
+		{"abc-2024", 0},    // Invalid format
 		{"2024-abc", 2024}, // Partial match
 	}
 
@@ -337,10 +363,10 @@ func TestDownloader_ExtractYear_EdgeCases(t *testing.T) {
 
 func TestYoutubeMetadataToSong(t *testing.T) {
 	ytMetadata := &audio.YouTubeVideoMetadata{
-		VideoID:   "dQw4w9WgXcQ",
-		Title:     "Test Video Title",
-		Uploader:  "Test Artist",
-		Duration:  200,
+		VideoID:    "dQw4w9WgXcQ",
+		Title:      "Test Video Title",
+		Uploader:   "Test Artist",
+		Duration:   200,
 		UploadDate: "2024-01-15",
 	}
 
