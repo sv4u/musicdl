@@ -1,4 +1,4 @@
-.PHONY: help build proto proto-clean test test-unit test-integration test-e2e test-coverage test-cov-html test-cov-xml test-race test-verbose test-specific test-function clean clean-test docker-build docker-build-latest docker-build-versioned docker-clean docker-clean-all docker-push docker-push-latest docker-push-versioned docker-build-push docker-check
+.PHONY: help build test test-unit test-integration test-e2e test-coverage test-cov-html test-cov-xml test-race test-verbose test-specific test-function clean clean-test docker-build docker-build-latest docker-build-versioned docker-clean docker-clean-all docker-push docker-push-latest docker-push-versioned docker-build-push docker-check
 
 # Go configuration
 GO := go
@@ -23,7 +23,7 @@ help: ## Show this help message
 	@echo "Available targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
 
-build: proto ## Build the musicdl binary (includes proto generation)
+build: ## Build the musicdl binary (CLI-only, no proto)
 	@echo "Building $(BINARY_NAME)..."
 	@VERSION=$$(git describe --exact-match --tags HEAD 2>/dev/null || \
 		git describe --tags HEAD 2>/dev/null || \
@@ -32,23 +32,6 @@ build: proto ## Build the musicdl binary (includes proto generation)
 	echo "Building with version: $$VERSION"; \
 	$(GO) build -ldflags="-X main.Version=$$VERSION" -o $(BINARY_NAME) $(BUILD_DIR)
 	@echo "✓ Built $(BINARY_NAME)"
-
-proto: ## Generate Go code from Protocol Buffers definition
-	@echo "Generating proto code..."
-	@command -v protoc >/dev/null 2>&1 || (echo "✗ protoc is not installed. Install Protocol Buffers compiler: https://grpc.io/docs/protoc-installation/" && exit 1)
-	@if [ ! -f "download/proto/musicdl.proto" ]; then \
-		echo "✗ Error: Proto file not found: download/proto/musicdl.proto"; \
-		exit 1; \
-	fi
-	@protoc --go_out=. --go_opt=paths=source_relative \
-		--go-grpc_out=. --go-grpc_opt=paths=source_relative \
-		download/proto/musicdl.proto
-	@echo "✓ Proto code generated"
-
-proto-clean: ## Clean generated proto code
-	@echo "Cleaning generated proto code..."
-	@rm -f download/proto/*.pb.go
-	@echo "✓ Proto code cleaned"
 
 test: ## Run all unit tests (excludes integration and e2e by default)
 	@$(GO) test ./... -tags="!integration !e2e" -v
@@ -94,17 +77,17 @@ test-race: ## Run unit tests with race detector (excludes integration/e2e)
 test-verbose: ## Run tests with verbose output
 	@$(GO) test ./... -v
 
-test-specific: ## Run specific test file (usage: make test-specific FILE=./download/service_test.go)
+test-specific: ## Run specific test file (usage: make test-specific FILE=./control/main_test.go)
 	@if [ -z "$(FILE)" ]; then \
-		echo "Error: FILE variable required. Usage: make test-specific FILE=./download/service_test.go"; \
+		echo "Error: FILE variable required. Usage: make test-specific FILE=./control/main_test.go"; \
 		exit 1; \
 	fi
 	@$(GO) test -v $(FILE)
 
-test-function: ## Run specific test function (usage: make test-function FILE=./download/service_test.go FUNC=TestNewService)
+test-function: ## Run specific test function (usage: make test-function FILE=./control/main_test.go FUNC=TestPrintUsage)
 	@if [ -z "$(FILE)" ] || [ -z "$(FUNC)" ]; then \
 		echo "Error: FILE and FUNC variables required."; \
-		echo "Usage: make test-function FILE=./download/service_test.go FUNC=TestNewService"; \
+		echo "Usage: make test-function FILE=./control/main_test.go FUNC=TestPrintUsage"; \
 		exit 1; \
 	fi
 	@$(GO) test -v -run $(FUNC) $(FILE)

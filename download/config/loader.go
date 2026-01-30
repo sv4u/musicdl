@@ -47,6 +47,11 @@ func LoadConfig(path string) (*MusicDLConfig, error) {
 		return nil, err
 	}
 
+	// Normalize spec layout: top-level spotify, threads, rate_limits into download
+	if err := normalizeSpecLayout(raw); err != nil {
+		return nil, err
+	}
+
 	// Unmarshal into struct
 	var config MusicDLConfig
 	// Re-marshal to YAML for proper struct unmarshaling
@@ -282,4 +287,70 @@ func convertAlbumList(albums interface{}) ([]MusicSource, error) {
 	}
 
 	return result, nil
+}
+
+// normalizeSpecLayout copies spec top-level spotify, threads, and rate_limits into download
+// so both spec layout and legacy download.* layout are supported.
+func normalizeSpecLayout(raw map[string]interface{}) error {
+	download, ok := raw["download"].(map[string]interface{})
+	if !ok || download == nil {
+		download = make(map[string]interface{})
+		raw["download"] = download
+	}
+
+	// Top-level spotify -> download.client_id, download.client_secret (fill if missing)
+	if spotify, ok := raw["spotify"].(map[string]interface{}); ok {
+		if cid, ok := spotify["client_id"].(string); ok && cid != "" {
+			if existing, _ := download["client_id"].(string); existing == "" {
+				download["client_id"] = cid
+			}
+		}
+		if csec, ok := spotify["client_secret"].(string); ok && csec != "" {
+			if existing, _ := download["client_secret"].(string); existing == "" {
+				download["client_secret"] = csec
+			}
+		}
+	}
+
+	// Top-level threads -> download.threads
+	if threadsVal, ok := raw["threads"]; ok && threadsVal != nil {
+		if n := toInt(threadsVal); n >= 0 {
+			download["threads"] = n
+		}
+	}
+
+	// Top-level rate_limits -> download equivalents
+	if rateLimits, ok := raw["rate_limits"].(map[string]interface{}); ok {
+		if v, ok := rateLimits["spotify_retries"]; ok && v != nil {
+			if n := toInt(v); n >= 0 {
+				download["spotify_max_retries"] = n
+			}
+		}
+		if v, ok := rateLimits["youtube_retries"]; ok && v != nil {
+			if n := toInt(v); n >= 0 {
+				download["max_retries"] = n
+			}
+		}
+		if v, ok := rateLimits["youtube_bandwidth"]; ok && v != nil {
+			if n := toInt(v); n > 0 {
+				download["download_bandwidth_limit"] = n
+			}
+		}
+	}
+
+	return nil
+}
+
+// toInt converts YAML number (int, int64, float64) to int; returns -1 if not a number.
+func toInt(v interface{}) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	default:
+		return -1
+	}
 }

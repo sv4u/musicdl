@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   docker-build-and-test:
-    name: Build Docker Image and Run Tests
+    name: Build Docker Image and Run CLI Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -28,37 +28,20 @@ jobs:
       - name: Set image tag variable
         run: echo "IMAGE_TAG=musicdl:test" >> $GITHUB_ENV
 
-      - name: Smoke Test 1 - Directory structure
+      - name: Smoke Test 1 - Directory and binary
         run: |
-          echo "Testing directory structure..."
-          docker run --rm --entrypoint test "$IMAGE_TAG" -d /scripts && echo "✓ /scripts exists" || (echo "✗ /scripts missing" && exit 1)
+          echo "Testing directory and binary..."
           docker run --rm --entrypoint test "$IMAGE_TAG" -d /download && echo "✓ /download exists" || (echo "✗ /download missing" && exit 1)
-          docker run --rm --entrypoint test "$IMAGE_TAG" -d /var/lib/musicdl/plans && echo "✓ /var/lib/musicdl/plans exists" || (echo "✗ /var/lib/musicdl/plans missing" && exit 1)
-          docker run --rm --entrypoint test "$IMAGE_TAG" -d /var/lib/musicdl/logs && echo "✓ /var/lib/musicdl/logs exists" || (echo "✗ /var/lib/musicdl/logs missing" && exit 1)
-
-      - name: Smoke Test 2 - File permissions
-        run: |
-          echo "Testing file permissions..."
-          docker run --rm --entrypoint test "$IMAGE_TAG" -x /scripts/entrypoint.sh && echo "✓ entrypoint.sh is executable" || (echo "✗ entrypoint.sh not executable" && exit 1)
-          docker run --rm --entrypoint test "$IMAGE_TAG" -w /download && echo "✓ /download is writable" || (echo "✗ /download not writable" && exit 1)
-
-      - name: Smoke Test 3 - System dependencies
-        run: |
-          echo "Testing system dependencies..."
-          docker run --rm --entrypoint ffmpeg "$IMAGE_TAG" -version > /dev/null 2>&1 && echo "✓ ffmpeg is available" || (echo "✗ ffmpeg not found" && exit 1)
-
-      - name: Smoke Test 4 - Go binary verification
-        run: |
-          echo "Testing Go binary..."
-          # Check binary exists
           docker run --rm --entrypoint test "$IMAGE_TAG" -f /usr/local/bin/musicdl && echo "✓ Go binary exists" || (echo "✗ Go binary not found" && exit 1)
-          # Check binary is executable
           docker run --rm --entrypoint test "$IMAGE_TAG" -x /usr/local/bin/musicdl && echo "✓ Go binary is executable" || (echo "✗ Go binary not executable" && exit 1)
-          # Check binary responds to help
-          docker run --rm --entrypoint /usr/local/bin/musicdl "$IMAGE_TAG" serve --help 2>&1 | grep -q "serve" && echo "✓ Go binary responds to help" || (echo "✗ Go binary does not respond correctly" && exit 1)
-          # Check download-service command exists (new architecture)
-          docker run --rm --entrypoint /usr/local/bin/musicdl "$IMAGE_TAG" download-service --help 2>&1 | grep -q "download-service" && echo "✓ download-service command available" || (echo "✗ download-service command not available" && exit 1)
-          # Check version command works and returns a version
+
+      - name: Smoke Test 2 - CLI commands
+        run: |
+          echo "Testing CLI commands..."
+          # Usage (no args)
+          docker run --rm --entrypoint /usr/local/bin/musicdl "$IMAGE_TAG" 2>&1 | grep -q "plan" && echo "✓ Usage lists plan" || (echo "✗ Usage missing plan" && exit 1)
+          docker run --rm --entrypoint /usr/local/bin/musicdl "$IMAGE_TAG" 2>&1 | grep -q "download" && echo "✓ Usage lists download" || (echo "✗ Usage missing download" && exit 1)
+          # Version
           VERSION_OUTPUT=$(docker run --rm --entrypoint /usr/local/bin/musicdl "$IMAGE_TAG" version 2>&1) || (echo "✗ Version command failed" && exit 1)
           if echo "$VERSION_OUTPUT" | grep -qE "musicdl version (v?[0-9]+\.[0-9]+\.[0-9]+|[a-f0-9]{7,}|dev)"; then
             echo "✓ Version command returns valid version: $VERSION_OUTPUT"
@@ -67,207 +50,34 @@ jobs:
             exit 1
           fi
 
-      - name: Functional Test - Control Platform API
-        env:
-          SPOTIFY_CLIENT_ID: ${{ secrets.SPOTIGO_CLIENT_ID }}
-          SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIGO_CLIENT_SECRET }}
+      - name: Smoke Test 3 - System dependencies
         run: |
-          echo "Testing control platform API..."
-          set -e
-          
-          # Validate that secrets are set
-          if [ -z "$SPOTIFY_CLIENT_ID" ] || [ -z "$SPOTIFY_CLIENT_SECRET" ]; then
-            echo "✗ Error: Spotify credentials not found in secrets"
-            echo "Please ensure SPOTIGO_CLIENT_ID and SPOTIGO_CLIENT_SECRET are set in repository secrets"
-            exit 1
-          fi
-          
-          # Create test config file with credentials
-          TEST_CONFIG_DIR=$(mktemp -d)
-          TEST_CONFIG_FILE="$TEST_CONFIG_DIR/config.yaml"
-          
-          # Generate config template first (without secrets to avoid variable expansion issues)
-          cat > "$TEST_CONFIG_FILE" <<'CONFIG_TEMPLATE'
-          version: "1.2"
-          
-          download:
-            client_id: "CLIENT_ID_PLACEHOLDER"
-            client_secret: "CLIENT_SECRET_PLACEHOLDER"
-            threads: 1
-            max_retries: 3
-            format: "mp3"
-            bitrate: "128k"
-            output: "{artist}/{album}/{track-number} - {title}.{output-ext}"
-            audio_providers:
-              - "youtube-music"
-              - "youtube"
-            overwrite: "metadata"
-          
-          ui:
-            history_path: ""
-            history_retention: 0
-            snapshot_interval: 10
-            log_path: ""
-          
-          songs:
-            - name: "YYZ"
-              url: "https://open.spotify.com/track/1RKbVxcm267VdsIzqY7msi"
+          echo "Testing system dependencies..."
+          docker run --rm --entrypoint ffmpeg "$IMAGE_TAG" -version > /dev/null 2>&1 && echo "✓ ffmpeg is available" || (echo "✗ ffmpeg not found" && exit 1)
 
-            - name: "Crawling"
-              url: "https://open.spotify.com/track/1BfzeCKzo8xSvJcYLmnP8f"
-          artists:
-            - name: "Aries"
-              url: "https://open.spotify.com/artist/3hOdow4ZPmrby7Q1wfPLEy"
-
-            - name: "Rush"
-              url: "https://open.spotify.com/artist/2Hkut4rAAyrQxRdof7FVJq"
-
-          playlists:
-            - name: "planet namek"
-              url: "https://open.spotify.com/playlist/5Xrt7Y1mwD4q107Ty56xnn"
-
-            - name: "hell"
-              url: "https://open.spotify.com/playlist/74yTlcAU98jlhzIy5Iwu4E"
-              create_m3u: true
-
-          albums:
-            - name: "Moving Pictures"
-              url: "https://open.spotify.com/album/77CZUF57sYqgtznUe3OikQ"
-
-            - name: "hypochondriac"
-              url: "https://open.spotify.com/album/6XV76W17coHAKFdeyiGT08"
-              create_m3u: true
-          CONFIG_TEMPLATE
-          
-          # Replace placeholders with actual secrets (using sed with @ delimiter to avoid conflicts)
-          # Escape special characters in secrets for sed replacement (escape & and \)
-          ESCAPED_CLIENT_ID=$(printf '%s' "$SPOTIFY_CLIENT_ID" | sed 's/[&\\]/\\&/g')
-          ESCAPED_CLIENT_SECRET=$(printf '%s' "$SPOTIFY_CLIENT_SECRET" | sed 's/[&\\]/\\&/g')
-          sed -i "s@CLIENT_ID_PLACEHOLDER@$ESCAPED_CLIENT_ID@g" "$TEST_CONFIG_FILE"
-          sed -i "s@CLIENT_SECRET_PLACEHOLDER@$ESCAPED_CLIENT_SECRET@g" "$TEST_CONFIG_FILE"
-          
-          echo "Created test config file at $TEST_CONFIG_FILE"
-          echo "Config file size: $(wc -l < "$TEST_CONFIG_FILE") lines"
-          
-          # Cleanup function to ensure container is always stopped and logs are captured
-          cleanup() {
-            if [ -n "$CONTAINER_ID" ]; then
-              echo "=== Container Logs ==="
-              docker logs "$CONTAINER_ID" 2>&1 || true
-              echo "====================="
-              docker stop "$CONTAINER_ID" 2>/dev/null || true
-              docker rm "$CONTAINER_ID" 2>/dev/null || true
-            fi
-            # Clean up test config directory
-            rm -rf "$TEST_CONFIG_DIR" 2>/dev/null || true
-          }
-          trap cleanup EXIT
-          
-          # Start container in background with port mapping and mounted config
-          CONTAINER_ID=$(docker run -d -p 8080:8080 \
-            -v "$TEST_CONFIG_FILE:/scripts/config.yaml:ro" \
-            "$IMAGE_TAG")
-          if [ -z "$CONTAINER_ID" ]; then
-            echo "✗ Failed to start container"
-            exit 1
-          fi
-          echo "Container started: $CONTAINER_ID"
-          
-          # Wait for server to be ready (with timeout and retry)
-          MAX_WAIT=30
-          WAITED=0
-          while [ $WAITED -lt $MAX_WAIT ]; do
-            if curl -sf http://localhost:8080/api/health > /dev/null 2>&1; then
-              echo "✓ Server is ready"
-              break
-            fi
-            sleep 1
-            WAITED=$((WAITED + 1))
-          done
-          
-          if [ $WAITED -ge $MAX_WAIT ]; then
-            echo "✗ Server did not become ready within ${MAX_WAIT}s"
-            echo "=== Container Logs ==="
-            docker logs "$CONTAINER_ID" 2>&1
-            echo "====================="
-            exit 1
-          fi
-          
-          # Verify version is printed in logs
-          echo "Verifying version is printed in logs..."
-          CONTAINER_LOGS=$(docker logs "$CONTAINER_ID" 2>&1)
-          if echo "$CONTAINER_LOGS" | grep -qE "musicdl version (v?[0-9]+\.[0-9]+\.[0-9]+|[a-f0-9]{7,}|dev)"; then
-            echo "✓ Version is printed in container logs"
+      - name: Functional Test - CLI exit codes
+        run: |
+          echo "Testing CLI exit codes..."
+          # plan with missing config -> exit 1 (config error)
+          EXIT_CODE=$(docker run --rm --entrypoint /usr/local/bin/musicdl -w /download "$IMAGE_TAG" plan /download/nonexistent.yaml 2>/dev/null; echo $?)
+          if [ "$EXIT_CODE" = "1" ]; then
+            echo "✓ plan with missing config exits 1"
           else
-            echo "✗ Version not found in container logs"
-            echo "=== Container Logs ==="
-            echo "$CONTAINER_LOGS"
-            echo "====================="
+            echo "✗ plan with missing config expected exit 1, got $EXIT_CODE"
             exit 1
           fi
-          
-          # Test health endpoint (should return JSON)
-          echo "Testing health endpoint..."
-          HEALTH_RESPONSE=$(curl -sf http://localhost:8080/api/health 2>&1) || HEALTH_CURL_EXIT=$?
-          if [ -n "$HEALTH_CURL_EXIT" ]; then
-            echo "✗ Health endpoint curl failed with exit code: $HEALTH_CURL_EXIT"
-            echo "Response: $HEALTH_RESPONSE"
-            echo "=== Container Logs ==="
-            docker logs "$CONTAINER_ID" 2>&1
-            echo "====================="
+          # download with no plan file -> exit 2 (plan not found); need a valid config so hash can be computed
+          printf '%s\n' \
+            'version: "1.2"' \
+            'download:' \
+            '  client_id: "id"' \
+            '  client_secret: "secret"' \
+            '  output: "{title}.mp3"' > /tmp/test-config.yaml
+          EXIT_CODE=$(docker run --rm --entrypoint /usr/local/bin/musicdl -w /download -v /tmp/test-config.yaml:/download/config.yaml:ro "$IMAGE_TAG" download /download/config.yaml 2>/dev/null; echo $?)
+          if [ "$EXIT_CODE" = "2" ]; then
+            echo "✓ download with no plan exits 2"
+          else
+            echo "✗ download with no plan expected exit 2, got $EXIT_CODE"
             exit 1
           fi
-          if [ -z "$HEALTH_RESPONSE" ]; then
-            echo "✗ Health endpoint returned empty response"
-            echo "=== Container Logs ==="
-            docker logs "$CONTAINER_ID" 2>&1
-            echo "====================="
-            exit 1
-          fi
-          
-          # Verify JSON format and status
-          if ! echo "$HEALTH_RESPONSE" | grep -q '"status"'; then
-            echo "✗ Health endpoint response is not valid JSON"
-            echo "Response: $HEALTH_RESPONSE"
-            echo "=== Container Logs ==="
-            docker logs "$CONTAINER_ID" 2>&1
-            echo "====================="
-            exit 1
-          fi
-          echo "✓ Health endpoint returns valid JSON"
-          
-          # Test status endpoint with detailed error reporting
-          echo "Testing status endpoint..."
-          STATUS_RESPONSE=$(curl -sf http://localhost:8080/api/status 2>&1) || STATUS_CURL_EXIT=$?
-          if [ -n "$STATUS_CURL_EXIT" ]; then
-            echo "✗ Status endpoint curl failed with exit code: $STATUS_CURL_EXIT"
-            echo "Curl output: $STATUS_RESPONSE"
-            echo "=== Container Logs ==="
-            docker logs "$CONTAINER_ID" 2>&1
-            echo "====================="
-            echo "=== Container Status ==="
-            docker ps -a --filter "id=$CONTAINER_ID" || true
-            echo "========================="
-            exit 1
-          fi
-          if [ -z "$STATUS_RESPONSE" ]; then
-            echo "✗ Status endpoint returned empty response"
-            echo "=== Container Logs ==="
-            docker logs "$CONTAINER_ID" 2>&1
-            echo "====================="
-            exit 1
-          fi
-          
-          # Verify status JSON format
-          if ! echo "$STATUS_RESPONSE" | grep -q '"state"'; then
-            echo "✗ Status endpoint response is not valid JSON"
-            echo "Response: $STATUS_RESPONSE"
-            echo "=== Container Logs ==="
-            docker logs "$CONTAINER_ID" 2>&1
-            echo "====================="
-            exit 1
-          fi
-          echo "✓ Status endpoint returns valid JSON"
-          
-          # Cleanup (trap will also handle this, but explicit is good)
-          echo "✓ All tests passed"
+          echo "✓ All CLI exit code tests passed"

@@ -20,21 +20,21 @@ import (
 
 // Downloader downloads tracks using Spotify, audio provider, and metadata embedder.
 type Downloader struct {
-	config         *config.DownloadSettings
-	spotifyClient  *spotify.SpotifyClient
-	audioProvider  *audio.Provider
-	metadataEmbedder *metadata.Embedder
+	config             *config.DownloadSettings
+	spotifyClient      *spotify.SpotifyClient
+	audioProvider      *audio.Provider
+	metadataEmbedder   *metadata.Embedder
 	fileExistenceCache map[string]bool
-	cacheMu        sync.RWMutex
+	cacheMu            sync.RWMutex
 }
 
 // NewDownloader creates a new downloader.
 func NewDownloader(cfg *config.DownloadSettings, spotifyClient *spotify.SpotifyClient, audioProvider *audio.Provider, metadataEmbedder *metadata.Embedder) *Downloader {
 	return &Downloader{
-		config:            cfg,
-		spotifyClient:     spotifyClient,
-		audioProvider:     audioProvider,
-		metadataEmbedder:  metadataEmbedder,
+		config:             cfg,
+		spotifyClient:      spotifyClient,
+		audioProvider:      audioProvider,
+		metadataEmbedder:   metadataEmbedder,
 		fileExistenceCache: make(map[string]bool),
 	}
 }
@@ -361,7 +361,7 @@ func extractYouTubeMetadata(item *plan.PlanItem) (*audio.YouTubeVideoMetadata, e
 	case map[string]interface{}:
 		// Convert map to structured type
 		meta := &audio.YouTubeVideoMetadata{}
-		
+
 		if id, ok := v["video_id"].(string); ok {
 			meta.VideoID = id
 		}
@@ -407,7 +407,7 @@ func extractYouTubeMetadata(item *plan.PlanItem) (*audio.YouTubeVideoMetadata, e
 				}
 			}
 		}
-		
+
 		return meta, nil
 	default:
 		return nil, fmt.Errorf("youtube_metadata has unexpected type: %T", v)
@@ -657,15 +657,15 @@ func (d *Downloader) invalidateFileCache(filePath string) {
 func (d *Downloader) GetFileExistenceCacheStats() map[string]interface{} {
 	d.cacheMu.RLock()
 	defer d.cacheMu.RUnlock()
-	
+
 	size := len(d.fileExistenceCache)
 	maxSize := d.config.FileExistenceCacheMaxSize
 	if maxSize == 0 {
 		maxSize = 10000 // Default
 	}
-	
+
 	return map[string]interface{}{
-		"size":    size,
+		"size":     size,
 		"max_size": maxSize,
 	}
 }

@@ -42,7 +42,7 @@ func TestEmbedder_EmbedM4A_Integration(t *testing.T) {
 	// Create a copy of the test file
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test_metadata.m4a")
-	
+
 	// Copy test file
 	data, err := os.ReadFile(testM4A)
 	if err != nil {

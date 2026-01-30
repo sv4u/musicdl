@@ -33,7 +33,7 @@ func (e *Embedder) embedMP3(ctx context.Context, filePath string, song *Song, co
 			}
 		}
 	}
-	defer tag.Close()
+	defer func() { _ = tag.Close() }()
 
 	// Set encoding to UTF-8
 	tag.SetDefaultEncoding(id3v2.EncodingUTF8)
@@ -107,7 +107,7 @@ func (e *Embedder) embedCoverMP3(ctx context.Context, tag *id3v2.Tag, coverURL s
 	if err != nil {
 		return fmt.Errorf("failed to download cover art: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("failed to download cover art: status %d", resp.StatusCode)

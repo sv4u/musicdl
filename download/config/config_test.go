@@ -150,12 +150,12 @@ albums: []
 		"Artist 1": "https://open.spotify.com/artist/1",
 		"Artist 2": "https://open.spotify.com/artist/2",
 	}
-	
+
 	actualArtists := make(map[string]string)
 	for _, artist := range config.Artists {
 		actualArtists[artist.Name] = artist.URL
 	}
-	
+
 	for name, expectedURL := range expectedArtists {
 		if actualURL, ok := actualArtists[name]; !ok {
 			t.Errorf("Expected artist '%s' not found", name)
@@ -248,5 +248,169 @@ albums: []
 
 	if config.Playlists[1].Name != "Playlist 2" {
 		t.Errorf("Expected second playlist name 'Playlist 2', got '%s'", config.Playlists[1].Name)
+	}
+}
+
+func TestLoadConfig_SpecLayoutSpotifyAndThreads(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	// Spec layout: top-level spotify and threads
+	configYAML := `version: "1.2"
+threads: 8
+spotify:
+  client_id: "spec_client_id"
+  client_secret: "spec_client_secret"
+download:
+  format: "mp3"
+  output: "{artist}/{album}/{title}.{output-ext}"
+songs: []
+artists: []
+playlists: []
+albums: []
+`
+
+	if err := os.WriteFile(configPath, []byte(configYAML), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	config, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() failed: %v", err)
+	}
+
+	if config.Download.ClientID != "spec_client_id" {
+		t.Errorf("Expected client_id from spotify, got %q", config.Download.ClientID)
+	}
+	if config.Download.ClientSecret != "spec_client_secret" {
+		t.Errorf("Expected client_secret from spotify, got %q", config.Download.ClientSecret)
+	}
+	if config.Download.Threads != 8 {
+		t.Errorf("Expected threads 8 from top-level, got %d", config.Download.Threads)
+	}
+}
+
+func TestLoadConfig_SpecLayoutLegacyCredentialsTakePrecedence(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	// Legacy download.client_id/client_secret present; spotify also present
+	configYAML := `version: "1.2"
+spotify:
+  client_id: "spotify_id"
+  client_secret: "spotify_secret"
+download:
+  client_id: "legacy_id"
+  client_secret: "legacy_secret"
+  output: "{title}.{output-ext}"
+songs: []
+artists: []
+playlists: []
+albums: []
+`
+
+	if err := os.WriteFile(configPath, []byte(configYAML), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	config, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() failed: %v", err)
+	}
+
+	if config.Download.ClientID != "legacy_id" || config.Download.ClientSecret != "legacy_secret" {
+		t.Errorf("Expected legacy credentials to take precedence, got client_id=%q client_secret=%q",
+			config.Download.ClientID, config.Download.ClientSecret)
+	}
+}
+
+func TestLoadConfig_SpecLayoutRateLimits(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configYAML := `version: "1.2"
+spotify:
+  client_id: "id"
+  client_secret: "sec"
+rate_limits:
+  spotify_retries: 5
+  youtube_retries: 4
+  youtube_bandwidth: 2097152
+download:
+  output: "{artist}/{title}.{output-ext}"
+songs: []
+artists: []
+playlists: []
+albums: []
+`
+
+	if err := os.WriteFile(configPath, []byte(configYAML), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	config, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() failed: %v", err)
+	}
+
+	if config.Download.SpotifyMaxRetries != 5 {
+		t.Errorf("Expected spotify_max_retries 5 from rate_limits.spotify_retries, got %d", config.Download.SpotifyMaxRetries)
+	}
+	if config.Download.MaxRetries != 4 {
+		t.Errorf("Expected max_retries 4 from rate_limits.youtube_retries, got %d", config.Download.MaxRetries)
+	}
+	if config.Download.DownloadBandwidthLimit == nil || *config.Download.DownloadBandwidthLimit != 2097152 {
+		t.Errorf("Expected download_bandwidth_limit 2097152 from rate_limits.youtube_bandwidth, got %v", config.Download.DownloadBandwidthLimit)
+	}
+}
+
+func TestLoadConfig_InvalidThreads(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configYAML := `version: "1.2"
+download:
+  client_id: "id"
+  client_secret: "sec"
+  threads: 20
+  output: "{artist}/{album}/{track-number} - {title}.{output-ext}"
+songs: []
+artists: []
+playlists: []
+albums: []
+`
+
+	if err := os.WriteFile(configPath, []byte(configYAML), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	_, err := LoadConfig(configPath)
+	if err == nil {
+		t.Error("LoadConfig() should fail when threads is outside 1-16")
+	}
+}
+
+func TestLoadConfig_OutputMissingTitlePlaceholder(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configYAML := `version: "1.2"
+download:
+  client_id: "id"
+  client_secret: "sec"
+  output: "{artist}/{album}.{output-ext}"
+songs: []
+artists: []
+playlists: []
+albums: []
+`
+
+	if err := os.WriteFile(configPath, []byte(configYAML), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	_, err := LoadConfig(configPath)
+	if err == nil {
+		t.Error("LoadConfig() should fail when output does not contain {title}")
 	}
 }

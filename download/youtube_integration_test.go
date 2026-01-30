@@ -32,10 +32,10 @@ func TestIntegration_YouTubeVideoDownload(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	cfg := &config.DownloadSettings{
-		Format:    "mp3",
-		Bitrate:   "128k",
-		Output:    filepath.Join(tmpDir, "{artist}/{album}/{title}.{output-ext}"),
-		Overwrite: config.OverwriteSkip,
+		Format:     "mp3",
+		Bitrate:    "128k",
+		Output:     filepath.Join(tmpDir, "{artist}/{album}/{title}.{output-ext}"),
+		Overwrite:  config.OverwriteSkip,
 		MaxRetries: 1,
 	}
 
@@ -51,8 +51,8 @@ func TestIntegration_YouTubeVideoDownload(t *testing.T) {
 	defer spotifyClient.Close()
 
 	audioConfig := &audio.Config{
-		OutputFormat: "mp3",
-		Bitrate:      "128k",
+		OutputFormat:   "mp3",
+		Bitrate:        "128k",
 		AudioProviders: []string{"youtube"},
 	}
 	audioProvider, err := audio.NewProvider(audioConfig)
@@ -121,10 +121,10 @@ func TestIntegration_YouTubeVideoDownload_WithSpotifyEnhancement(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	cfg := &config.DownloadSettings{
-		Format:    "mp3",
-		Bitrate:   "128k",
-		Output:    filepath.Join(tmpDir, "{artist}/{album}/{title}.{output-ext}"),
-		Overwrite: config.OverwriteSkip,
+		Format:     "mp3",
+		Bitrate:    "128k",
+		Output:     filepath.Join(tmpDir, "{artist}/{album}/{title}.{output-ext}"),
+		Overwrite:  config.OverwriteSkip,
 		MaxRetries: 1,
 	}
 
@@ -140,8 +140,8 @@ func TestIntegration_YouTubeVideoDownload_WithSpotifyEnhancement(t *testing.T) {
 	defer spotifyClient.Close()
 
 	audioConfig := &audio.Config{
-		OutputFormat: "mp3",
-		Bitrate:      "128k",
+		OutputFormat:   "mp3",
+		Bitrate:        "128k",
 		AudioProviders: []string{"youtube"},
 	}
 	audioProvider, err := audio.NewProvider(audioConfig)
@@ -232,8 +232,8 @@ func TestIntegration_YouTubePlaylistDownload(t *testing.T) {
 	defer spotifyClient.Close()
 
 	audioConfig := &audio.Config{
-		OutputFormat: "mp3",
-		Bitrate:      "128k",
+		OutputFormat:   "mp3",
+		Bitrate:        "128k",
 		AudioProviders: []string{"youtube"},
 	}
 	audioProvider, err := audio.NewProvider(audioConfig)

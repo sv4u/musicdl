@@ -15,7 +15,7 @@ import (
 func (e *Embedder) embedVorbis(ctx context.Context, filePath string, song *Song, coverURL string) error {
 	// Use mutagen subprocess for OGG/Opus metadata embedding
 	// Mutagen supports OGG/Opus natively via Vorbis comments
-	
+
 	// Download cover art if provided
 	var coverPath string
 	if coverURL != "" {
@@ -27,11 +27,11 @@ func (e *Embedder) embedVorbis(ctx context.Context, filePath string, song *Song,
 		}
 		defer func() {
 			if coverPath != "" {
-				os.Remove(coverPath)
+				_ = os.Remove(coverPath)
 			}
 		}()
 	}
-	
+
 	return e.embedVorbisWithMutagen(ctx, filePath, song, coverPath)
 }
 
@@ -40,8 +40,8 @@ func (e *Embedder) embedVorbisWithMutagen(ctx context.Context, filePath string, 
 	// Create temporary Python script
 	tmpDir := filepath.Dir(filePath)
 	tmpScript := filepath.Join(tmpDir, fmt.Sprintf(".vorbis_metadata_%d.py", time.Now().UnixNano()))
-	defer os.Remove(tmpScript)
-	
+	defer func() { _ = os.Remove(tmpScript) }()
+
 	// Generate Python script content
 	script := fmt.Sprintf(`#!/usr/bin/env python3
 import sys
@@ -63,7 +63,7 @@ try:
     audio['TITLE'] = [%q]
     audio['ARTIST'] = [%q]
 `, filePath, filePath, song.Title, song.Artist)
-	
+
 	if song.Album != "" {
 		script += fmt.Sprintf("    audio['ALBUM'] = [%q]\n", song.Album)
 	}
@@ -88,7 +88,7 @@ try:
 	if song.SpotifyURL != "" {
 		script += fmt.Sprintf("    audio['COMMENT'] = [%q]\n", fmt.Sprintf("Spotify: %s", song.SpotifyURL))
 	}
-	
+
 	// Add cover art if provided
 	if coverPath != "" {
 		script += fmt.Sprintf(`
@@ -97,7 +97,7 @@ try:
         audio['METADATA_BLOCK_PICTURE'] = f.read()
 `, coverPath)
 	}
-	
+
 	script += `
     audio.save()
     sys.exit(0)
@@ -105,7 +105,7 @@ except Exception as e:
     print(f"Error: {e}", file=sys.stderr)
     sys.exit(1)
 `
-	
+
 	// Write script to file
 	if err := os.WriteFile(tmpScript, []byte(script), 0755); err != nil {
 		return &MetadataError{
@@ -113,7 +113,7 @@ except Exception as e:
 			Original: err,
 		}
 	}
-	
+
 	// Execute Python script with context support
 	cmd := exec.CommandContext(ctx, "python3", tmpScript)
 	output, err := cmd.CombinedOutput()
@@ -130,6 +130,6 @@ except Exception as e:
 			Original: err,
 		}
 	}
-	
+
 	return nil
 }

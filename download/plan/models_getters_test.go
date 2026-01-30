@@ -116,9 +116,9 @@ func TestPlanItem_GetMetadata(t *testing.T) {
 	}
 
 	item := &PlanItem{
-		ItemID:    "test:1",
-		ItemType:  PlanItemTypeTrack,
-		Metadata:  originalMetadata,
+		ItemID:   "test:1",
+		ItemType: PlanItemTypeTrack,
+		Metadata: originalMetadata,
 	}
 
 	metadata := item.GetMetadata()

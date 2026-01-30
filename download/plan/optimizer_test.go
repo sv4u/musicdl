@@ -68,7 +68,7 @@ func TestOptimizer_RemoveDuplicates(t *testing.T) {
 func TestOptimizer_CheckFiles(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.mp3")
-	
+
 	// Create a test file
 	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
@@ -115,7 +115,7 @@ func TestOptimizer_CheckFiles(t *testing.T) {
 func TestOptimizer_Optimize(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.mp3")
-	os.WriteFile(testFile, []byte("test"), 0644)
+	_ = os.WriteFile(testFile, []byte("test"), 0644)
 
 	optimizer := NewOptimizer(true)
 	plan := NewDownloadPlan(nil)
@@ -381,7 +381,7 @@ func TestOptimizer_RemoveDuplicates_NonTrackItems(t *testing.T) {
 func TestOptimizer_CheckFiles_Disabled(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.mp3")
-	os.WriteFile(testFile, []byte("test"), 0644)
+	_ = os.WriteFile(testFile, []byte("test"), 0644)
 
 	optimizer := NewOptimizer(false) // File checking disabled
 	plan := NewDownloadPlan(nil)
@@ -410,7 +410,7 @@ func TestOptimizer_CheckFiles_Disabled(t *testing.T) {
 func TestOptimizer_CheckFiles_NonPendingStatus(t *testing.T) {
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.mp3")
-	os.WriteFile(testFile, []byte("test"), 0644)
+	_ = os.WriteFile(testFile, []byte("test"), 0644)
 
 	optimizer := NewOptimizer(true)
 	plan := NewDownloadPlan(nil)
@@ -461,7 +461,7 @@ func TestOptimizer_CheckFiles_MixedStatuses(t *testing.T) {
 	tmpDir := t.TempDir()
 	existingFile := filepath.Join(tmpDir, "existing.mp3")
 	nonexistentFile := filepath.Join(tmpDir, "nonexistent.mp3")
-	os.WriteFile(existingFile, []byte("test"), 0644)
+	_ = os.WriteFile(existingFile, []byte("test"), 0644)
 
 	optimizer := NewOptimizer(true)
 	plan := NewDownloadPlan(nil)

@@ -94,13 +94,13 @@ func (l *Logger) log(level LogLevel, message, operation string, err error) {
 	jsonData, marshalErr := json.Marshal(entry)
 	if marshalErr != nil {
 		// Fallback to simple format if JSON marshaling fails
-		fmt.Fprintf(l.file, "{\"timestamp\":\"%s\",\"level\":\"%s\",\"message\":\"%s\",\"service\":\"%s\"}\n",
+		_, _ = fmt.Fprintf(l.file, "{\"timestamp\":\"%s\",\"level\":\"%s\",\"message\":\"%s\",\"service\":\"%s\"}\n",
 			time.Now().Format(time.RFC3339), level, message, l.service)
 		return
 	}
 
 	// Write JSON line
-	fmt.Fprintln(l.file, string(jsonData))
+	_, _ = fmt.Fprintln(l.file, string(jsonData))
 }
 
 // Debug logs a debug message.

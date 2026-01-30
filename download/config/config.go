@@ -18,9 +18,9 @@ func (e *ConfigError) Error() string {
 type OverwriteMode string
 
 const (
-	OverwriteSkip     OverwriteMode = "skip"
+	OverwriteSkip      OverwriteMode = "skip"
 	OverwriteOverwrite OverwriteMode = "overwrite"
-	OverwriteMetadata OverwriteMode = "metadata"
+	OverwriteMetadata  OverwriteMode = "metadata"
 )
 
 // DownloadSettings holds download configuration settings.
@@ -30,13 +30,13 @@ type DownloadSettings struct {
 	ClientSecret string `yaml:"client_secret"`
 
 	// Basic download settings
-	Threads     int      `yaml:"threads"`
-	MaxRetries  int      `yaml:"max_retries"`
-	Format      string   `yaml:"format"`
-	Bitrate     string   `yaml:"bitrate"`
-	Output      string   `yaml:"output"`
-	AudioProviders []string `yaml:"audio_providers"`
-	Overwrite   OverwriteMode `yaml:"overwrite"`
+	Threads        int           `yaml:"threads"`
+	MaxRetries     int           `yaml:"max_retries"`
+	Format         string        `yaml:"format"`
+	Bitrate        string        `yaml:"bitrate"`
+	Output         string        `yaml:"output"`
+	AudioProviders []string      `yaml:"audio_providers"`
+	Overwrite      OverwriteMode `yaml:"overwrite"`
 
 	// Cache settings
 	CacheMaxSize              int `yaml:"cache_max_size"`
@@ -44,21 +44,21 @@ type DownloadSettings struct {
 	AudioSearchCacheMaxSize   int `yaml:"audio_search_cache_max_size"`
 	AudioSearchCacheTTL       int `yaml:"audio_search_cache_ttl"`
 	FileExistenceCacheMaxSize int `yaml:"file_existence_cache_max_size"`
-	FileExistenceCacheTTL    int `yaml:"file_existence_cache_ttl"`
+	FileExistenceCacheTTL     int `yaml:"file_existence_cache_ttl"`
 
 	// Spotify rate limiting settings
 	SpotifyMaxRetries        int     `yaml:"spotify_max_retries"`
 	SpotifyRetryBaseDelay    float64 `yaml:"spotify_retry_base_delay"`
 	SpotifyRetryMaxDelay     float64 `yaml:"spotify_retry_max_delay"`
-	SpotifyRateLimitEnabled   bool    `yaml:"spotify_rate_limit_enabled"`
-	SpotifyRateLimitRequests  int     `yaml:"spotify_rate_limit_requests"`
-	SpotifyRateLimitWindow    float64 `yaml:"spotify_rate_limit_window"`
+	SpotifyRateLimitEnabled  bool    `yaml:"spotify_rate_limit_enabled"`
+	SpotifyRateLimitRequests int     `yaml:"spotify_rate_limit_requests"`
+	SpotifyRateLimitWindow   float64 `yaml:"spotify_rate_limit_window"`
 
 	// Download rate limiting settings
-	DownloadRateLimitEnabled  bool   `yaml:"download_rate_limit_enabled"`
-	DownloadRateLimitRequests int    `yaml:"download_rate_limit_requests"`
+	DownloadRateLimitEnabled  bool    `yaml:"download_rate_limit_enabled"`
+	DownloadRateLimitRequests int     `yaml:"download_rate_limit_requests"`
 	DownloadRateLimitWindow   float64 `yaml:"download_rate_limit_window"`
-	DownloadBandwidthLimit    *int   `yaml:"download_bandwidth_limit"` // nil = unlimited
+	DownloadBandwidthLimit    *int    `yaml:"download_bandwidth_limit"` // nil = unlimited
 
 	// Plan architecture feature flags
 	PlanGenerationEnabled      bool `yaml:"plan_generation_enabled"`
@@ -175,6 +175,20 @@ func (d *DownloadSettings) Validate() error {
 		}
 	}
 
+	// Validate threads (spec: 1-16)
+	if d.Threads < 1 || d.Threads > 16 {
+		return &ConfigError{
+			Message: fmt.Sprintf("Invalid threads: %d. Must be between 1 and 16", d.Threads),
+		}
+	}
+
+	// Validate output template contains {title} (spec requirement)
+	if !strings.Contains(d.Output, "{title}") {
+		return &ConfigError{
+			Message: "download.output must contain the {title} placeholder",
+		}
+	}
+
 	// Validate overwrite mode
 	if d.Overwrite != OverwriteSkip && d.Overwrite != OverwriteOverwrite && d.Overwrite != OverwriteMetadata {
 		return &ConfigError{
@@ -222,10 +236,10 @@ type MusicSource struct {
 // UISettings holds UI and history tracking configuration settings.
 type UISettings struct {
 	// History tracking settings
-	HistoryPath      string `yaml:"history_path"`       // Path to history directory (default: plan_path/history)
-	HistoryRetention int    `yaml:"history_retention"`  // Number of runs to keep (0 = unlimited, default: 0)
-	SnapshotInterval int   `yaml:"snapshot_interval"`   // Progress snapshot interval in seconds (default: 10)
-	
+	HistoryPath      string `yaml:"history_path"`      // Path to history directory (default: plan_path/history)
+	HistoryRetention int    `yaml:"history_retention"` // Number of runs to keep (0 = unlimited, default: 0)
+	SnapshotInterval int    `yaml:"snapshot_interval"` // Progress snapshot interval in seconds (default: 10)
+
 	// Log settings
 	LogPath string `yaml:"log_path"` // Path to log file (configurable)
 }
@@ -245,13 +259,13 @@ func (u *UISettings) SetDefaults(planPath string) {
 
 // MusicDLConfig represents the main configuration model.
 type MusicDLConfig struct {
-	Version  string          `yaml:"version"`
-	Download DownloadSettings `yaml:"download"`
-	UI       UISettings      `yaml:"ui"`
-	Songs    []MusicSource   `yaml:"songs"`
-	Artists  []MusicSource   `yaml:"artists"`
-	Playlists []MusicSource  `yaml:"playlists"`
-	Albums   []MusicSource   `yaml:"albums"`
+	Version   string           `yaml:"version"`
+	Download  DownloadSettings `yaml:"download"`
+	UI        UISettings       `yaml:"ui"`
+	Songs     []MusicSource    `yaml:"songs"`
+	Artists   []MusicSource    `yaml:"artists"`
+	Playlists []MusicSource    `yaml:"playlists"`
+	Albums    []MusicSource    `yaml:"albums"`
 }
 
 // Validate validates MusicDLConfig.

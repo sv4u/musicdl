@@ -26,13 +26,13 @@ func TestEmbedder_Embed_UnsupportedFormat(t *testing.T) {
 	// Create a temporary file with unsupported extension
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test.wav")
-	
+
 	// Create empty file
 	file, err := os.Create(testFile)
 	if err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
-	file.Close()
+	_ = file.Close()
 
 	// Should not error on unsupported format (just returns nil)
 	err = embedder.Embed(context.Background(), testFile, song, "")
@@ -52,7 +52,7 @@ func TestEmbedder_Embed_FileNotFound(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error for nonexistent file")
 	}
-	
+
 	if _, ok := err.(*MetadataError); !ok {
 		t.Errorf("Expected MetadataError, got %T", err)
 	}
@@ -69,7 +69,7 @@ func TestEmbedder_EmbedFLAC_FileNotFound(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error for nonexistent file")
 	}
-	
+
 	if _, ok := err.(*MetadataError); !ok {
 		t.Errorf("Expected MetadataError, got %T", err)
 	}
@@ -86,7 +86,7 @@ func TestEmbedder_EmbedVorbis_FileNotFound(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error for nonexistent file")
 	}
-	
+
 	if _, ok := err.(*MetadataError); !ok {
 		t.Errorf("Expected MetadataError, got %T", err)
 	}
@@ -103,7 +103,7 @@ func TestEmbedder_EmbedM4A_FileNotFound(t *testing.T) {
 	if err == nil {
 		t.Error("Expected error for nonexistent file")
 	}
-	
+
 	if _, ok := err.(*MetadataError); !ok {
 		t.Errorf("Expected MetadataError, got %T", err)
 	}
@@ -111,7 +111,7 @@ func TestEmbedder_EmbedM4A_FileNotFound(t *testing.T) {
 
 func TestEmbedder_DownloadCoverArt(t *testing.T) {
 	embedder := NewEmbedder()
-	
+
 	// Test with invalid URL (should fail)
 	_, err := embedder.downloadCoverArt(context.Background(), "http://invalid-url-that-does-not-exist.example.com/cover.jpg")
 	if err == nil {
@@ -134,7 +134,7 @@ func TestEmbedder_Embed_CoverURLFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
-	file.Close()
+	_ = file.Close()
 
 	// Test Embed with empty coverURL parameter - should use song.CoverURL
 	err = embedder.Embed(context.Background(), testFile, song, "")
@@ -166,7 +166,7 @@ func TestEmbedder_Embed_EmptySong(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
-	file.Close()
+	_ = file.Close()
 
 	// Should not error on empty song (unsupported format returns nil)
 	err = embedder.Embed(context.Background(), testFile, song, "")

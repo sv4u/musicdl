@@ -4,7 +4,7 @@ import "fmt"
 
 // MetadataError represents a metadata embedding error.
 type MetadataError struct {
-	Message string
+	Message  string
 	Original error
 }
 

@@ -31,13 +31,13 @@ func TestSpotifyClient_Integration(t *testing.T) {
 
 	// Create client
 	config := &Config{
-		ClientID:            clientID,
-		ClientSecret:        clientSecret,
-		CacheMaxSize:        100,
-		CacheTTL:            3600,
-		RateLimitEnabled:    true,
+		ClientID:             clientID,
+		ClientSecret:         clientSecret,
+		CacheMaxSize:         100,
+		CacheTTL:             3600,
+		RateLimitEnabled:     true,
 		RateLimitRequests:    10,
-		RateLimitWindow:     1.0,
+		RateLimitWindow:      1.0,
 		CacheCleanupInterval: 5 * time.Minute,
 	}
 

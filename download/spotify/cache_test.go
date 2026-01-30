@@ -102,8 +102,8 @@ func TestTTLCache_Stats(t *testing.T) {
 	cache := NewTTLCache(10, 3600)
 
 	cache.Set("key1", "value1")
-	cache.Get("key1") // Hit
-	cache.Get("key1") // Hit
+	cache.Get("key1")        // Hit
+	cache.Get("key1")        // Hit
 	cache.Get("nonexistent") // Miss
 
 	stats := cache.Stats()

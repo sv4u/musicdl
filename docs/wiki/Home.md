@@ -1,6 +1,6 @@
 # musicdl Wiki
 
-Welcome to the musicdl wiki. This wiki contains detailed documentation for advanced topics, architecture, deployment, and development.
+Welcome to the musicdl wiki. musicdl is a **CLI-only** tool: use `musicdl plan <config>` and `musicdl download <config>` to generate and run download plans. There is no web UI or API. This wiki contains detailed documentation for architecture, deployment, and development.
 
 ## Pages
 

@@ -42,7 +42,7 @@ func TestEmbedder_EmbedVorbis_Integration(t *testing.T) {
 	// Create a copy of the test file
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "test_metadata.ogg")
-	
+
 	// Copy test file
 	data, err := os.ReadFile(testOGG)
 	if err != nil {

@@ -33,7 +33,7 @@ func TestNewLogger(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// Verify file was created
 	if _, err := os.Stat(logPath); os.IsNotExist(err) {
@@ -49,7 +49,7 @@ func TestLoggerLogLevels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// Test all log levels
 	logger.Debug("debug message")
@@ -62,7 +62,7 @@ func TestLoggerLogLevels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open log file: %v", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
 	levels := []LogLevel{LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError}
@@ -107,7 +107,7 @@ func TestLoggerWithOperation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	operation := "test-operation"
 	message := "test message"
@@ -118,7 +118,7 @@ func TestLoggerWithOperation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open log file: %v", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
 	if !scanner.Scan() {
@@ -147,7 +147,7 @@ func TestLoggerWithError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	testErr := &os.PathError{
 		Op:   "open",
@@ -162,7 +162,7 @@ func TestLoggerWithError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open log file: %v", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
 	if !scanner.Scan() {
@@ -195,7 +195,7 @@ func TestLoggerFormattedMessages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	logger.Debugf("debug: %s", "value")
 	logger.Infof("info: %d items", 42)
@@ -207,7 +207,7 @@ func TestLoggerFormattedMessages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open log file: %v", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
 	expectedMessages := []string{
@@ -248,7 +248,7 @@ func TestLoggerConcurrency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	// Write logs concurrently
 	// Reduce memory usage when running with race detector
@@ -279,7 +279,7 @@ func TestLoggerConcurrency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open log file: %v", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
 	count := 0
@@ -305,7 +305,7 @@ func TestLoggerTimestampFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create logger: %v", err)
 	}
-	defer logger.Close()
+	defer func() { _ = logger.Close() }()
 
 	before := time.Now()
 	logger.Info("test message")
@@ -316,7 +316,7 @@ func TestLoggerTimestampFormat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to open log file: %v", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
 	if !scanner.Scan() {
@@ -344,7 +344,7 @@ func TestLoggerAppendMode(t *testing.T) {
 		t.Fatalf("Failed to create logger: %v", err)
 	}
 	logger1.Info("first message")
-	logger1.Close()
+	_ = logger1.Close()
 
 	// Create second logger and write (should append)
 	logger2, err := NewLogger(logPath, "test-service")
@@ -352,14 +352,14 @@ func TestLoggerAppendMode(t *testing.T) {
 		t.Fatalf("Failed to create logger: %v", err)
 	}
 	logger2.Info("second message")
-	logger2.Close()
+	_ = logger2.Close()
 
 	// Verify both messages are present
 	file, err := os.Open(logPath)
 	if err != nil {
 		t.Fatalf("Failed to open log file: %v", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	scanner := bufio.NewScanner(file)
 	messages := []string{}

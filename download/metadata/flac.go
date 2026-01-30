@@ -16,7 +16,7 @@ import (
 func (e *Embedder) embedFLAC(ctx context.Context, filePath string, song *Song, coverURL string) error {
 	// Use mutagen subprocess for FLAC metadata embedding
 	// Mutagen supports FLAC natively via Vorbis comments
-	
+
 	// Download cover art if provided
 	var coverPath string
 	if coverURL != "" {
@@ -28,11 +28,11 @@ func (e *Embedder) embedFLAC(ctx context.Context, filePath string, song *Song, c
 		}
 		defer func() {
 			if coverPath != "" {
-				os.Remove(coverPath)
+				_ = os.Remove(coverPath)
 			}
 		}()
 	}
-	
+
 	// Use mutagen to set metadata
 	// mutagen-inspect can read, but we need to use Python script with mutagen library
 	// Create a temporary Python script to set metadata
@@ -44,8 +44,8 @@ func (e *Embedder) embedFLACWithMutagen(ctx context.Context, filePath string, so
 	// Create temporary Python script
 	tmpDir := filepath.Dir(filePath)
 	tmpScript := filepath.Join(tmpDir, fmt.Sprintf(".flac_metadata_%d.py", time.Now().UnixNano()))
-	defer os.Remove(tmpScript)
-	
+	defer func() { _ = os.Remove(tmpScript) }()
+
 	// Generate Python script content
 	script := fmt.Sprintf(`#!/usr/bin/env python3
 import sys
@@ -61,7 +61,7 @@ try:
     audio['TITLE'] = [%q]
     audio['ARTIST'] = [%q]
 `, filePath, song.Title, song.Artist)
-	
+
 	if song.Album != "" {
 		script += fmt.Sprintf("    audio['ALBUM'] = [%q]\n", song.Album)
 	}
@@ -86,7 +86,7 @@ try:
 	if song.SpotifyURL != "" {
 		script += fmt.Sprintf("    audio['COMMENT'] = [%q]\n", fmt.Sprintf("Spotify: %s", song.SpotifyURL))
 	}
-	
+
 	// Add cover art if provided
 	if coverPath != "" {
 		script += fmt.Sprintf(`
@@ -95,7 +95,7 @@ try:
         audio['PICTURE'] = f.read()
 `, coverPath)
 	}
-	
+
 	script += `
     audio.save()
     sys.exit(0)
@@ -103,7 +103,7 @@ except Exception as e:
     print(f"Error: {e}", file=sys.stderr)
     sys.exit(1)
 `
-	
+
 	// Write script to file
 	if err := os.WriteFile(tmpScript, []byte(script), 0755); err != nil {
 		return &MetadataError{
@@ -111,7 +111,7 @@ except Exception as e:
 			Original: err,
 		}
 	}
-	
+
 	// Execute Python script with context support
 	cmd := exec.CommandContext(ctx, "python3", tmpScript)
 	output, err := cmd.CombinedOutput()
@@ -128,7 +128,7 @@ except Exception as e:
 			Original: err,
 		}
 	}
-	
+
 	return nil
 }
 
@@ -145,29 +145,29 @@ func (e *Embedder) downloadCoverArt(ctx context.Context, coverURL string) (strin
 	if err != nil {
 		return "", fmt.Errorf("failed to download cover art: %w", err)
 	}
-	defer resp.Body.Close()
-	
+	defer func() { _ = resp.Body.Close() }()
+
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("failed to download cover art: status %d", resp.StatusCode)
 	}
-	
+
 	// Create temporary file
 	tmpFile, err := os.CreateTemp("", "cover_art_*.jpg")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}
-	
+
 	// Copy data
 	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
-		tmpFile.Close()
-		os.Remove(tmpFile.Name())
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
 		return "", fmt.Errorf("failed to write cover art: %w", err)
 	}
-	
+
 	if err := tmpFile.Close(); err != nil {
-		os.Remove(tmpFile.Name())
+		_ = os.Remove(tmpFile.Name())
 		return "", fmt.Errorf("failed to close temp file: %w", err)
 	}
-	
+
 	return tmpFile.Name(), nil
 }

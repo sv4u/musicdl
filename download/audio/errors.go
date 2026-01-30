@@ -4,7 +4,7 @@ import "fmt"
 
 // DownloadError represents an audio download error.
 type DownloadError struct {
-	Message string
+	Message  string
 	Original error
 }
 
@@ -21,7 +21,7 @@ func (e *DownloadError) Unwrap() error {
 
 // SearchError represents an audio search error.
 type SearchError struct {
-	Message string
+	Message  string
 	Original error
 }
 

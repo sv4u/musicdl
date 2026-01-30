@@ -19,15 +19,15 @@ type Downloader interface {
 
 // Executor executes download plans with parallel processing.
 type Executor struct {
-	downloader      Downloader
-	maxWorkers      int
-	mu              sync.Mutex
-	progressCallback func(*PlanItem)
+	downloader        Downloader
+	maxWorkers        int
+	mu                sync.Mutex
+	progressCallback  func(*PlanItem)
 	shutdownRequested bool
-	shutdownMu       sync.RWMutex
-	currentPlan      *DownloadPlan
-	executionWg     *sync.WaitGroup // WaitGroup for active execution
-	executionWgMu   sync.RWMutex    // Protects executionWg
+	shutdownMu        sync.RWMutex
+	currentPlan       *DownloadPlan
+	executionWg       *sync.WaitGroup // WaitGroup for active execution
+	executionWgMu     sync.RWMutex    // Protects executionWg
 }
 
 // NewExecutor creates a new plan executor.
@@ -92,7 +92,7 @@ func (e *Executor) Execute(ctx context.Context, plan *DownloadPlan, progressCall
 
 	// Wait for all downloads to complete
 	wg.Wait()
-	
+
 	// Clear execution WaitGroup after completion
 	e.executionWgMu.Lock()
 	e.executionWg = nil
@@ -208,9 +208,10 @@ func (e *Executor) updateContainerStatus(containerItem *PlanItem, plan *Download
 		failedCount := 0
 		for _, item := range childItems {
 			status := childStatuses[item.ItemID]
-			if status == PlanItemStatusCompleted {
+			switch status {
+			case PlanItemStatusCompleted:
 				completedCount++
-			} else if status == PlanItemStatusFailed {
+			case PlanItemStatusFailed:
 				failedCount++
 			}
 		}
@@ -403,7 +404,7 @@ func (e *Executor) createM3UFile(playlistName string, tracks []*PlanItem) (strin
 	if err != nil {
 		return "", fmt.Errorf("cannot create M3U file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// Write M3U header
 	if _, err := file.WriteString("#EXTM3U\n"); err != nil {
@@ -423,7 +424,7 @@ func (e *Executor) createM3UFile(playlistName string, tracks []*PlanItem) (strin
 		}
 
 		// Write EXTINF line
-		if _, err := file.WriteString(fmt.Sprintf("#EXTINF:-1,%s\n", title)); err != nil {
+		if _, err := fmt.Fprintf(file, "#EXTINF:-1,%s\n", title); err != nil {
 			continue
 		}
 
@@ -489,11 +490,11 @@ func (e *Executor) getExecutionStats(plan *DownloadPlan) map[string]int {
 	}
 
 	return map[string]int{
-		"completed":  completed,
-		"failed":     failed,
-		"pending":    pending,
+		"completed":   completed,
+		"failed":      failed,
+		"pending":     pending,
 		"in_progress": inProgress,
-		"total":      len(trackItems),
+		"total":       len(trackItems),
 	}
 }
 
@@ -523,12 +524,12 @@ func (e *Executor) WaitForShutdown(timeout time.Duration) bool {
 	e.executionWgMu.RLock()
 	wg := e.executionWg
 	e.executionWgMu.RUnlock()
-	
+
 	if wg == nil {
 		// No active execution - shutdown is immediate
 		return true
 	}
-	
+
 	// Wait for completion with timeout
 	done := make(chan struct{})
 	go func() {
