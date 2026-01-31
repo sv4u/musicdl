@@ -10,7 +10,7 @@ import (
 
 func TestPlanCommand_InvalidConfigExits1(t *testing.T) {
 	// Missing config file -> configuration error, exit 1
-	code := planCommand(filepath.Join(t.TempDir(), "nonexistent.yaml"))
+	code := planCommand(filepath.Join(t.TempDir(), "nonexistent.yaml"), true)
 	if code != PlanExitConfigError {
 		t.Errorf("planCommand(nonexistent config) = %d, want %d (PlanExitConfigError)", code, PlanExitConfigError)
 	}
@@ -22,7 +22,7 @@ func TestPlanCommand_InvalidYAMLExits1(t *testing.T) {
 	if err := os.WriteFile(badConfig, []byte("invalid: yaml: ["), 0644); err != nil {
 		t.Fatalf("write bad config: %v", err)
 	}
-	code := planCommand(badConfig)
+	code := planCommand(badConfig, true)
 	if code != PlanExitConfigError {
 		t.Errorf("planCommand(invalid YAML) = %d, want %d (PlanExitConfigError)", code, PlanExitConfigError)
 	}
@@ -50,7 +50,7 @@ download:
 	// Ensure .cache is empty (no plan)
 	_ = os.RemoveAll(".cache")
 
-	code := downloadCLICommand(configPath)
+	code := downloadCLICommand(configPath, true)
 	if code != DownloadExitPlanMissing {
 		t.Errorf("downloadCLICommand(no plan) = %d, want %d (DownloadExitPlanMissing)", code, DownloadExitPlanMissing)
 	}

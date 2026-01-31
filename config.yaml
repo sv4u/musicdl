@@ -1,107 +1,43 @@
 version: "1.2"
 
-# Download configuration settings
+# Spotify API credentials (required). Get from https://developer.spotify.com/dashboard
+spotify:
+  client_id: "your_spotify_client_id"
+  client_secret: "your_spotify_client_secret"
+
 download:
-  # Spotify API credentials (REQUIRED)
-  # Get these from https://developer.spotify.com/dashboard
-  # Create an app and copy the Client ID and Client Secret
-  # client_id: "your_spotify_client_id_here"
-  # client_secret: "your_spotify_client_secret_here"
+  threads: 2
+  max_retries: 5
+  format: mp3
+  bitrate: 128k
+  output: "{artist}/{album}/{disc-number}{track-number} - {title}.{output-ext}"
+  audio_providers:
+    - youtube-music
+    - youtube
+  overwrite: metadata
 
-  # Basic download settings
-  threads: 1 # Number of parallel download threads (default: 4)
-  max_retries: 3 # Maximum retry attempts for failed downloads (default: 3)
-  format: "mp3" # Output format: mp3, flac, m4a, opus (default: mp3)
-  bitrate: "128k" # Audio bitrate: 128k, 192k, 256k, 320k (default: 128k)
-  output: "{artist}/{album}/{track-number} - {title}.{output-ext}" # Output path template (default: shown)
-  audio_providers: # Audio source providers (in order of preference)
-    - "youtube-music" # Options: youtube-music, youtube, soundcloud
-    - "youtube"
-  overwrite: "metadata" # File overwrite behavior: skip, overwrite, metadata (default: skip)
+rate_limits:
+  spotify_retries: 1
+  youtube_retries: 3
+  youtube_bandwidth: 1048576
 
-  # Cache settings
-  cache_max_size: 1000 # Maximum cache size for Spotify metadata (default: 1000)
-  cache_ttl: 3600 # Cache TTL in seconds (default: 3600 = 1 hour)
-  audio_search_cache_max_size: 500 # Audio search result cache size (default: 500)
-  audio_search_cache_ttl: 86400 # Audio search cache TTL in seconds (default: 86400 = 24 hours)
-  file_existence_cache_max_size: 10000 # File existence check cache size (default: 10000)
-  file_existence_cache_ttl: 3600 # File existence cache TTL in seconds (default: 3600 = 1 hour)
+# Music sources: songs, artists, playlists, albums. Each entry: name + url (Spotify or YouTube).
+# Optional: create_m3u: true on playlists/albums to generate .m3u files.
+songs: []
 
-  # Spotify API rate limiting settings
-  spotify_max_retries: 3 # Maximum retries for Spotify API calls (default: 3)
-  spotify_retry_base_delay: 1.0 # Base delay in seconds for exponential backoff (default: 1.0)
-  spotify_retry_max_delay: 120.0 # Maximum delay in seconds (default: 120.0)
-  spotify_rate_limit_enabled: true # Enable Spotify rate limiting (default: true)
-  spotify_rate_limit_requests: 10 # Max requests per window (default: 10)
-  spotify_rate_limit_window: 1.0 # Rate limit window in seconds (default: 1.0)
-
-  # Download rate limiting settings
-  download_rate_limit_enabled: true # Enable download rate limiting (default: true)
-  download_rate_limit_requests: 2 # Max concurrent downloads (default: 2)
-  download_rate_limit_window: 1.0 # Rate limit window in seconds (default: 1.0)
-  download_bandwidth_limit: 1048576 # Bandwidth limit in bytes/sec (1MB/sec default, null = unlimited)
-
-  # Plan architecture feature flags (advanced)
-  plan_generation_enabled: true # Enable plan generation (default: true)
-  plan_optimization_enabled: true # Enable plan optimization (default: true)
-  plan_execution_enabled: true # Enable plan execution (default: true)
-  plan_persistence_enabled: true # Save plans to disk (default: true)
-  plan_status_reporting_enabled: true # Enable status reporting (default: true)
-
-# UI and history tracking configuration
-ui:
-  # History tracking settings
-  # history_path: Relative paths are resolved relative to plan_path. Absolute paths are used as-is.
-  #               Empty string (default) = plan_path/history
-  history_path: "" # Path to history directory (default: plan_path/history, empty = auto)
-  history_retention: 0 # Number of runs to keep (0 = unlimited, default: 0)
-  snapshot_interval: 10 # Progress snapshot interval in seconds (default: 10)
-  
-  # Log settings
-  # log_path: Relative paths are resolved relative to config file directory. Absolute paths are used as-is.
-  #           Empty string (default) = uses command-line --log-path flag value
-  log_path: "" # Path to log file (default: set by control platform, empty = auto)
-
-# Music sources to download
-# You can use either simple format (name: url) or extended format (name, url, create_m3u)
-
-# Individual songs
-songs:
-  # Simple format: name as key, URL as value
-  - name: "YYZ"
-    url: "https://open.spotify.com/track/1RKbVxcm267VdsIzqY7msi"
-
-  - name: "Crawling"
-    url: "https://open.spotify.com/track/1BfzeCKzo8xSvJcYLmnP8f"
-
-# Artists (downloads entire discography)
 artists:
-  # Simple format
-  - name: "Aries"
-    url: "https://open.spotify.com/artist/3hOdow4ZPmrby7Q1wfPLEy"
+  - name: Aries
+    url: https://open.spotify.com/artist/3hOdow4ZPmrby7Q1wfPLEy
+  - name: glaive
+    url: https://open.spotify.com/artist/4cJKDGSv4Dz9QycXYmo565
+  - name: Fall Out Boy
+    url: https://open.spotify.com/artist/4UXqAaa6dQYAk18Lv7PEgX
 
-  # Extended format (same as simple for artists)
-  - name: "Rush"
-    url: "https://open.spotify.com/artist/2Hkut4rAAyrQxRdof7FVJq"
-
-# Playlists
 playlists:
-  # Simple format
-  - name: "planet namek"
-    url: "https://open.spotify.com/playlist/5Xrt7Y1mwD4q107Ty56xnn"
+  - name: planet namek
+    url: https://open.spotify.com/playlist/5Xrt7Y1mwD4q107Ty56xnn
+  - name: hell
+    url: https://open.spotify.com/playlist/74yTlcAU98jlhzIy5Iwu4E
+    create_m3u: true
 
-  # Extended format with M3U playlist file generation
-  - name: "hell"
-    url: "https://open.spotify.com/playlist/74yTlcAU98jlhzIy5Iwu4E"
-    create_m3u: true # Generate .m3u playlist file
-
-# Albums
-albums:
-  # Simple format
-  - name: "Moving Pictures"
-    url: "https://open.spotify.com/album/77CZUF57sYqgtznUe3OikQ"
-
-  # Extended format with M3U playlist file generation
-  - name: "hypochondriac"
-    url: "https://open.spotify.com/album/6XV76W17coHAKFdeyiGT08"
-    create_m3u: true # Generate .m3u playlist file
+albums: []

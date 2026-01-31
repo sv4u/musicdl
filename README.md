@@ -68,22 +68,24 @@ musicdl download config.yaml
 
 ## Commands
 
-### `musicdl plan <config-file>`
+### `musicdl plan [--no-tui] <config-file>`
 
-Generate a download plan from the config and save it to `.cache/download_plan_<hash>.json`. The hash is derived from the config file content.
+Generate a download plan from the config and save it to `.cache/download_plan_<hash>.json`. The hash is derived from the config file content. When stdout is a terminal, a TUI shows progress and recent errors; logs are written to `.logs/run_<timestamp>/plan.log`. Use `--no-tui` or run in a non-TTY (e.g. CI) for file-only logging and a brief summary to stdout.
 
 ```bash
 musicdl plan config.yaml
+musicdl plan --no-tui config.yaml
 ```
 
 **Exit codes:** 0 = success, 1 = configuration error, 2 = network error, 3 = file system error
 
-### `musicdl download <config-file>`
+### `musicdl download [--no-tui] <config-file>`
 
-Load the plan for the given config (by hash) and run the download. You must run `musicdl plan` first.
+Load the plan for the given config (by hash) and run the download. You must run `musicdl plan` first. When stdout is a terminal, a TUI shows download progress and recent errors; logs are written to `.logs/run_<timestamp>/download.log`. Use `--no-tui` or run in a non-TTY for file-only logging and a brief summary to stdout.
 
 ```bash
 musicdl download config.yaml
+musicdl download --no-tui config.yaml
 ```
 
 **Exit codes:** 0 = success, 1 = configuration error, 2 = plan file not found or hash mismatch, 3 = network error, 4 = file system error, 5 = partial success (some failures)
@@ -101,6 +103,8 @@ musicdl --version
 ## Environment Variables
 
 - **MUSICDL_CACHE_DIR** – Cache directory (default: `.cache` under current directory). Plan and caches live here.
+- **MUSICDL_LOG_DIR** – Log directory (default: `.logs`). Each run creates `.logs/run_<timestamp>/` with `plan.log` or `download.log`.
+- **MUSICDL_NO_TUI** – If set, disables the TUI even when stdout is a terminal (same effect as `--no-tui`).
 - **MUSICDL_WORK_DIR** – Working directory for relative paths (default: current directory).
 - **MUSICDL_LOG_LEVEL** – Log level for diagnostics (optional).
 

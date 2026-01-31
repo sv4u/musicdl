@@ -192,8 +192,9 @@ cython_debug/
 # m3u
 *.m3u
 
-# musicdl cache
+# musicdl cache and logs
 .cache
+.logs
 
 # Cursor plans
 .cursor/plans/

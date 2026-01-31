@@ -44,8 +44,9 @@ func getCacheDir() string {
 }
 
 // planCommand runs the plan subcommand: load config, generate plan, save to .cache/download_plan_<hash>.json.
+// Logs are written to .logs/run_<timestamp>/plan.log. If noTUI is false and stdout is a TTY, shows a TUI.
 // Returns exit code.
-func planCommand(configPath string) int {
+func planCommand(configPath string, noTUI bool) int {
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		if _, ok := err.(*config.ConfigError); ok {
@@ -65,6 +66,12 @@ func planCommand(configPath string) int {
 	cacheDir := getCacheDir()
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating cache directory: %v\n", err)
+		return PlanExitFilesystem
+	}
+
+	_, logPath, err := CreateRunDir(RunDirPlan)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating log directory: %v\n", err)
 		return PlanExitFilesystem
 	}
 
@@ -106,36 +113,91 @@ func planCommand(configPath string) int {
 	optimizer := plan.NewOptimizer(true)
 
 	ctx := context.Background()
-	generatedPlan, err := generator.GeneratePlan(ctx)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Plan generation failed: %v\n", err)
-		return PlanExitNetwork
+
+	if !WantTUI(noTUI) {
+		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error opening log file: %v\n", err)
+			return PlanExitFilesystem
+		}
+		restore := RedirectLogToFile(logFile)
+		defer restore()
+		defer logFile.Close()
+
+		generatedPlan, err := generator.GeneratePlan(ctx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Plan generation failed: %v\n", err)
+			return PlanExitNetwork
+		}
+		optimizer.Optimize(generatedPlan)
+		configFile := filepath.Base(configPath)
+		if err := plan.SavePlanByHash(generatedPlan, cacheDir, hash, configFile); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving plan file: %v\n", err)
+			return PlanExitFilesystem
+		}
+		trackCount := 0
+		for _, item := range generatedPlan.Items {
+			if item.ItemType == plan.PlanItemTypeTrack {
+				trackCount++
+			}
+		}
+		fmt.Printf("Plan generated successfully\n")
+		fmt.Printf("Configuration: %s\n", configPath)
+		fmt.Printf("Total tracks: %d\n", trackCount)
+		fmt.Printf("Plan file: %s\n", plan.GetPlanFilePath(cacheDir, hash))
+		fmt.Printf("Log file: %s\n", logPath)
+		return PlanExitSuccess
 	}
 
-	optimizer.Optimize(generatedPlan)
-
-	configFile := filepath.Base(configPath)
-	if err := plan.SavePlanByHash(generatedPlan, cacheDir, hash, configFile); err != nil {
-		fmt.Fprintf(os.Stderr, "Error saving plan file: %v\n", err)
+	// TUI path
+	errCh := make(chan string, 64)
+	tee, err := NewLogTeeWriter(logPath, errCh)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening log file: %v\n", err)
 		return PlanExitFilesystem
 	}
+	defer tee.Close()
+	defer close(errCh)
+	restore := RedirectLogToFile(tee)
+	defer restore()
 
-	trackCount := 0
-	for _, item := range generatedPlan.Items {
-		if item.ItemType == plan.PlanItemTypeTrack {
-			trackCount++
+	planCh := make(chan planMsg, 1)
+	go func() {
+		generatedPlan, genErr := generator.GeneratePlan(ctx)
+		trackCount := 0
+		planPath := ""
+		if genErr == nil {
+			optimizer.Optimize(generatedPlan)
+			configFile := filepath.Base(configPath)
+			if saveErr := plan.SavePlanByHash(generatedPlan, cacheDir, hash, configFile); saveErr != nil {
+				genErr = saveErr
+			} else {
+				for _, item := range generatedPlan.Items {
+					if item.ItemType == plan.PlanItemTypeTrack {
+						trackCount++
+					}
+				}
+				planPath = plan.GetPlanFilePath(cacheDir, hash)
+			}
 		}
+		planCh <- planMsg{Done: true, Err: genErr, TrackCount: trackCount, PlanPath: planPath}
+		close(planCh)
+	}()
+
+	runErr := RunPlanTUI(logPath, planCh, errCh)
+	if runErr != nil {
+		if strings.Contains(runErr.Error(), "network") || strings.Contains(runErr.Error(), "rate limit") {
+			return PlanExitNetwork
+		}
+		return PlanExitFilesystem
 	}
-	fmt.Printf("Plan generated successfully\n")
-	fmt.Printf("Configuration: %s\n", configPath)
-	fmt.Printf("Total tracks: %d\n", trackCount)
-	fmt.Printf("Plan file: %s\n", plan.GetPlanFilePath(cacheDir, hash))
 	return PlanExitSuccess
 }
 
 // downloadCLICommand runs the download subcommand: load config, load plan by hash, run executor.
+// Logs are written to .logs/run_<timestamp>/download.log. If noTUI is false and stdout is a TTY, shows a TUI.
 // Returns exit code.
-func downloadCLICommand(configPath string) int {
+func downloadCLICommand(configPath string, noTUI bool) int {
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		if _, ok := err.(*config.ConfigError); ok {
@@ -165,6 +227,12 @@ func downloadCLICommand(configPath string) int {
 		}
 		fmt.Fprintf(os.Stderr, "Error loading plan: %v\n", err)
 		return DownloadExitPlanMissing
+	}
+
+	_, logPath, err := CreateRunDir(RunDirDownload)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating log directory: %v\n", err)
+		return DownloadExitFilesystem
 	}
 
 	spotifyConfig := &spotify.Config{
@@ -205,32 +273,84 @@ func downloadCLICommand(configPath string) int {
 		maxWorkers = 4
 	}
 	executor := plan.NewExecutor(downloader, maxWorkers)
-
 	ctx := context.Background()
-	progressCallback := func(item *plan.PlanItem) {
-		// Optional: print progress to stdout
-		_ = item
-	}
-	stats, err := executor.Execute(ctx, loadedPlan, progressCallback)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Download failed: %v\n", err)
-		if strings.Contains(err.Error(), "network") || strings.Contains(err.Error(), "rate limit") {
+
+	if !WantTUI(noTUI) {
+		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error opening log file: %v\n", err)
+			return DownloadExitFilesystem
+		}
+		restore := RedirectLogToFile(logFile)
+		defer restore()
+		defer logFile.Close()
+
+		progressCallback := func(item *plan.PlanItem) { _ = item }
+		stats, err := executor.Execute(ctx, loadedPlan, progressCallback)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Download failed: %v\n", err)
+			if strings.Contains(err.Error(), "network") || strings.Contains(err.Error(), "rate limit") {
+				return DownloadExitNetwork
+			}
+			if strings.Contains(err.Error(), "permission") || strings.Contains(err.Error(), "no space") {
+				return DownloadExitFilesystem
+			}
 			return DownloadExitNetwork
 		}
-		if strings.Contains(err.Error(), "permission") || strings.Contains(err.Error(), "no space") {
+		completed := stats["completed"]
+		failed := stats["failed"]
+		total := stats["total"]
+		fmt.Printf("Download complete\n")
+		fmt.Printf("Successful: %d\n", completed)
+		fmt.Printf("Failed: %d\n", failed)
+		fmt.Printf("Total: %d\n", total)
+		fmt.Printf("Log file: %s\n", logPath)
+		if failed > 0 && completed > 0 {
+			return DownloadExitPartial
+		}
+		if failed > 0 {
+			return DownloadExitNetwork
+		}
+		return DownloadExitSuccess
+	}
+
+	// TUI path
+	errCh := make(chan string, 64)
+	tee, err := NewLogTeeWriter(logPath, errCh)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening log file: %v\n", err)
+		return DownloadExitFilesystem
+	}
+	defer tee.Close()
+	defer close(errCh)
+	restore := RedirectLogToFile(tee)
+	defer restore()
+
+	progressCh := make(chan downloadMsg, 64)
+	go func() {
+		progressCallback := func(item *plan.PlanItem) {
+			progressCh <- downloadMsg{Item: item}
+		}
+		stats, execErr := executor.Execute(ctx, loadedPlan, progressCallback)
+		progressCh <- downloadMsg{Stats: stats, Err: execErr}
+		close(progressCh)
+	}()
+
+	stats, execErr := RunDownloadTUI(logPath, countPendingTracks(loadedPlan), progressCh, errCh)
+	if execErr != nil {
+		if strings.Contains(execErr.Error(), "network") || strings.Contains(execErr.Error(), "rate limit") {
+			return DownloadExitNetwork
+		}
+		if strings.Contains(execErr.Error(), "permission") || strings.Contains(execErr.Error(), "no space") {
 			return DownloadExitFilesystem
 		}
 		return DownloadExitNetwork
 	}
-
+	if stats == nil {
+		return DownloadExitSuccess
+	}
 	completed := stats["completed"]
 	failed := stats["failed"]
-	total := stats["total"]
-	fmt.Printf("Download complete\n")
-	fmt.Printf("Successful: %d\n", completed)
-	fmt.Printf("Failed: %d\n", failed)
-	fmt.Printf("Total: %d\n", total)
-
 	if failed > 0 && completed > 0 {
 		return DownloadExitPartial
 	}

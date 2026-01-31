@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"strings"
 )
 
 var (
@@ -26,25 +25,24 @@ func main() {
 		os.Exit(0)
 	}
 
-	// CLI: musicdl plan <config-file>
+	// CLI: musicdl plan [--no-tui] <config-file>
 	if command == "plan" {
-		if len(os.Args) < 3 {
-			fmt.Fprintf(os.Stderr, "Usage: musicdl plan <config-file>\n")
+		configPath, noTUI := ParsePlanArgs(os.Args[2:])
+		if configPath == "" {
+			fmt.Fprintf(os.Stderr, "Usage: musicdl plan [--no-tui] <config-file>\n")
 			os.Exit(PlanExitConfigError)
 		}
-		configPath := os.Args[2]
-		os.Exit(planCommand(configPath))
+		os.Exit(planCommand(configPath, noTUI))
 	}
 
-	// CLI: musicdl download <config-file>
-	if command == "download" && len(os.Args) >= 3 && !strings.HasPrefix(os.Args[2], "-") {
-		configPath := os.Args[2]
-		os.Exit(downloadCLICommand(configPath))
-	}
-
+	// CLI: musicdl download [--no-tui] <config-file>
 	if command == "download" {
-		fmt.Fprintf(os.Stderr, "Usage: musicdl download <config-file>\n")
-		os.Exit(DownloadExitConfigError)
+		configPath, noTUI := ParseDownloadArgs(os.Args[2:])
+		if configPath == "" {
+			fmt.Fprintf(os.Stderr, "Usage: musicdl download [--no-tui] <config-file>\n")
+			os.Exit(DownloadExitConfigError)
+		}
+		os.Exit(downloadCLICommand(configPath, noTUI))
 	}
 
 	fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", command)
@@ -59,8 +57,8 @@ USAGE:
     musicdl <command> [arguments]
 
 COMMANDS:
-    plan <config-file>     Generate download plan (saves to .cache/download_plan_<hash>.json)
-    download <config-file> Run downloads from plan (run 'musicdl plan' first)
+    plan [--no-tui] <config-file>     Generate download plan (saves to .cache/download_plan_<hash>.json)
+    download [--no-tui] <config-file> Run downloads from plan (run 'musicdl plan' first)
     version                Show version information
 
 EXAMPLES:
