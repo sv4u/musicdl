@@ -2,15 +2,47 @@ package plan
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/sv4u/musicdl/download/audio"
 	"github.com/sv4u/musicdl/download/config"
+	"github.com/sv4u/musicdl/download/spotify"
 	"github.com/sv4u/spotigo"
 )
+
+const rateLimitRetryMaxAttempts = 3
+
+// runWithRateLimitRetry runs fn. If fn returns a spotify.RateLimitError, it sleeps for RetryAfter+10 seconds and retries.
+func runWithRateLimitRetry(ctx context.Context, fn func() error) error {
+	var lastErr error
+	for attempt := 1; attempt <= rateLimitRetryMaxAttempts; attempt++ {
+		lastErr = fn()
+		if lastErr == nil {
+			return nil
+		}
+		var rateLimitErr *spotify.RateLimitError
+		if !errors.As(lastErr, &rateLimitErr) || attempt == rateLimitRetryMaxAttempts {
+			return lastErr
+		}
+		waitSec := rateLimitErr.RetryAfter + 10
+		if rateLimitErr.RetryAfter <= 0 {
+			waitSec = 10
+		}
+		waitDur := time.Duration(waitSec) * time.Second
+		log.Printf("INFO: rate_limit_retry phase=plan attempt=%d max_retries=%d retry_after_seconds=%d sleeping_seconds=%d", attempt, rateLimitRetryMaxAttempts, rateLimitErr.RetryAfter, waitSec)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(waitDur):
+		}
+	}
+	return lastErr
+}
 
 // YouTubeMetadataProvider defines the interface for extracting YouTube metadata.
 // This allows for easier testing with mocks.
@@ -155,8 +187,13 @@ func (g *Generator) processSong(ctx context.Context, plan *DownloadPlan, song co
 		return nil // Skip duplicate
 	}
 
-	// Fetch track metadata
-	track, err := g.spotifyClient.GetTrack(ctx, trackID)
+	// Fetch track metadata (with rate limit retry)
+	var track *spotigo.Track
+	err := runWithRateLimitRetry(ctx, func() error {
+		var err2 error
+		track, err2 = g.spotifyClient.GetTrack(ctx, trackID)
+		return err2
+	})
 	if err != nil {
 		log.Printf("ERROR: api_call_failed type=track spotify_id=%s error=%v", trackID, err)
 		// Create failed item
@@ -316,11 +353,16 @@ func (g *Generator) enhanceYouTubeWithSpotify(ctx context.Context, item *PlanIte
 
 // performSpotifySearch performs a Spotify search and enhances the item if a match is found.
 func (g *Generator) performSpotifySearch(ctx context.Context, item *PlanItem, searchQuery, expectedArtist string) {
-	// Search for tracks
+	// Search for tracks (with rate limit retry)
 	opts := &spotigo.SearchOptions{
 		Limit: 10, // Get up to 10 results to find best match
 	}
-	response, err := g.spotifyClient.Search(ctx, searchQuery, "track", opts)
+	var response *spotigo.SearchResponse
+	err := runWithRateLimitRetry(ctx, func() error {
+		var err2 error
+		response, err2 = g.spotifyClient.Search(ctx, searchQuery, "track", opts)
+		return err2
+	})
 	if err != nil {
 		log.Printf("WARN: spotify_enhancement_search_failed youtube_id=%s query=%s error=%v", ExtractYouTubeVideoID(item.YouTubeURL), searchQuery, err)
 		return
@@ -362,15 +404,17 @@ func (g *Generator) performSpotifySearch(ctx context.Context, item *PlanItem, se
 		return
 	}
 
-	// Get album metadata for the track
+	// Get album metadata for the track (with rate limit retry)
 	var album *spotigo.Album
 	if bestTrack.Album != nil && bestTrack.Album.ID != "" {
-		albumData, err := g.spotifyClient.GetAlbum(ctx, bestTrack.Album.ID)
+		err := runWithRateLimitRetry(ctx, func() error {
+			var err2 error
+			album, err2 = g.spotifyClient.GetAlbum(ctx, bestTrack.Album.ID)
+			return err2
+		})
 		if err != nil {
 			log.Printf("WARN: spotify_enhancement_album_fetch_failed track_id=%s album_id=%s error=%v", bestTrack.ID, bestTrack.Album.ID, err)
 			// Continue without album metadata
-		} else {
-			album = albumData
 		}
 	}
 
@@ -511,8 +555,13 @@ func (g *Generator) processArtist(ctx context.Context, plan *DownloadPlan, artis
 		return nil // Skip duplicate
 	}
 
-	// Fetch artist metadata
-	artistData, err := g.spotifyClient.GetArtist(ctx, artistID)
+	// Fetch artist metadata (with rate limit retry)
+	var artistData *spotigo.Artist
+	err := runWithRateLimitRetry(ctx, func() error {
+		var err2 error
+		artistData, err2 = g.spotifyClient.GetArtist(ctx, artistID)
+		return err2
+	})
 	if err != nil {
 		// Create failed item
 		item := &PlanItem{
@@ -559,8 +608,13 @@ func (g *Generator) processArtist(ctx context.Context, plan *DownloadPlan, artis
 	plan.AddItem(artistItem)
 	g.seenArtistIDs[artistID] = true
 
-	// Get artist albums
-	albums, err := g.spotifyClient.GetArtistAlbums(ctx, artistID)
+	// Get artist albums (with rate limit retry)
+	var albums []spotigo.SimplifiedAlbum
+	err = runWithRateLimitRetry(ctx, func() error {
+		var err2 error
+		albums, err2 = g.spotifyClient.GetArtistAlbums(ctx, artistID)
+		return err2
+	})
 	if err != nil {
 		return fmt.Errorf("failed to get artist albums: %w", err)
 	}
@@ -596,8 +650,13 @@ func (g *Generator) processArtist(ctx context.Context, plan *DownloadPlan, artis
 
 // processAlbumTracks processes tracks in an album and adds to plan.
 func (g *Generator) processAlbumTracks(ctx context.Context, plan *DownloadPlan, parentItem *PlanItem, albumID string, albumData spotigo.SimplifiedAlbum) error {
-	// Fetch full album data to get tracks
-	album, err := g.spotifyClient.GetAlbum(ctx, albumID)
+	// Fetch full album data to get tracks (with rate limit retry)
+	var album *spotigo.Album
+	err := runWithRateLimitRetry(ctx, func() error {
+		var err2 error
+		album, err2 = g.spotifyClient.GetAlbum(ctx, albumID)
+		return err2
+	})
 	if err != nil {
 		log.Printf("ERROR: api_call_failed type=album spotify_id=%s error=%v", albumID, err)
 		return fmt.Errorf("failed to get album: %w", err)
@@ -683,8 +742,13 @@ func (g *Generator) processAlbumTracks(ctx context.Context, plan *DownloadPlan, 
 			return err
 		}
 
-		// Get next page with rate limiting
-		nextTracks, err := g.spotifyClient.NextAlbumTracks(ctx, tracks)
+		// Get next page with rate limiting (with rate limit retry)
+		var nextTracks *spotigo.Paging[spotigo.SimplifiedTrack]
+		err := runWithRateLimitRetry(ctx, func() error {
+			var err2 error
+			nextTracks, err2 = g.spotifyClient.NextAlbumTracks(ctx, tracks)
+			return err2
+		})
 		if err != nil {
 			log.Printf("ERROR: album_tracks_pagination_failed album_id=%s error=%v", albumID, err)
 			return fmt.Errorf("failed to paginate album tracks: %w", err)
@@ -757,8 +821,13 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 		return nil // Skip duplicate
 	}
 
-	// Fetch playlist metadata
-	playlistData, err := g.spotifyClient.GetPlaylist(ctx, playlistID)
+	// Fetch playlist metadata (with rate limit retry)
+	var playlistData *spotigo.Playlist
+	err := runWithRateLimitRetry(ctx, func() error {
+		var err2 error
+		playlistData, err2 = g.spotifyClient.GetPlaylist(ctx, playlistID)
+		return err2
+	})
 	if err != nil {
 		log.Printf("ERROR: api_call_failed type=playlist spotify_id=%s error=%v", playlistID, err)
 		// Create failed item
@@ -809,12 +878,17 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 	plan.AddItem(playlistItem)
 	g.seenPlaylistIDs[playlistID] = true
 
-	// Process playlist tracks using PlaylistTracks method
+	// Process playlist tracks using PlaylistTracks method (with rate limit retry)
 	if g.playlistTracksFunc == nil {
 		return fmt.Errorf("playlistTracksFunc not provided")
 	}
 
-	tracks, err := g.playlistTracksFunc(ctx, playlistID, nil)
+	var tracks *spotigo.Paging[spotigo.PlaylistTrack]
+	err = runWithRateLimitRetry(ctx, func() error {
+		var err2 error
+		tracks, err2 = g.playlistTracksFunc(ctx, playlistID, nil)
+		return err2
+	})
 	if err != nil {
 		return fmt.Errorf("failed to get playlist tracks: %w", err)
 	}
@@ -912,8 +986,13 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 			return err
 		}
 
-		// Get next page with rate limiting
-		nextTracks, err := g.spotifyClient.NextPlaylistTracks(ctx, tracks)
+		// Get next page with rate limiting (with rate limit retry)
+		var nextTracks *spotigo.Paging[spotigo.PlaylistTrack]
+		err := runWithRateLimitRetry(ctx, func() error {
+			var err2 error
+			nextTracks, err2 = g.spotifyClient.NextPlaylistTracks(ctx, tracks)
+			return err2
+		})
 		if err != nil {
 			log.Printf("ERROR: playlist_tracks_pagination_failed playlist_id=%s error=%v", playlistID, err)
 			return fmt.Errorf("failed to paginate playlist tracks: %w", err)
@@ -1213,8 +1292,13 @@ func (g *Generator) processAlbum(ctx context.Context, plan *DownloadPlan, album 
 		return nil // Skip duplicate
 	}
 
-	// Fetch album metadata
-	albumData, err := g.spotifyClient.GetAlbum(ctx, albumID)
+	// Fetch album metadata (with rate limit retry)
+	var albumData *spotigo.Album
+	err := runWithRateLimitRetry(ctx, func() error {
+		var err2 error
+		albumData, err2 = g.spotifyClient.GetAlbum(ctx, albumID)
+		return err2
+	})
 	if err != nil {
 		log.Printf("ERROR: api_call_failed type=album spotify_id=%s error=%v", albumID, err)
 		// Create failed item

@@ -2,6 +2,7 @@ package download
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -62,6 +63,10 @@ func (d *Downloader) DownloadTrack(ctx context.Context, item *plan.PlanItem) (bo
 		lastErr = err
 		if attempt < maxRetries {
 			waitTime := time.Duration(1<<uint(attempt)) * time.Second
+			var rateLimitErr *spotify.RateLimitError
+			if errors.As(err, &rateLimitErr) && rateLimitErr.RetryAfter > 0 {
+				waitTime = time.Duration(rateLimitErr.RetryAfter+10) * time.Second
+			}
 			url := item.SpotifyURL
 			if url == "" {
 				url = item.YouTubeURL
