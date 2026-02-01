@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -27,19 +28,22 @@ type downloadModel struct {
 	errors       []string
 	logPath      string
 	done         bool
+	cancelling   bool
 	execErr      error
 	finalStats   map[string]int
 	ch           chan downloadMsg
+	cancel       context.CancelFunc
 	width        int
 	height       int
 }
 
-func newDownloadModel(logPath string, total int, ch chan downloadMsg) *downloadModel {
+func newDownloadModel(logPath string, total int, ch chan downloadMsg, cancel context.CancelFunc) *downloadModel {
 	return &downloadModel{
 		total:   total,
 		logPath: logPath,
 		errors:  make([]string, 0, maxErrorsInTUI),
 		ch:      ch,
+		cancel:  cancel,
 	}
 }
 
@@ -60,8 +64,15 @@ func (m *downloadModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, m.waitForMsg()
 	case tea.KeyMsg:
-		if m.done && msg.String() == "q" {
-			return m, tea.Quit
+		key := msg.String()
+		if key == "q" || key == "ctrl+c" {
+			if m.done {
+				return m, tea.Quit
+			}
+			if !m.cancelling && m.cancel != nil {
+				m.cancel()
+				m.cancelling = true
+			}
 		}
 		return m, m.waitForMsg()
 	case downloadMsg:
@@ -134,9 +145,10 @@ func (m *downloadModel) View() string {
 	if m.done && m.execErr != nil {
 		b.WriteString("\n  Fatal: " + m.execErr.Error() + "\n")
 	}
-	if m.done {
-		b.WriteString("\n  Press q to quit.\n")
+	if m.done && m.cancelling {
+		b.WriteString("\n  Stopping...\n")
 	}
+	b.WriteString("\n  q: quit  (Ctrl+C: stop)\n")
 	return b.String()
 }
 
@@ -149,15 +161,17 @@ func truncate(s string, max int) string {
 }
 
 // RunDownloadTUI runs the TUI for download. The caller must run the executor in a goroutine
-// and send progress/done messages to progressCh. Log errors can be sent to logErrCh (optional);
+// and send progress/done messages to progressCh. cancel is called when the user presses q or
+// Ctrl+C to stop mid-run; may be nil. Log errors can be sent to logErrCh (optional);
 // they are forwarded to progressCh. Returns final stats and executor error from the model after quit.
 func RunDownloadTUI(
 	logPath string,
 	totalTracks int,
 	progressCh chan downloadMsg,
 	logErrCh <-chan string,
+	cancel context.CancelFunc,
 ) (stats map[string]int, execErr error) {
-	model := newDownloadModel(logPath, totalTracks, progressCh)
+	model := newDownloadModel(logPath, totalTracks, progressCh, cancel)
 	if logErrCh != nil {
 		go func() {
 			for s := range logErrCh {

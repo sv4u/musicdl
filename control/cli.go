@@ -113,6 +113,11 @@ func planCommand(configPath string, noTUI bool) int {
 	optimizer := plan.NewOptimizer(true)
 
 	ctx := context.Background()
+	var cancel context.CancelFunc
+	if WantTUI(noTUI) {
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+	}
 
 	if !WantTUI(noTUI) {
 		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
@@ -184,7 +189,7 @@ func planCommand(configPath string, noTUI bool) int {
 		close(planCh)
 	}()
 
-	runErr := RunPlanTUI(logPath, planCh, errCh)
+	runErr := RunPlanTUI(logPath, planCh, errCh, cancel)
 	if runErr != nil {
 		if strings.Contains(runErr.Error(), "network") || strings.Contains(runErr.Error(), "rate limit") {
 			return PlanExitNetwork
@@ -274,6 +279,11 @@ func downloadCLICommand(configPath string, noTUI bool) int {
 	}
 	executor := plan.NewExecutor(downloader, maxWorkers)
 	ctx := context.Background()
+	var cancel context.CancelFunc
+	if WantTUI(noTUI) {
+		ctx, cancel = context.WithCancel(ctx)
+		defer cancel()
+	}
 
 	if !WantTUI(noTUI) {
 		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
@@ -336,7 +346,7 @@ func downloadCLICommand(configPath string, noTUI bool) int {
 		close(progressCh)
 	}()
 
-	stats, execErr := RunDownloadTUI(logPath, countPendingTracks(loadedPlan), progressCh, errCh)
+	stats, execErr := RunDownloadTUI(logPath, countPendingTracks(loadedPlan), progressCh, errCh, cancel)
 	if execErr != nil {
 		if strings.Contains(execErr.Error(), "network") || strings.Contains(execErr.Error(), "rate limit") {
 			return DownloadExitNetwork

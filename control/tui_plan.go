@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -20,24 +21,27 @@ type planMsg struct {
 
 // planModel is the Bubble Tea model for the plan TUI.
 type planModel struct {
-	phase   string
-	errors  []string
-	done    bool
-	err     error
-	tracks  int
-	planPath string
-	logPath  string
-	ch      chan planMsg
-	width   int
-	height  int
+	phase     string
+	errors    []string
+	done      bool
+	cancelling bool
+	err       error
+	tracks    int
+	planPath  string
+	logPath   string
+	ch        chan planMsg
+	cancel    context.CancelFunc
+	width     int
+	height    int
 }
 
-func newPlanModel(logPath string, ch chan planMsg) *planModel {
+func newPlanModel(logPath string, ch chan planMsg, cancel context.CancelFunc) *planModel {
 	return &planModel{
 		phase:   "Generating plan...",
 		errors:  make([]string, 0, maxPlanErrorsInTUI),
 		logPath: logPath,
 		ch:      ch,
+		cancel:  cancel,
 	}
 }
 
@@ -58,8 +62,15 @@ func (m *planModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		return m, m.waitForMsg()
 	case tea.KeyMsg:
-		if m.done && msg.String() == "q" {
-			return m, tea.Quit
+		key := msg.String()
+		if key == "q" || key == "ctrl+c" {
+			if m.done {
+				return m, tea.Quit
+			}
+			if !m.cancelling && m.cancel != nil {
+				m.cancel()
+				m.cancelling = true
+			}
 		}
 		return m, m.waitForMsg()
 	case planMsg:
@@ -89,9 +100,12 @@ func (m *planModel) View() string {
 	b.WriteString("  " + m.phase + "\n")
 	b.WriteString("  Log file: " + m.logPath + "\n\n")
 	if m.done {
+		if m.cancelling {
+			b.WriteString("  Stopping...\n")
+		}
 		if m.err != nil {
 			b.WriteString("  Error: " + m.err.Error() + "\n")
-		} else {
+		} else if !m.cancelling {
 			b.WriteString("  Plan generated successfully\n")
 			b.WriteString(fmt.Sprintf("  Total tracks: %d\n", m.tracks))
 			if m.planPath != "" {
@@ -109,9 +123,7 @@ func (m *planModel) View() string {
 			b.WriteString("    • " + truncatePlanErr(m.errors[i], 70) + "\n")
 		}
 	}
-	if m.done {
-		b.WriteString("\n  Press q to quit.\n")
-	}
+	b.WriteString("\n  q: quit  (Ctrl+C: stop)\n")
 	return b.String()
 }
 
@@ -125,9 +137,10 @@ func truncatePlanErr(s string, max int) string {
 
 // RunPlanTUI runs the TUI for plan. The caller must run the generator in a goroutine
 // and send a planMsg with Done=true (and Err, TrackCount, PlanPath) when finished.
+// cancel is called when the user presses q or Ctrl+C to stop mid-run; may be nil.
 // Log errors can be sent to logErrCh (optional). Returns the final error from the model.
-func RunPlanTUI(logPath string, planCh chan planMsg, logErrCh <-chan string) error {
-	model := newPlanModel(logPath, planCh)
+func RunPlanTUI(logPath string, planCh chan planMsg, logErrCh <-chan string, cancel context.CancelFunc) error {
+	model := newPlanModel(logPath, planCh, cancel)
 	if logErrCh != nil {
 		go func() {
 			for s := range logErrCh {

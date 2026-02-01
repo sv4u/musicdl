@@ -114,6 +114,9 @@ func (g *Generator) GeneratePlan(ctx context.Context) (*DownloadPlan, error) {
 	// Process songs
 	songCount := 0
 	for _, song := range g.config.Songs {
+		if err := ctx.Err(); err != nil {
+			return plan, err
+		}
 		if err := g.processSong(ctx, plan, song); err != nil {
 			log.Printf("ERROR: process_song_failed url=%s name=%s error=%v", song.URL, song.Name, err)
 		} else {
@@ -127,6 +130,9 @@ func (g *Generator) GeneratePlan(ctx context.Context) (*DownloadPlan, error) {
 	// Process artists
 	artistCount := 0
 	for _, artist := range g.config.Artists {
+		if err := ctx.Err(); err != nil {
+			return plan, err
+		}
 		if err := g.processArtist(ctx, plan, artist); err != nil {
 			log.Printf("ERROR: process_artist_failed url=%s name=%s error=%v", artist.URL, artist.Name, err)
 		} else {
@@ -140,6 +146,9 @@ func (g *Generator) GeneratePlan(ctx context.Context) (*DownloadPlan, error) {
 	// Process playlists
 	playlistCount := 0
 	for _, playlist := range g.config.Playlists {
+		if err := ctx.Err(); err != nil {
+			return plan, err
+		}
 		if err := g.processPlaylist(ctx, plan, playlist); err != nil {
 			log.Printf("ERROR: process_playlist_failed url=%s name=%s error=%v", playlist.URL, playlist.Name, err)
 		} else {
@@ -153,6 +162,9 @@ func (g *Generator) GeneratePlan(ctx context.Context) (*DownloadPlan, error) {
 	// Process albums
 	albumCount := 0
 	for _, album := range g.config.Albums {
+		if err := ctx.Err(); err != nil {
+			return plan, err
+		}
 		if err := g.processAlbum(ctx, plan, album); err != nil {
 			log.Printf("ERROR: process_album_failed url=%s name=%s error=%v", album.URL, album.Name, err)
 		} else {
