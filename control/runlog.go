@@ -26,6 +26,8 @@ func NewLogTeeWriter(logPath string, errCh chan<- string) (*LogTeeWriter, error)
 	return &LogTeeWriter{file: f, errors: errCh}, nil
 }
 
+const maxLogTeeBuf = 64 * 1024 // 64KB cap to avoid unbounded growth when log has no newlines
+
 // Write implements io.Writer. Lines containing "ERROR" or "WARN" are sent to the errors channel.
 func (w *LogTeeWriter) Write(p []byte) (n int, err error) {
 	w.mu.Lock()
@@ -35,6 +37,9 @@ func (w *LogTeeWriter) Write(p []byte) (n int, err error) {
 		return n, err
 	}
 	w.buf = append(w.buf, p...)
+	if len(w.buf) > maxLogTeeBuf {
+		w.buf = w.buf[len(w.buf)-maxLogTeeBuf:]
+	}
 	for {
 		idx := 0
 		for i, b := range w.buf {

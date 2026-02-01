@@ -154,7 +154,7 @@ func (m *downloadModel) View() string {
 
 func truncate(s string, max int) string {
 	s = strings.TrimSpace(s)
-	if len(s) <= max {
+	if len(s) <= max || max < 3 {
 		return s
 	}
 	return s[:max-3] + "..."

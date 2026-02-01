@@ -17,7 +17,7 @@ type planMsg struct {
 	Err                error
 	TrackCount         int
 	PlanPath           string
-	RateLimitRemaining int // seconds left in Spotify rate limit wait; -1 means not in wait
+	RateLimitRemaining int // seconds left in Spotify rate limit wait; 0 = not a countdown update (default)
 }
 
 // planModel is the Bubble Tea model for the plan TUI.
@@ -34,7 +34,7 @@ type planModel struct {
 	cancel             context.CancelFunc
 	width              int
 	height             int
-	rateLimitRemaining int // seconds left in Spotify rate limit wait; -1 means not in wait
+	rateLimitRemaining int // seconds left in Spotify rate limit wait; <=0 = not showing countdown
 }
 
 func newPlanModel(logPath string, ch chan planMsg, cancel context.CancelFunc) *planModel {
@@ -77,9 +77,12 @@ func (m *planModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.waitForMsg()
 	case planMsg:
-		if msg.RateLimitRemaining >= 0 {
+		if msg.RateLimitRemaining > 0 {
 			m.rateLimitRemaining = msg.RateLimitRemaining
 			return m, m.waitForMsg()
+		}
+		if msg.RateLimitRemaining == 0 {
+			m.rateLimitRemaining = 0
 		}
 		if msg.LogErr != "" {
 			m.errors = append(m.errors, msg.LogErr)
@@ -139,7 +142,7 @@ func (m *planModel) View() string {
 
 func truncatePlanErr(s string, max int) string {
 	s = strings.TrimSpace(s)
-	if len(s) <= max {
+	if len(s) <= max || max < 3 {
 		return s
 	}
 	return s[:max-3] + "..."
@@ -147,7 +150,8 @@ func truncatePlanErr(s string, max int) string {
 
 // RunPlanTUI runs the TUI for plan. The caller must run the generator in a goroutine
 // and send a planMsg with Done=true (and Err, TrackCount, PlanPath) when finished.
-// Optional planMsg with RateLimitRemaining (seconds) shows a Spotify rate limit countdown.
+// Optional planMsg with RateLimitRemaining > 0 shows a Spotify rate limit countdown
+// (use > 0 only for countdown ticks so default 0 on Done/LogErr is not treated as countdown).
 // cancel is called when the user presses q or Ctrl+C to stop mid-run; may be nil.
 // Log errors can be sent to logErrCh (optional). Returns the final error from the model.
 func RunPlanTUI(logPath string, planCh chan planMsg, logErrCh <-chan string, cancel context.CancelFunc) error {

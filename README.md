@@ -70,7 +70,7 @@ musicdl download config.yaml
 
 ### `musicdl plan [--no-tui] <config-file>`
 
-Generate a download plan from the config and save it to `.cache/download_plan_<hash>.json`. The hash is derived from the config file content. When stdout is a terminal, a TUI shows progress and recent errors; logs are written to `.logs/run_<timestamp>/plan.log`. If Spotify rate limits the API, the TUI shows a countdown (Retry-After + 10 sec) until the next retry. In the TUI, **q** quits (or exits when the run is done); **Ctrl+C** stops the run gracefully. Use `--no-tui` or run in a non-TTY (e.g. CI) for file-only logging and a brief summary to stdout.
+Generate a download plan from the config and save it to `.cache/download_plan_<hash>.json`. The hash is derived from the config file content. When stdout is a terminal, a TUI shows progress and recent errors; logs are written to `.logs/run_<timestamp>/plan.log`. Use `--no-tui` or run in a non-TTY (e.g. CI) for file-only logging and a brief summary to stdout.
 
 ```bash
 musicdl plan config.yaml
@@ -81,7 +81,7 @@ musicdl plan --no-tui config.yaml
 
 ### `musicdl download [--no-tui] <config-file>`
 
-Load the plan for the given config (by hash) and run the download. You must run `musicdl plan` first. When stdout is a terminal, a TUI shows download progress and recent errors; logs are written to `.logs/run_<timestamp>/download.log`. In the TUI, **q** quits (or exits when the run is done); **Ctrl+C** stops the run gracefully. Use `--no-tui` or run in a non-TTY for file-only logging and a brief summary to stdout.
+Load the plan for the given config (by hash) and run the download. You must run `musicdl plan` first. When stdout is a terminal, a TUI shows download progress and recent errors; logs are written to `.logs/run_<timestamp>/download.log`. Use `--no-tui` or run in a non-TTY for file-only logging and a brief summary to stdout.
 
 ```bash
 musicdl download config.yaml
@@ -219,9 +219,6 @@ Working directory in the image is `/download`. Set `MUSICDL_CACHE_DIR` if you wa
 
 ## Troubleshooting
 
-- **"Spotify rate limit: retrying in N sec…" in the plan TUI**  
-  Spotify has temporarily rate limited the API. The TUI shows a countdown (Spotify’s Retry-After plus 10 seconds); planning continues automatically when it reaches zero. No action needed.
-
 - **"Plan file not found. Run 'musicdl plan' first."**  
   Run `musicdl plan <config-file>` before `musicdl download <config-file>`. The plan is stored under `.cache/` using a hash of your config.
 
@@ -230,6 +227,10 @@ Working directory in the image is `/download`. Set `MUSICDL_CACHE_DIR` if you wa
 
 - **Configuration error (exit 1)**  
   Check YAML syntax, required fields (`version`, `download.client_id`/`spotify.client_id`, `download.client_secret`/`spotify.client_secret`), and that `download.output` contains `{title}` and `threads` is 1–16.
+
+## See Also
+
+For architecture, CI/CD, and development details, see the [GitHub Wiki](https://github.com/sv4u/musicdl/wiki).
 
 ## License
 
