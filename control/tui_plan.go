@@ -12,36 +12,39 @@ const maxPlanErrorsInTUI = 20
 
 // planMsg is a message from the plan generator or log tee.
 type planMsg struct {
-	LogErr     string
-	Done       bool
-	Err        error
-	TrackCount int
-	PlanPath   string
+	LogErr             string
+	Done               bool
+	Err                error
+	TrackCount         int
+	PlanPath           string
+	RateLimitRemaining int // seconds left in Spotify rate limit wait; -1 means not in wait
 }
 
 // planModel is the Bubble Tea model for the plan TUI.
 type planModel struct {
-	phase     string
-	errors    []string
-	done      bool
-	cancelling bool
-	err       error
-	tracks    int
-	planPath  string
-	logPath   string
-	ch        chan planMsg
-	cancel    context.CancelFunc
-	width     int
-	height    int
+	phase              string
+	errors             []string
+	done               bool
+	cancelling         bool
+	err                error
+	tracks             int
+	planPath           string
+	logPath            string
+	ch                 chan planMsg
+	cancel             context.CancelFunc
+	width              int
+	height             int
+	rateLimitRemaining int // seconds left in Spotify rate limit wait; -1 means not in wait
 }
 
 func newPlanModel(logPath string, ch chan planMsg, cancel context.CancelFunc) *planModel {
 	return &planModel{
-		phase:   "Generating plan...",
-		errors:  make([]string, 0, maxPlanErrorsInTUI),
-		logPath: logPath,
-		ch:      ch,
-		cancel:  cancel,
+		phase:              "Generating plan...",
+		errors:             make([]string, 0, maxPlanErrorsInTUI),
+		logPath:            logPath,
+		ch:                 ch,
+		cancel:             cancel,
+		rateLimitRemaining: -1,
 	}
 }
 
@@ -74,6 +77,10 @@ func (m *planModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.waitForMsg()
 	case planMsg:
+		if msg.RateLimitRemaining >= 0 {
+			m.rateLimitRemaining = msg.RateLimitRemaining
+			return m, m.waitForMsg()
+		}
 		if msg.LogErr != "" {
 			m.errors = append(m.errors, msg.LogErr)
 			if len(m.errors) > maxPlanErrorsInTUI {
@@ -98,6 +105,9 @@ func (m *planModel) View() string {
 	var b strings.Builder
 	b.WriteString("  musicdl plan\n\n")
 	b.WriteString("  " + m.phase + "\n")
+	if m.rateLimitRemaining > 0 {
+		b.WriteString(fmt.Sprintf("  Spotify rate limit: retrying in %d sec…\n", m.rateLimitRemaining))
+	}
 	b.WriteString("  Log file: " + m.logPath + "\n\n")
 	if m.done {
 		if m.cancelling {
@@ -137,6 +147,7 @@ func truncatePlanErr(s string, max int) string {
 
 // RunPlanTUI runs the TUI for plan. The caller must run the generator in a goroutine
 // and send a planMsg with Done=true (and Err, TrackCount, PlanPath) when finished.
+// Optional planMsg with RateLimitRemaining (seconds) shows a Spotify rate limit countdown.
 // cancel is called when the user presses q or Ctrl+C to stop mid-run; may be nil.
 // Log errors can be sent to logErrCh (optional). Returns the final error from the model.
 func RunPlanTUI(logPath string, planCh chan planMsg, logErrCh <-chan string, cancel context.CancelFunc) error {

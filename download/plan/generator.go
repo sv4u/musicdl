@@ -17,8 +17,14 @@ import (
 
 const rateLimitRetryMaxAttempts = 3
 
+// SetRateLimitNotifier sets an optional callback used during Spotify rate limit wait.
+// It is called with (totalSec, remainingSec) at the start and each second until remainingSec is 0.
+func (g *Generator) SetRateLimitNotifier(fn func(totalSec, remainingSec int)) {
+	g.rateLimitNotifier = fn
+}
+
 // runWithRateLimitRetry runs fn. If fn returns a spotify.RateLimitError, it sleeps for RetryAfter+10 seconds and retries.
-func runWithRateLimitRetry(ctx context.Context, fn func() error) error {
+func (g *Generator) runWithRateLimitRetry(ctx context.Context, fn func() error) error {
 	var lastErr error
 	for attempt := 1; attempt <= rateLimitRetryMaxAttempts; attempt++ {
 		lastErr = fn()
@@ -33,12 +39,21 @@ func runWithRateLimitRetry(ctx context.Context, fn func() error) error {
 		if rateLimitErr.RetryAfter <= 0 {
 			waitSec = 10
 		}
-		waitDur := time.Duration(waitSec) * time.Second
 		log.Printf("INFO: rate_limit_retry phase=plan attempt=%d max_retries=%d retry_after_seconds=%d sleeping_seconds=%d", attempt, rateLimitRetryMaxAttempts, rateLimitErr.RetryAfter, waitSec)
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(waitDur):
+		remaining := waitSec
+		for remaining > 0 {
+			if g.rateLimitNotifier != nil {
+				g.rateLimitNotifier(waitSec, remaining)
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Second):
+				remaining--
+			}
+		}
+		if g.rateLimitNotifier != nil {
+			g.rateLimitNotifier(waitSec, 0)
 		}
 	}
 	return lastErr
@@ -74,6 +89,8 @@ type Generator struct {
 	seenArtistIDs          map[string]bool
 	seenYouTubeVideoIDs    map[string]bool
 	seenYouTubePlaylistIDs map[string]bool
+	// rateLimitNotifier is optional; when set, called during Spotify rate limit wait with (totalSec, remainingSec).
+	rateLimitNotifier func(totalSec, remainingSec int)
 }
 
 // SpotifyClientInterface defines the interface for Spotify client operations.
@@ -201,7 +218,7 @@ func (g *Generator) processSong(ctx context.Context, plan *DownloadPlan, song co
 
 	// Fetch track metadata (with rate limit retry)
 	var track *spotigo.Track
-	err := runWithRateLimitRetry(ctx, func() error {
+	err := g.runWithRateLimitRetry(ctx, func() error {
 		var err2 error
 		track, err2 = g.spotifyClient.GetTrack(ctx, trackID)
 		return err2
@@ -370,7 +387,7 @@ func (g *Generator) performSpotifySearch(ctx context.Context, item *PlanItem, se
 		Limit: 10, // Get up to 10 results to find best match
 	}
 	var response *spotigo.SearchResponse
-	err := runWithRateLimitRetry(ctx, func() error {
+	err := g.runWithRateLimitRetry(ctx, func() error {
 		var err2 error
 		response, err2 = g.spotifyClient.Search(ctx, searchQuery, "track", opts)
 		return err2
@@ -419,7 +436,7 @@ func (g *Generator) performSpotifySearch(ctx context.Context, item *PlanItem, se
 	// Get album metadata for the track (with rate limit retry)
 	var album *spotigo.Album
 	if bestTrack.Album != nil && bestTrack.Album.ID != "" {
-		err := runWithRateLimitRetry(ctx, func() error {
+		err := g.runWithRateLimitRetry(ctx, func() error {
 			var err2 error
 			album, err2 = g.spotifyClient.GetAlbum(ctx, bestTrack.Album.ID)
 			return err2
@@ -569,7 +586,7 @@ func (g *Generator) processArtist(ctx context.Context, plan *DownloadPlan, artis
 
 	// Fetch artist metadata (with rate limit retry)
 	var artistData *spotigo.Artist
-	err := runWithRateLimitRetry(ctx, func() error {
+	err := g.runWithRateLimitRetry(ctx, func() error {
 		var err2 error
 		artistData, err2 = g.spotifyClient.GetArtist(ctx, artistID)
 		return err2
@@ -622,7 +639,7 @@ func (g *Generator) processArtist(ctx context.Context, plan *DownloadPlan, artis
 
 	// Get artist albums (with rate limit retry)
 	var albums []spotigo.SimplifiedAlbum
-	err = runWithRateLimitRetry(ctx, func() error {
+	err = g.runWithRateLimitRetry(ctx, func() error {
 		var err2 error
 		albums, err2 = g.spotifyClient.GetArtistAlbums(ctx, artistID)
 		return err2
@@ -664,7 +681,7 @@ func (g *Generator) processArtist(ctx context.Context, plan *DownloadPlan, artis
 func (g *Generator) processAlbumTracks(ctx context.Context, plan *DownloadPlan, parentItem *PlanItem, albumID string, albumData spotigo.SimplifiedAlbum) error {
 	// Fetch full album data to get tracks (with rate limit retry)
 	var album *spotigo.Album
-	err := runWithRateLimitRetry(ctx, func() error {
+	err := g.runWithRateLimitRetry(ctx, func() error {
 		var err2 error
 		album, err2 = g.spotifyClient.GetAlbum(ctx, albumID)
 		return err2
@@ -756,7 +773,7 @@ func (g *Generator) processAlbumTracks(ctx context.Context, plan *DownloadPlan, 
 
 		// Get next page with rate limiting (with rate limit retry)
 		var nextTracks *spotigo.Paging[spotigo.SimplifiedTrack]
-		err := runWithRateLimitRetry(ctx, func() error {
+		err := g.runWithRateLimitRetry(ctx, func() error {
 			var err2 error
 			nextTracks, err2 = g.spotifyClient.NextAlbumTracks(ctx, tracks)
 			return err2
@@ -835,7 +852,7 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 
 	// Fetch playlist metadata (with rate limit retry)
 	var playlistData *spotigo.Playlist
-	err := runWithRateLimitRetry(ctx, func() error {
+	err := g.runWithRateLimitRetry(ctx, func() error {
 		var err2 error
 		playlistData, err2 = g.spotifyClient.GetPlaylist(ctx, playlistID)
 		return err2
@@ -896,7 +913,7 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 	}
 
 	var tracks *spotigo.Paging[spotigo.PlaylistTrack]
-	err = runWithRateLimitRetry(ctx, func() error {
+	err = g.runWithRateLimitRetry(ctx, func() error {
 		var err2 error
 		tracks, err2 = g.playlistTracksFunc(ctx, playlistID, nil)
 		return err2
@@ -1000,7 +1017,7 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 
 		// Get next page with rate limiting (with rate limit retry)
 		var nextTracks *spotigo.Paging[spotigo.PlaylistTrack]
-		err := runWithRateLimitRetry(ctx, func() error {
+		err := g.runWithRateLimitRetry(ctx, func() error {
 			var err2 error
 			nextTracks, err2 = g.spotifyClient.NextPlaylistTracks(ctx, tracks)
 			return err2
@@ -1306,7 +1323,7 @@ func (g *Generator) processAlbum(ctx context.Context, plan *DownloadPlan, album 
 
 	// Fetch album metadata (with rate limit retry)
 	var albumData *spotigo.Album
-	err := runWithRateLimitRetry(ctx, func() error {
+	err := g.runWithRateLimitRetry(ctx, func() error {
 		var err2 error
 		albumData, err2 = g.spotifyClient.GetAlbum(ctx, albumID)
 		return err2

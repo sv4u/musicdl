@@ -166,7 +166,13 @@ func planCommand(configPath string, noTUI bool) int {
 	restore := RedirectLogToFile(tee)
 	defer restore()
 
-	planCh := make(chan planMsg, 1)
+	planCh := make(chan planMsg, 8)
+	generator.SetRateLimitNotifier(func(totalSec, remainingSec int) {
+		select {
+		case planCh <- planMsg{RateLimitRemaining: remainingSec}:
+		default:
+		}
+	})
 	go func() {
 		generatedPlan, genErr := generator.GeneratePlan(ctx)
 		trackCount := 0
