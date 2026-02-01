@@ -23,6 +23,7 @@ const (
 	PlanExitConfigError = 1
 	PlanExitNetwork     = 2
 	PlanExitFilesystem  = 3
+	PlanExitInterrupted = 4
 )
 
 // Exit codes for download command (spec-aligned).
@@ -33,6 +34,7 @@ const (
 	DownloadExitNetwork     = 3
 	DownloadExitFilesystem  = 4
 	DownloadExitPartial     = 5
+	DownloadExitInterrupted = 6
 )
 
 // getCacheDir returns MUSICDL_CACHE_DIR or ".cache" under current dir.
@@ -197,6 +199,9 @@ func planCommand(configPath string, noTUI bool) int {
 
 	runErr := RunPlanTUI(logPath, planCh, errCh, cancel)
 	if runErr != nil {
+		if errors.Is(runErr, context.Canceled) {
+			return PlanExitInterrupted
+		}
 		if strings.Contains(runErr.Error(), "network") || strings.Contains(runErr.Error(), "rate limit") {
 			return PlanExitNetwork
 		}
@@ -354,6 +359,9 @@ func downloadCLICommand(configPath string, noTUI bool) int {
 
 	stats, execErr := RunDownloadTUI(logPath, countPendingTracks(loadedPlan), progressCh, errCh, cancel)
 	if execErr != nil {
+		if errors.Is(execErr, context.Canceled) {
+			return DownloadExitInterrupted
+		}
 		if strings.Contains(execErr.Error(), "network") || strings.Contains(execErr.Error(), "rate limit") {
 			return DownloadExitNetwork
 		}

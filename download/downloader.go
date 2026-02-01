@@ -571,14 +571,14 @@ func sanitizeFilename(name string) string {
 		return "_"
 	}
 
-	// Limit length to prevent filesystem issues
-	maxLen := 255
-	if len(name) > maxLen {
-		name = name[:maxLen]
+	// Limit length by rune count to prevent filesystem issues and invalid UTF-8
+	const maxLen = 255
+	result := []rune(name)
+	if len(result) > maxLen {
+		result = result[:maxLen]
 	}
 
 	invalidChars := []rune{'/', '\\', ':', '*', '?', '"', '<', '>', '|'}
-	result := []rune(name)
 	for i, r := range result {
 		for _, invalid := range invalidChars {
 			if r == invalid {
@@ -632,9 +632,9 @@ func (d *Downloader) setFileExistsCached(filePath string, exists bool) {
 		maxSize = 10000 // Default
 	}
 
-	// Evict oldest entries if at capacity
+	// Evict a subset of entries when at capacity (map iteration order is unspecified)
 	if len(d.fileExistenceCache) >= maxSize {
-		// Simple eviction: remove first 10% of entries
+		// Remove ~10% of entries to make room
 		evictCount := maxSize / 10
 		if evictCount == 0 {
 			evictCount = 1 // Ensure at least one entry is evicted

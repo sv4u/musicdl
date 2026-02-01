@@ -80,6 +80,105 @@ func TestPlanToSpecAndSpecToPlan_RoundTrip(t *testing.T) {
 	if trackItem.FilePath != "Artist/Album/01 - Title.mp3" {
 		t.Errorf("track item FilePath = %q", trackItem.FilePath)
 	}
+	var playlistItem *PlanItem
+	for _, it := range back.Items {
+		if it.ItemType == PlanItemTypePlaylist {
+			playlistItem = it
+			break
+		}
+	}
+	if playlistItem == nil {
+		t.Fatal("no playlist item after round-trip")
+	}
+	if playlistItem.ItemID != "playlist-1" {
+		t.Errorf("playlist ItemID = %q, want playlist-1 (stable ID from spec)", playlistItem.ItemID)
+	}
+}
+
+func TestPlanToSpecAndSpecToPlan_M3URoundTrip(t *testing.T) {
+	plan := NewDownloadPlan(map[string]interface{}{"config_version": "1.2"})
+	plan.AddItem(&PlanItem{
+		ItemID:     "track:abc",
+		ItemType:   PlanItemTypeTrack,
+		SpotifyURL: "https://open.spotify.com/track/abc",
+		FilePath:   "Artist/Album/01 - Title.mp3",
+		Status:     PlanItemStatusPending,
+		CreatedAt:  time.Now(),
+		Progress:   0,
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:     "playlist:xyz",
+		ItemType:   PlanItemTypePlaylist,
+		Name:       "My Playlist",
+		SpotifyURL: "https://open.spotify.com/playlist/xyz",
+		ChildIDs:   []string{"track:abc", "m3u:xyz"},
+		Status:     PlanItemStatusPending,
+		Metadata:   map[string]interface{}{"create_m3u": true},
+		CreatedAt:  time.Now(),
+		Progress:   0,
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:     "m3u:xyz",
+		ItemType:   PlanItemTypeM3U,
+		ParentID:   "playlist:xyz",
+		Name:       "My Playlist.m3u",
+		Status:     PlanItemStatusPending,
+		Metadata:   map[string]interface{}{"playlist_name": "My Playlist"},
+		CreatedAt:  time.Now(),
+		Progress:   0,
+	})
+
+	spec := PlanToSpec(plan, "hash1", "config.yml", time.Now().UTC())
+	if len(spec.M3Us) != 1 {
+		t.Fatalf("spec.M3Us len = %d, want 1", len(spec.M3Us))
+	}
+	if spec.M3Us[0].ID != "m3u:xyz" || spec.M3Us[0].ParentID != "playlist:xyz" || spec.M3Us[0].PlaylistName != "My Playlist" {
+		t.Errorf("spec.M3Us[0] = id=%q parent_id=%q playlist_name=%q", spec.M3Us[0].ID, spec.M3Us[0].ParentID, spec.M3Us[0].PlaylistName)
+	}
+	if len(spec.Playlists) != 1 || spec.Playlists[0].ID != "playlist:xyz" {
+		t.Errorf("spec.Playlists[0].ID = %q, want playlist:xyz", spec.Playlists[0].ID)
+	}
+	if len(spec.Playlists[0].TrackIDs) != 1 || spec.Playlists[0].TrackIDs[0] != "track:abc" {
+		t.Errorf("playlist TrackIDs = %v, want [track:abc]", spec.Playlists[0].TrackIDs)
+	}
+
+	back, err := SpecToPlan(spec)
+	if err != nil {
+		t.Fatalf("SpecToPlan: %v", err)
+	}
+	m3uItems := back.GetItemsByType(PlanItemTypeM3U)
+	if len(m3uItems) != 1 {
+		t.Fatalf("after round-trip M3U items len = %d, want 1", len(m3uItems))
+	}
+	m3u := m3uItems[0]
+	if m3u.ItemID != "m3u:xyz" || m3u.ParentID != "playlist:xyz" || m3u.Name != "My Playlist.m3u" {
+		t.Errorf("M3U item: id=%q parent_id=%q name=%q", m3u.ItemID, m3u.ParentID, m3u.Name)
+	}
+	if back.GetItem(m3u.ParentID) == nil {
+		t.Error("M3U ParentID should resolve to playlist item (processM3UFiles needs it)")
+	}
+	playlistName, _ := m3u.Metadata["playlist_name"].(string)
+	if playlistName != "My Playlist" {
+		t.Errorf("M3U Metadata playlist_name = %q, want My Playlist", playlistName)
+	}
+}
+
+func TestPlanToSpec_AlbumM3UOmitted(t *testing.T) {
+	plan := NewDownloadPlan(nil)
+	plan.AddItem(&PlanItem{
+		ItemID:     "m3u:album:aid",
+		ItemType:   PlanItemTypeM3U,
+		ParentID:   "album:aid",
+		Name:       "Album Name.m3u",
+		Status:     PlanItemStatusPending,
+		Metadata:   map[string]interface{}{"album_name": "Album Name"},
+		CreatedAt:  time.Now(),
+		Progress:   0,
+	})
+	spec := PlanToSpec(plan, "h", "c.yml", time.Now().UTC())
+	if len(spec.M3Us) != 0 {
+		t.Errorf("album M3U should be omitted from spec (Option B), got len(M3Us)=%d", len(spec.M3Us))
+	}
 }
 
 func TestLoadPlanByHash_FileNotFound(t *testing.T) {

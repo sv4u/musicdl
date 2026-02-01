@@ -413,9 +413,19 @@ func (e *Executor) createM3UFile(playlistName string, tracks []*PlanItem) (strin
 
 	// Write tracks
 	for _, item := range tracks {
-		// Extract title from filename
-		title := filepath.Base(item.FilePath)
-		title = title[:len(title)-len(filepath.Ext(title))] // Remove extension
+		// Extract title from filename (basename without extension)
+		base := filepath.Base(item.FilePath)
+		ext := filepath.Ext(item.FilePath)
+		title := base
+		if len(ext) > 0 && len(base) > len(ext) {
+			title = base[:len(base)-len(ext)]
+		}
+		if title == "" {
+			title = base
+		}
+		if title == "" {
+			title = "Track"
+		}
 
 		// Get absolute path
 		absPath, err := filepath.Abs(item.FilePath)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -24,16 +25,17 @@ const (
 	RunDirDownload runDirKind = "download"
 )
 
-// CreateRunDir creates a per-run directory under the log dir (.logs/run_<timestamp>/)
+// CreateRunDir creates a per-run directory under the log dir (.logs/run_<timestamp>_<nanos>/)
 // and returns the run directory path and the path to the log file (plan.log or download.log).
+// Nanosecond suffix avoids collision when multiple runs start in the same second.
 func CreateRunDir(kind runDirKind) (runDir, logPath string, err error) {
 	base := getLogDir()
 	if err := os.MkdirAll(base, 0755); err != nil {
 		return "", "", fmt.Errorf("create log base dir: %w", err)
 	}
-	ts := time.Now().Format(time.RFC3339)
-	ts = strings.ReplaceAll(ts, ":", "-")
-	runDir = filepath.Join(base, "run_"+ts)
+	now := time.Now()
+	ts := strings.ReplaceAll(now.Format(time.RFC3339), ":", "-")
+	runDir = filepath.Join(base, "run_"+ts+"_"+strconv.FormatInt(now.UnixNano(), 10))
 	if err := os.MkdirAll(runDir, 0755); err != nil {
 		return "", "", fmt.Errorf("create run dir: %w", err)
 	}
