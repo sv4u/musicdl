@@ -371,8 +371,9 @@ func (p *Provider) GetVideoMetadata(ctx context.Context, videoURL string) (*YouT
 }
 
 // GetPlaylistInfo extracts metadata for a YouTube playlist using yt-dlp.
+// With --flat-playlist --dump-json, yt-dlp outputs one JSON object per line: the first
+// line is playlist metadata, and each following line is a playlist entry (video).
 func (p *Provider) GetPlaylistInfo(ctx context.Context, playlistURL string) (*YouTubePlaylistInfo, error) {
-	// Build yt-dlp command to extract playlist metadata
 	args := []string{
 		"--quiet",
 		"--no-warnings",
@@ -390,102 +391,116 @@ func (p *Provider) GetPlaylistInfo(ctx context.Context, playlistURL string) (*Yo
 			Original: err,
 		}
 	}
+	return parsePlaylistOutput(string(output))
+}
 
-	// Parse JSON output - playlist info is typically the first line
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+// parsePlaylistOutput parses yt-dlp --flat-playlist --dump-json output.
+// First line is playlist metadata; each following line is a playlist entry (video).
+// Used by GetPlaylistInfo and by tests.
+func parsePlaylistOutput(output string) (*YouTubePlaylistInfo, error) {
+	trimmed := strings.TrimSpace(output)
+	if trimmed == "" {
+		return nil, &SearchError{Message: "No playlist metadata from yt-dlp"}
+	}
+	lines := strings.Split(trimmed, "\n")
 	if len(lines) == 0 {
 		return nil, &SearchError{Message: "No playlist metadata from yt-dlp"}
 	}
 
-	var rawData map[string]interface{}
-	if err := json.Unmarshal([]byte(lines[0]), &rawData); err != nil {
-		return nil, &SearchError{
-			Message:  "Failed to parse yt-dlp playlist metadata output",
-			Original: err,
-		}
-	}
-
-	// Extract structured metadata
 	info := &YouTubePlaylistInfo{}
+	info.Entries = make([]YouTubeVideoMetadata, 0)
 
-	// Extract playlist ID
-	if id, ok := rawData["id"].(string); ok {
-		info.PlaylistID = id
-	}
-
-	// Extract title
-	if title, ok := rawData["title"].(string); ok {
-		info.Title = title
-	}
-
-	// Extract description
-	if desc, ok := rawData["description"].(string); ok {
-		info.Description = desc
-	}
-
-	// Extract uploader/channel
-	if uploader, ok := rawData["uploader"].(string); ok {
-		info.Uploader = uploader
-	} else if channel, ok := rawData["channel"].(string); ok {
-		info.Uploader = channel
-	}
-
-	// Extract video count
-	if count, ok := rawData["playlist_count"].(float64); ok {
-		info.VideoCount = int(count)
-	}
-
-	// Extract webpage URL
-	if webpageURL, ok := rawData["webpage_url"].(string); ok {
-		info.WebpageURL = webpageURL
-	}
-
-	// Extract thumbnail (prefer highest quality)
-	// yt-dlp returns thumbnails sorted from lowest to highest quality
-	if thumbnails, ok := rawData["thumbnails"].([]interface{}); ok && len(thumbnails) > 0 {
-		// Get the last thumbnail (highest quality)
-		lastThumb := thumbnails[len(thumbnails)-1]
-		if thumbMap, ok := lastThumb.(map[string]interface{}); ok {
-			if url, ok := thumbMap["url"].(string); ok {
-				info.Thumbnail = url
-			}
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
 		}
-	} else if thumbnail, ok := rawData["thumbnail"].(string); ok {
-		info.Thumbnail = thumbnail
-	}
-
-	// Extract entries (videos in playlist)
-	if entries, ok := rawData["entries"].([]interface{}); ok {
-		info.Entries = make([]YouTubeVideoMetadata, 0, len(entries))
-		for _, entry := range entries {
-			if entryMap, ok := entry.(map[string]interface{}); ok {
-				videoMeta := &YouTubeVideoMetadata{}
-				if id, ok := entryMap["id"].(string); ok {
-					videoMeta.VideoID = id
-				}
-				if title, ok := entryMap["title"].(string); ok {
-					videoMeta.Title = title
-				}
-				if duration, ok := entryMap["duration"].(float64); ok {
-					videoMeta.Duration = int(duration)
-				} else if duration, ok := entryMap["duration"].(int); ok {
-					videoMeta.Duration = duration
-				}
-				// Extract uploader/channel (important for artist metadata and Spotify enhancement)
-				if uploader, ok := entryMap["uploader"].(string); ok {
-					videoMeta.Uploader = uploader
-				} else if channel, ok := entryMap["channel"].(string); ok {
-					videoMeta.Uploader = channel
-				}
-				if url, ok := entryMap["url"].(string); ok {
-					videoMeta.WebpageURL = url
-				} else if webpageURL, ok := entryMap["webpage_url"].(string); ok {
-					videoMeta.WebpageURL = webpageURL
-				}
-				info.Entries = append(info.Entries, *videoMeta)
+		var raw map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &raw); err != nil {
+			continue
+		}
+		if i == 0 {
+			// First line is playlist-level metadata
+			if id, ok := raw["id"].(string); ok {
+				info.PlaylistID = id
 			}
+			if title, ok := raw["title"].(string); ok {
+				info.Title = title
+			}
+			if desc, ok := raw["description"].(string); ok {
+				info.Description = desc
+			}
+			if uploader, ok := raw["uploader"].(string); ok {
+				info.Uploader = uploader
+			} else if channel, ok := raw["channel"].(string); ok {
+				info.Uploader = channel
+			}
+			if count, ok := raw["playlist_count"].(float64); ok {
+				info.VideoCount = int(count)
+			}
+			if webpageURL, ok := raw["webpage_url"].(string); ok {
+				info.WebpageURL = webpageURL
+			}
+			if thumbnails, ok := raw["thumbnails"].([]interface{}); ok && len(thumbnails) > 0 {
+				lastThumb := thumbnails[len(thumbnails)-1]
+				if thumbMap, ok := lastThumb.(map[string]interface{}); ok {
+					if url, ok := thumbMap["url"].(string); ok {
+						info.Thumbnail = url
+					}
+				}
+			} else if thumbnail, ok := raw["thumbnail"].(string); ok {
+				info.Thumbnail = thumbnail
+			}
+			// Inline entries if present (some yt-dlp versions)
+			if entries, ok := raw["entries"].([]interface{}); ok {
+				for _, e := range entries {
+					if entryMap, ok := e.(map[string]interface{}); ok {
+						if meta := parsePlaylistEntry(entryMap); meta != nil {
+							info.Entries = append(info.Entries, *meta)
+						}
+					}
+				}
+			}
+			continue
+		}
+		// Subsequent lines: one JSON object per video with --flat-playlist
+		if meta := parsePlaylistEntry(raw); meta != nil {
+			info.Entries = append(info.Entries, *meta)
 		}
 	}
 
 	return info, nil
+}
+
+// parsePlaylistEntry extracts YouTubeVideoMetadata from a yt-dlp JSON object (playlist entry).
+// Returns nil if the object does not look like a video entry (e.g. no id).
+func parsePlaylistEntry(entryMap map[string]interface{}) *YouTubeVideoMetadata {
+	videoID, ok := entryMap["id"].(string)
+	if !ok || videoID == "" {
+		return nil
+	}
+	// Skip playlist container entries that might appear in nested "entries"
+	if entryType, _ := entryMap["_type"].(string); entryType == "playlist" {
+		return nil
+	}
+	meta := &YouTubeVideoMetadata{VideoID: videoID}
+	if title, ok := entryMap["title"].(string); ok {
+		meta.Title = title
+	}
+	if duration, ok := entryMap["duration"].(float64); ok {
+		meta.Duration = int(duration)
+	} else if duration, ok := entryMap["duration"].(int); ok {
+		meta.Duration = duration
+	}
+	if uploader, ok := entryMap["uploader"].(string); ok {
+		meta.Uploader = uploader
+	} else if channel, ok := entryMap["channel"].(string); ok {
+		meta.Uploader = channel
+	}
+	if url, ok := entryMap["url"].(string); ok {
+		meta.WebpageURL = url
+	} else if webpageURL, ok := entryMap["webpage_url"].(string); ok {
+		meta.WebpageURL = webpageURL
+	}
+	return meta
 }

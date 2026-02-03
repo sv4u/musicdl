@@ -16,6 +16,7 @@ A CLI tool for downloading music from Spotify by sourcing audio from YouTube, Yo
 - **Config hash** – Plan file is named by config content hash (`.cache/download_plan_<hash>.json`); download rejects plan if config changed
 - **Multiple formats** – MP3, FLAC, M4A, and Opus output
 - **Flexible config** – Supports both spec layout (top-level `spotify`, `threads`, `rate_limits`) and legacy layout under `download`
+- **Spotify and YouTube playlists** – Playlists can be Spotify playlist URLs or YouTube playlist URLs; each track is planned and downloaded (YouTube playlists require `yt-dlp` on PATH for plan generation)
 
 ## Installation
 
@@ -178,6 +179,11 @@ If both are present, legacy fields take precedence. The `output` field must cont
 
 Songs, artists, playlists, and albums are configured as lists. Extended format (name + url) is recommended; simple format (key: url) is also supported.
 
+- **Songs** – Spotify track URLs or YouTube video URLs.
+- **Artists** – Spotify artist URLs only (discography is expanded).
+- **Playlists** – Spotify playlist URLs or **YouTube playlist URLs**. For YouTube playlists, `musicdl plan` uses `yt-dlp` to resolve the playlist and its tracks; ensure `yt-dlp` is on your PATH.
+- **Albums** – Spotify album URLs only.
+
 ```yaml
 songs:
   - name: "Song Name"
@@ -188,8 +194,11 @@ artists:
     url: "https://open.spotify.com/artist/..."
 
 playlists:
-  - name: "Playlist Name"
+  - name: "Spotify Playlist"
     url: "https://open.spotify.com/playlist/..."
+    create_m3u: true
+  - name: "YouTube Playlist"
+    url: "https://www.youtube.com/playlist?list=PL..."
     create_m3u: true
 
 albums:
@@ -227,6 +236,9 @@ Working directory in the image is `/download`. Set `MUSICDL_CACHE_DIR` if you wa
 
 - **Configuration error (exit 1)**  
   Check YAML syntax, required fields (`version`, `download.client_id`/`spotify.client_id`, `download.client_secret`/`spotify.client_secret`), and that `download.output` contains `{title}` and `threads` is 1–16.
+
+- **YouTube playlist has no tracks in plan**  
+  Plan generation for YouTube playlists uses `yt-dlp` with `--flat-playlist --dump-json`. Ensure `yt-dlp` is installed and on your PATH when running `musicdl plan`. If the playlist appears in the plan with zero tracks, check that the playlist URL is correct and that `yt-dlp` can access it (e.g. `yt-dlp --flat-playlist --dump-json "<playlist-url>"`).
 
 ## See Also
 
