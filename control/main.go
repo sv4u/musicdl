@@ -35,7 +35,7 @@ func main() {
 		os.Exit(planCommand(configPath, noTUI))
 	}
 
-	// CLI: musicdl download [--no-tui] <config-file>
+	// CLI: musicdl download [--no-tui] <config-file> (plan-then-download)
 	if command == "download" {
 		configPath, noTUI := ParseDownloadArgs(os.Args[2:])
 		if configPath == "" {
@@ -58,7 +58,7 @@ USAGE:
 
 COMMANDS:
     plan [--no-tui] <config-file>     Generate download plan (saves to .cache/download_plan_<hash>.json)
-    download [--no-tui] <config-file> Run downloads from plan (run 'musicdl plan' first)
+    download [--no-tui] <config-file> Generate plan and run downloads
     version                Show version information
 
 EXAMPLES:

@@ -28,33 +28,7 @@ func TestPlanCommand_InvalidYAMLExits1(t *testing.T) {
 	}
 }
 
-func TestDownloadCLICommand_NoPlanFileExits2(t *testing.T) {
-	// Valid config but no plan file in cache -> exit 2 (plan not found)
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(configPath, []byte(`version: "1.2"
-download:
-  client_id: "id"
-  client_secret: "secret"
-  output: "{title}.mp3"
-`), 0644); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-	// Use empty cache dir so no plan exists
-	_ = os.Unsetenv("MUSICDL_CACHE_DIR")
-	origWd, _ := os.Getwd()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatalf("chdir: %v", err)
-	}
-	defer func() { _ = os.Chdir(origWd) }()
-	// Ensure .cache is empty (no plan)
-	_ = os.RemoveAll(".cache")
-
-	code := downloadCLICommand(configPath, true)
-	if code != DownloadExitPlanMissing {
-		t.Errorf("downloadCLICommand(no plan) = %d, want %d (DownloadExitPlanMissing)", code, DownloadExitPlanMissing)
-	}
-}
+// download command now always runs plan-then-download; no "plan not found" path for the user.
 
 func TestPrintUsage(t *testing.T) {
 	oldStderr := os.Stderr

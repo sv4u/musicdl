@@ -45,6 +45,100 @@ func getCacheDir() string {
 	return ".cache"
 }
 
+// runPlanPhase generates a plan, saves it to cache, and optionally runs the plan TUI.
+// It writes logs to planLogPath. Returns exit code, track count, and plan file path (for success).
+func runPlanPhase(ctx context.Context, cancel context.CancelFunc, configPath string, cfg *config.MusicDLConfig, hash string, cacheDir string, spotifyClient *spotify.SpotifyClient, audioProvider *audio.Provider, planLogPath string, noTUI bool) (exitCode int, trackCount int, planPath string) {
+	playlistTracksFunc := func(cctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
+		return spotifyClient.GetPlaylistTracks(cctx, playlistID, opts)
+	}
+	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc, audioProvider)
+	optimizer := plan.NewOptimizer(true)
+
+	if !WantTUI(noTUI) {
+		logFile, err := os.OpenFile(planLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error opening log file: %v\n", err)
+			return PlanExitFilesystem, 0, ""
+		}
+		restore := RedirectLogToFile(logFile)
+		defer restore()
+		defer logFile.Close()
+
+		generatedPlan, err := generator.GeneratePlan(ctx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Plan generation failed: %v\n", err)
+			return PlanExitNetwork, 0, ""
+		}
+		optimizer.Optimize(generatedPlan)
+		configFile := filepath.Base(configPath)
+		if err := plan.SavePlanByHash(generatedPlan, cacheDir, hash, configFile); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving plan file: %v\n", err)
+			return PlanExitFilesystem, 0, ""
+		}
+		trackCount := 0
+		for _, item := range generatedPlan.Items {
+			if item.ItemType == plan.PlanItemTypeTrack {
+				trackCount++
+			}
+		}
+		return PlanExitSuccess, trackCount, plan.GetPlanFilePath(cacheDir, hash)
+	}
+
+	// TUI path
+	errCh := make(chan string, 64)
+	tee, err := NewLogTeeWriter(planLogPath, errCh)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening log file: %v\n", err)
+		return PlanExitFilesystem, 0, ""
+	}
+	defer tee.Close()
+	defer close(errCh)
+	restore := RedirectLogToFile(tee)
+	defer restore()
+
+	planCh := make(chan planMsg, 8)
+	generator.SetRateLimitNotifier(func(totalSec, remainingSec int) {
+		select {
+		case planCh <- planMsg{RateLimitRemaining: remainingSec}:
+		default:
+		}
+	})
+	go func() {
+		generatedPlan, genErr := generator.GeneratePlan(ctx)
+		trackCount := 0
+		planPath := ""
+		if genErr == nil {
+			optimizer.Optimize(generatedPlan)
+			configFile := filepath.Base(configPath)
+			if saveErr := plan.SavePlanByHash(generatedPlan, cacheDir, hash, configFile); saveErr != nil {
+				genErr = saveErr
+			} else {
+				for _, item := range generatedPlan.Items {
+					if item.ItemType == plan.PlanItemTypeTrack {
+						trackCount++
+					}
+				}
+				planPath = plan.GetPlanFilePath(cacheDir, hash)
+			}
+		}
+		planCh <- planMsg{Done: true, Err: genErr, TrackCount: trackCount, PlanPath: planPath}
+		close(planCh)
+	}()
+
+	runErr := RunPlanTUI(planLogPath, planCh, errCh, cancel)
+	if runErr != nil {
+		if errors.Is(runErr, context.Canceled) {
+			return PlanExitInterrupted, 0, ""
+		}
+		if strings.Contains(runErr.Error(), "network") || strings.Contains(runErr.Error(), "rate limit") {
+			return PlanExitNetwork, 0, ""
+		}
+		return PlanExitFilesystem, 0, ""
+	}
+	// TUI success: we don't have trackCount/planPath from the goroutine here; caller can load plan if needed
+	return PlanExitSuccess, 0, ""
+}
+
 // planCommand runs the plan subcommand: load config, generate plan, save to .cache/download_plan_<hash>.json.
 // Logs are written to .logs/run_<timestamp>/plan.log. If noTUI is false and stdout is a TTY, shows a TUI.
 // Returns exit code.
@@ -108,12 +202,6 @@ func planCommand(configPath string, noTUI bool) int {
 		return PlanExitConfigError
 	}
 
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return spotifyClient.GetPlaylistTracks(ctx, playlistID, opts)
-	}
-	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc, audioProvider)
-	optimizer := plan.NewOptimizer(true)
-
 	ctx := context.Background()
 	var cancel context.CancelFunc
 	if WantTUI(noTUI) {
@@ -121,97 +209,22 @@ func planCommand(configPath string, noTUI bool) int {
 		defer cancel()
 	}
 
+	exitCode, trackCount, planPath := runPlanPhase(ctx, cancel, configPath, cfg, hash, cacheDir, spotifyClient, audioProvider, logPath, noTUI)
+	if exitCode != PlanExitSuccess {
+		return exitCode
+	}
 	if !WantTUI(noTUI) {
-		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error opening log file: %v\n", err)
-			return PlanExitFilesystem
-		}
-		restore := RedirectLogToFile(logFile)
-		defer restore()
-		defer logFile.Close()
-
-		generatedPlan, err := generator.GeneratePlan(ctx)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Plan generation failed: %v\n", err)
-			return PlanExitNetwork
-		}
-		optimizer.Optimize(generatedPlan)
-		configFile := filepath.Base(configPath)
-		if err := plan.SavePlanByHash(generatedPlan, cacheDir, hash, configFile); err != nil {
-			fmt.Fprintf(os.Stderr, "Error saving plan file: %v\n", err)
-			return PlanExitFilesystem
-		}
-		trackCount := 0
-		for _, item := range generatedPlan.Items {
-			if item.ItemType == plan.PlanItemTypeTrack {
-				trackCount++
-			}
-		}
 		fmt.Printf("Plan generated successfully\n")
 		fmt.Printf("Configuration: %s\n", configPath)
 		fmt.Printf("Total tracks: %d\n", trackCount)
-		fmt.Printf("Plan file: %s\n", plan.GetPlanFilePath(cacheDir, hash))
+		fmt.Printf("Plan file: %s\n", planPath)
 		fmt.Printf("Log file: %s\n", logPath)
-		return PlanExitSuccess
-	}
-
-	// TUI path
-	errCh := make(chan string, 64)
-	tee, err := NewLogTeeWriter(logPath, errCh)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error opening log file: %v\n", err)
-		return PlanExitFilesystem
-	}
-	defer tee.Close()
-	defer close(errCh)
-	restore := RedirectLogToFile(tee)
-	defer restore()
-
-	planCh := make(chan planMsg, 8)
-	generator.SetRateLimitNotifier(func(totalSec, remainingSec int) {
-		select {
-		case planCh <- planMsg{RateLimitRemaining: remainingSec}:
-		default:
-		}
-	})
-	go func() {
-		generatedPlan, genErr := generator.GeneratePlan(ctx)
-		trackCount := 0
-		planPath := ""
-		if genErr == nil {
-			optimizer.Optimize(generatedPlan)
-			configFile := filepath.Base(configPath)
-			if saveErr := plan.SavePlanByHash(generatedPlan, cacheDir, hash, configFile); saveErr != nil {
-				genErr = saveErr
-			} else {
-				for _, item := range generatedPlan.Items {
-					if item.ItemType == plan.PlanItemTypeTrack {
-						trackCount++
-					}
-				}
-				planPath = plan.GetPlanFilePath(cacheDir, hash)
-			}
-		}
-		planCh <- planMsg{Done: true, Err: genErr, TrackCount: trackCount, PlanPath: planPath}
-		close(planCh)
-	}()
-
-	runErr := RunPlanTUI(logPath, planCh, errCh, cancel)
-	if runErr != nil {
-		if errors.Is(runErr, context.Canceled) {
-			return PlanExitInterrupted
-		}
-		if strings.Contains(runErr.Error(), "network") || strings.Contains(runErr.Error(), "rate limit") {
-			return PlanExitNetwork
-		}
-		return PlanExitFilesystem
 	}
 	return PlanExitSuccess
 }
 
-// downloadCLICommand runs the download subcommand: load config, load plan by hash, run executor.
-// Logs are written to .logs/run_<timestamp>/download.log. If noTUI is false and stdout is a TTY, shows a TUI.
+// downloadCLICommand runs the download subcommand: generate plan, then run executor (plan-then-download).
+// Logs are written to .logs/run_<timestamp>/plan.log and download.log. If noTUI is false and stdout is a TTY, shows a TUI for each phase.
 // Returns exit code.
 func downloadCLICommand(configPath string, noTUI bool) int {
 	cfg, err := config.LoadConfig(configPath)
@@ -231,25 +244,17 @@ func downloadCLICommand(configPath string, noTUI bool) int {
 	}
 
 	cacheDir := getCacheDir()
-	loadedPlan, err := plan.LoadPlanByHash(cacheDir, hash)
-	if err != nil {
-		if errors.Is(err, plan.ErrPlanNotFound) {
-			fmt.Fprintf(os.Stderr, "Plan file not found. Run 'musicdl plan %s' first.\n", configPath)
-			return DownloadExitPlanMissing
-		}
-		if errors.Is(err, plan.ErrPlanHashMismatch) {
-			fmt.Fprintf(os.Stderr, "Plan file does not match configuration. Regenerate plan.\n")
-			return DownloadExitPlanMissing
-		}
-		fmt.Fprintf(os.Stderr, "Error loading plan: %v\n", err)
-		return DownloadExitPlanMissing
+	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating cache directory: %v\n", err)
+		return DownloadExitFilesystem
 	}
 
-	_, logPath, err := CreateRunDir(RunDirDownload)
+	runDir, downloadLogPath, err := CreateRunDir(RunDirDownload)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating log directory: %v\n", err)
 		return DownloadExitFilesystem
 	}
+	planLogPath := filepath.Join(runDir, "plan.log")
 
 	spotifyConfig := &spotify.Config{
 		ClientID:          cfg.Download.ClientID,
@@ -282,13 +287,6 @@ func downloadCLICommand(configPath string, noTUI bool) int {
 		return DownloadExitConfigError
 	}
 
-	metadataEmbedder := metadata.NewEmbedder()
-	downloader := download.NewDownloader(&cfg.Download, spotifyClient, audioProvider, metadataEmbedder)
-	maxWorkers := cfg.Download.Threads
-	if maxWorkers == 0 {
-		maxWorkers = 4
-	}
-	executor := plan.NewExecutor(downloader, maxWorkers)
 	ctx := context.Background()
 	var cancel context.CancelFunc
 	if WantTUI(noTUI) {
@@ -296,8 +294,46 @@ func downloadCLICommand(configPath string, noTUI bool) int {
 		defer cancel()
 	}
 
+	planExitCode, _, _ := runPlanPhase(ctx, cancel, configPath, cfg, hash, cacheDir, spotifyClient, audioProvider, planLogPath, noTUI)
+	if planExitCode != PlanExitSuccess {
+		switch planExitCode {
+		case PlanExitConfigError:
+			return DownloadExitConfigError
+		case PlanExitNetwork:
+			return DownloadExitNetwork
+		case PlanExitFilesystem:
+			return DownloadExitFilesystem
+		case PlanExitInterrupted:
+			return DownloadExitInterrupted
+		default:
+			return DownloadExitNetwork
+		}
+	}
+
+	loadedPlan, err := plan.LoadPlanByHash(cacheDir, hash)
+	if err != nil {
+		if errors.Is(err, plan.ErrPlanNotFound) {
+			fmt.Fprintf(os.Stderr, "Plan file not found after generation.\n")
+			return DownloadExitPlanMissing
+		}
+		if errors.Is(err, plan.ErrPlanHashMismatch) {
+			fmt.Fprintf(os.Stderr, "Plan file does not match configuration.\n")
+			return DownloadExitPlanMissing
+		}
+		fmt.Fprintf(os.Stderr, "Error loading plan: %v\n", err)
+		return DownloadExitPlanMissing
+	}
+
+	metadataEmbedder := metadata.NewEmbedder()
+	downloader := download.NewDownloader(&cfg.Download, spotifyClient, audioProvider, metadataEmbedder)
+	maxWorkers := cfg.Download.Threads
+	if maxWorkers == 0 {
+		maxWorkers = 4
+	}
+	executor := plan.NewExecutor(downloader, maxWorkers)
+
 	if !WantTUI(noTUI) {
-		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		logFile, err := os.OpenFile(downloadLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error opening log file: %v\n", err)
 			return DownloadExitFilesystem
@@ -325,7 +361,7 @@ func downloadCLICommand(configPath string, noTUI bool) int {
 		fmt.Printf("Successful: %d\n", completed)
 		fmt.Printf("Failed: %d\n", failed)
 		fmt.Printf("Total: %d\n", total)
-		fmt.Printf("Log file: %s\n", logPath)
+		fmt.Printf("Log file: %s\n", downloadLogPath)
 		if failed > 0 && completed > 0 {
 			return DownloadExitPartial
 		}
@@ -337,7 +373,7 @@ func downloadCLICommand(configPath string, noTUI bool) int {
 
 	// TUI path
 	errCh := make(chan string, 64)
-	tee, err := NewLogTeeWriter(logPath, errCh)
+	tee, err := NewLogTeeWriter(downloadLogPath, errCh)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error opening log file: %v\n", err)
 		return DownloadExitFilesystem
@@ -357,7 +393,7 @@ func downloadCLICommand(configPath string, noTUI bool) int {
 		close(progressCh)
 	}()
 
-	stats, execErr := RunDownloadTUI(logPath, countPendingTracks(loadedPlan), progressCh, errCh, cancel)
+	stats, execErr := RunDownloadTUI(downloadLogPath, countPendingTracks(loadedPlan), progressCh, errCh, cancel)
 	if execErr != nil {
 		if errors.Is(execErr, context.Canceled) {
 			return DownloadExitInterrupted
