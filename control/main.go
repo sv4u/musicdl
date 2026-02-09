@@ -45,6 +45,11 @@ func main() {
 		os.Exit(downloadCLICommand(configPath, noTUI))
 	}
 
+	// API server: musicdl api
+	if command == "api" {
+		os.Exit(apiCommand(os.Args[2:]))
+	}
+
 	fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", command)
 	printUsage()
 	os.Exit(1)
@@ -59,11 +64,14 @@ USAGE:
 COMMANDS:
     plan [--no-tui] <config-file>     Generate download plan (saves to .cache/download_plan_<hash>.json)
     download [--no-tui] <config-file> Generate plan and run downloads
-    version                Show version information
+    api [--port PORT]                 Start HTTP API server (default port: 5000)
+    version                           Show version information
 
 EXAMPLES:
     musicdl plan musicdl-config.yml
     musicdl download musicdl-config.yml
+    musicdl api
+    musicdl api --port 8080
     musicdl version
 
 For more information, see https://github.com/sv4u/musicdl

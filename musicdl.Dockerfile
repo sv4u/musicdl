@@ -1,5 +1,5 @@
-# Stage 1: Build Go binary (CLI-only, no proto)
-FROM golang:1.25-alpine AS builder
+# Stage 1: Build Go binary
+FROM golang:1.25-alpine AS go-builder
 
 ARG VERSION
 
@@ -32,22 +32,43 @@ RUN if [ -n "$VERSION" ]; then \
 		-o /usr/local/bin/musicdl \
 		./control
 
-# Stage 2: Runtime image (CLI-only)
+# Stage 2: Build Node.js frontend and backend
+FROM node:20-alpine AS web-builder
+
+WORKDIR /web
+
+# Copy backend and frontend
+COPY webserver/backend ./backend
+COPY webserver/frontend ./frontend
+
+# Build backend
+WORKDIR /web/backend
+RUN npm ci && npm run build
+
+# Build frontend
+WORKDIR /web/frontend
+RUN npm ci && npm run build
+
+# Stage 3: Runtime image
 FROM alpine:latest
 
 LABEL org.opencontainers.image.authors="sasank@vishnubhatlas.net"
 LABEL version="1.2"
-LABEL description="musicdl - Music download tool (CLI)"
+LABEL description="musicdl - Music download tool (CLI + Web Interface)"
 
 ENV MUSICDL_WORK_DIR=/download
 ENV MUSICDL_CACHE_DIR=.cache
 ENV MUSICDL_LOG_LEVEL=info
+ENV MUSICDL_API_PORT=5000
+ENV PORT=3000
 
 RUN apk add --no-cache \
 	ca-certificates \
 	ffmpeg \
 	python3 \
 	py3-pip \
+	nodejs \
+	npm \
 	&& pip3 install --break-system-packages --no-cache-dir yt-dlp mutagen \
 	&& rm -rf /var/cache/apk/*
 
@@ -56,9 +77,32 @@ RUN python3 -c "import mutagen; print(f'mutagen: {mutagen.version_string}')" || 
 
 RUN mkdir -p /download && chmod 755 /download
 
-COPY --from=builder /usr/local/bin/musicdl /usr/local/bin/musicdl
+COPY --from=go-builder /usr/local/bin/musicdl /usr/local/bin/musicdl
+COPY --from=web-builder /web/backend/dist /opt/musicdl/backend/dist
+COPY --from=web-builder /web/backend/public /opt/musicdl/backend/public
+COPY --from=web-builder /web/backend/package*.json /opt/musicdl/backend/
+
+# Install production dependencies for backend
+WORKDIR /opt/musicdl/backend
+RUN npm ci --omit=dev
 
 WORKDIR /download
 
-# No default entrypoint - run ad-hoc: docker run ... musicdl plan config.yml
-# Example: docker run -v $(pwd):/download musicdl musicdl plan musicdl-config.yml
+# Create entrypoint script
+RUN echo '#!/bin/sh\n\
+if [ "$1" = "web" ]; then\n\
+  # Start both API server and Express server\n\
+  echo "Starting musicdl services..."\n\
+  musicdl api &\n\
+  sleep 2\n\
+  exec node /opt/musicdl/backend/dist/index.js\n\
+else\n\
+  # Default to CLI mode\n\
+  exec musicdl "$@"\n\
+fi\n\
+' > /entrypoint.sh && chmod +x /entrypoint.sh
+
+EXPOSE 80 3000 5000
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["web"]

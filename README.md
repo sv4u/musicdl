@@ -11,12 +11,15 @@ A CLI tool for downloading music from Spotify by sourcing audio from YouTube, Yo
 
 ## Features
 
-- **CLI-only** – Two commands: `musicdl plan <config-file>` and `musicdl download <config-file>`
+- **CLI Tool** – Commands: `musicdl plan`, `musicdl download`, `musicdl api`
+- **Web Interface** – Modern Vue 3 + TypeScript UI (port 80 in Docker)
+- **API Server** – RESTful Go HTTP server for web and CLI coordination (port 5000)
 - **Plan-based workflow** – Generate a download plan (with config hash), then run downloads from that plan
 - **Config hash** – Plan file is named by config content hash (`.cache/download_plan_<hash>.json`); download rejects plan if config changed
 - **Multiple formats** – MP3, FLAC, M4A, and Opus output
 - **Flexible config** – Supports both spec layout (top-level `spotify`, `threads`, `rate_limits`) and legacy layout under `download`
 - **Spotify and YouTube playlists** – Playlists can be Spotify playlist URLs or YouTube playlist URLs; each track is planned and downloaded (YouTube playlists require `yt-dlp` on PATH for plan generation)
+- **Real-time monitoring** – Progress tracking, log viewer, and rate limit alerts
 
 ## Installation
 
@@ -90,6 +93,23 @@ musicdl download --no-tui config.yaml
 ```
 
 **Exit codes:** 0 = success, 1 = configuration error, 2 = plan file not found or hash mismatch, 3 = network error, 4 = file system error, 5 = partial success (some failures)
+
+### `musicdl api [--port PORT]`
+
+Start the HTTP API server for web interface and programmatic access. Default port is 5000 (configurable via `--port` or `MUSICDL_API_PORT` environment variable).
+
+```bash
+musicdl api
+musicdl api --port 8080
+MUSICDL_API_PORT=9000 musicdl api
+```
+
+The API server provides endpoints for:
+- Configuration management (`GET /api/config`, `POST /api/config`)
+- Download plan generation (`POST /api/download/plan`)
+- Download execution (`POST /api/download/run`)
+- Status monitoring (`GET /api/download/status`, `GET /api/rate-limit-status`)
+- Log retrieval (`GET /api/logs`)
 
 ### `musicdl version`
 
@@ -217,12 +237,44 @@ albums:
 
 ## Docker
 
-No default entrypoint. Run ad-hoc with your config and output volume:
+### Web Interface (Recommended)
 
 ```bash
-docker run --rm -v /path/to/workspace:/download -v /path/to/config.yaml:/download/config.yaml:ro ghcr.io/sv4u/musicdl:latest musicdl plan config.yaml
-docker run --rm -v /path/to/workspace:/download -v /path/to/config.yaml:/download/config.yaml:ro ghcr.io/sv4u/musicdl:latest musicdl download config.yaml
+docker run --rm -p 80:3000 \
+  -v /path/to/workspace:/download \
+  -v /path/to/config.yaml:/download/config.yaml:ro \
+  ghcr.io/sv4u/musicdl:latest
 ```
+
+Access the web interface at `http://localhost`
+
+Features:
+- Modern Vue 3 UI with real-time progress tracking
+- Built-in configuration editor
+- Log viewer with live updates
+- Rate limit alerts with countdown timers
+
+### CLI Commands (Traditional)
+
+```bash
+docker run --rm -v /path/to/workspace:/download \
+  -v /path/to/config.yaml:/download/config.yaml:ro \
+  ghcr.io/sv4u/musicdl:latest musicdl plan config.yaml
+
+docker run --rm -v /path/to/workspace:/download \
+  -v /path/to/config.yaml:/download/config.yaml:ro \
+  ghcr.io/sv4u/musicdl:latest musicdl download config.yaml
+```
+
+### Docker Compose
+
+For development with both API and web server:
+
+```bash
+docker-compose -f docker-compose.web.yml up
+```
+
+Access at `http://localhost:3000` (backend) and `http://localhost:5000` (API)
 
 Working directory in the image is `/download`. Set `MUSICDL_CACHE_DIR` if you want cache elsewhere (e.g. `MUSICDL_CACHE_DIR=/download/.cache`).
 
@@ -239,6 +291,71 @@ Working directory in the image is `/download`. Set `MUSICDL_CACHE_DIR` if you wa
 
 - **YouTube playlist has no tracks in plan**  
   Plan generation for YouTube playlists uses `yt-dlp` with `--flat-playlist --dump-json`. Ensure `yt-dlp` is installed and on your PATH when running `musicdl plan`. If the playlist appears in the plan with zero tracks, check that the playlist URL is correct and that `yt-dlp` can access it (e.g. `yt-dlp --flat-playlist --dump-json "<playlist-url>"`).
+
+## Development
+
+### Quick Start
+
+```bash
+./dev.sh
+```
+
+This starts:
+- Go API server on `http://localhost:5000`
+- Express backend on `http://localhost:3000`
+- Vue frontend dev server on `http://localhost:5173`
+
+### Manual Setup
+
+**Backend:**
+```bash
+cd webserver/backend
+npm install
+PORT=3000 GO_API_HOST=localhost GO_API_PORT=5000 npm run dev
+```
+
+**Frontend:**
+```bash
+cd webserver/frontend
+npm install
+npm run dev
+```
+
+**Go API Server:**
+```bash
+go build -o musicdl ./control
+./musicdl api
+```
+
+### Building for Production
+
+```bash
+# Build everything
+cd webserver/backend && npm run build && cd ..
+cd frontend && npm run build && cd ..
+
+# Build Docker image
+docker build -f musicdl.Dockerfile -t ghcr.io/sv4u/musicdl:latest .
+```
+
+### Project Structure
+
+```
+musicdl/
+├── control/                 # Go CLI and API server
+│   ├── api.go              # HTTP API server implementation
+│   ├── cli.go              # CLI commands
+│   └── main.go             # Entry point
+├── download/               # Core music download logic
+├── webserver/              # Web UI (Node.js + Vue)
+│   ├── backend/            # Express.js + TypeScript
+│   ├── frontend/           # Vue 3 + TypeScript + Vite
+│   └── README.md           # Web server documentation
+├── musicdl.Dockerfile      # Multi-stage Docker build
+├── docker-compose.web.yml  # Development compose file
+├── dev.sh                  # Development startup script
+└── README.md              # This file
+```
 
 ## See Also
 

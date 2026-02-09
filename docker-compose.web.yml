@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  musicdl-api:
+    build:
+      context: .
+      dockerfile: musicdl.Dockerfile
+      args:
+        VERSION: dev
+    command: musicdl api
+    container_name: musicdl-api
+    ports:
+      - "5000:5000"
+    environment:
+      MUSICDL_WORK_DIR: /download
+      MUSICDL_CACHE_DIR: .cache
+      MUSICDL_API_PORT: 5000
+    volumes:
+      - ./:/download
+      - ./config.yaml:/download/config.yaml:ro
+    restart: unless-stopped
+
+  musicdl-web:
+    build:
+      context: .
+      dockerfile: musicdl.Dockerfile
+      args:
+        VERSION: dev
+    command: node /opt/musicdl/backend/dist/index.js
+    container_name: musicdl-web
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      GO_API_HOST: musicdl-api
+      GO_API_PORT: 5000
+    volumes:
+      - ./:/download
+      - ./config.yaml:/download/config.yaml:ro
+    depends_on:
+      - musicdl-api
+    restart: unless-stopped
