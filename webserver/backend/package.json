@@ -7,13 +7,14 @@
     "dev": "ts-node src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "gen-api-types": "swagger-typescript-api -p http://localhost:5000/docs/swagger.json -o ./src/api -n musicdlApi"
+    "gen-api-types": "swagger-typescript-api -p http://localhost:5000/api/docs/swagger.json -o ./src/api -n musicdlApi"
   },
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "axios": "^1.6.0"
+    "axios": "^1.6.0",
+    "http-proxy-middleware": "^3.0.0"
   },
   "devDependencies": {
     "typescript": "^5.3.3",

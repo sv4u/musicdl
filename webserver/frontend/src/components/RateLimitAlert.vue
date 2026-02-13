@@ -21,7 +21,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
+import { ref, watch, onBeforeUnmount } from 'vue';
 
 interface RateLimitInfo {
   active: boolean;
@@ -31,19 +31,20 @@ interface RateLimitInfo {
   remainingSeconds: number;
 }
 
-interface Props {
+const props = defineProps<{
   info: RateLimitInfo;
-}
-
-defineProps<Props>();
+}>();
 
 const remainingTime = ref(0);
-
-const props = defineProps<Props>();
+let countdownTimer: ReturnType<typeof setTimeout> | null = null;
 
 watch(
   () => props.info,
   (newInfo) => {
+    // Clear any existing timer chain before starting a new one.
+    // Without this, each prop update (every ~1s from the parent poll)
+    // would spawn an additional independent setTimeout chain.
+    clearCountdownTimer();
     if (newInfo.active) {
       updateCountdown();
     }
@@ -51,12 +52,25 @@ watch(
   { immediate: true }
 );
 
+onBeforeUnmount(() => {
+  clearCountdownTimer();
+});
+
+function clearCountdownTimer() {
+  if (countdownTimer !== null) {
+    clearTimeout(countdownTimer);
+    countdownTimer = null;
+  }
+}
+
 function updateCountdown() {
   const now = Math.floor(Date.now() / 1000);
   remainingTime.value = Math.max(0, props.info.retryAfterTimestamp - now);
 
   if (remainingTime.value > 0) {
-    setTimeout(updateCountdown, 1000);
+    countdownTimer = setTimeout(updateCountdown, 1000);
+  } else {
+    countdownTimer = null;
   }
 }
 </script>
