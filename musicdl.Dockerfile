@@ -1,5 +1,5 @@
 # Stage 1: Build Go binary
-FROM golang:1.25-alpine AS go-builder
+FROM golang:1.24-alpine AS go-builder
 
 ARG VERSION
 
@@ -97,8 +97,8 @@ if [ "$1" = "web" ]; then\n\
   sleep 2\n\
   exec node /opt/musicdl/backend/dist/index.js\n\
 else\n\
-  # Default to CLI mode\n\
-  exec musicdl "$@"\n\
+  # Default to CLI mode (user passes full command, e.g. musicdl plan config.yaml)\n\
+  exec "$@"\n\
 fi\n\
 ' > /entrypoint.sh && chmod +x /entrypoint.sh
 

@@ -15,8 +15,10 @@ export default defineConfig({
   },
   server: {
     proxy: {
+      // Route all API traffic (including WebSocket) through Express so that
+      // any Express middleware (e.g. auth, logging) applies uniformly.
       '/api/ws': {
-        target: 'ws://localhost:5000',
+        target: 'ws://localhost:3000',
         ws: true,
       },
       '/api': {

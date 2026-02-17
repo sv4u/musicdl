@@ -41,28 +41,24 @@ func (t *RateLimitTracker) Update(retryAfterSeconds int) {
 }
 
 // GetInfo returns the current rate limit state, or nil if expired or not active.
+// Uses a single write lock to atomically check expiration and clear, avoiding a
+// TOCTOU race where Update() between an unlock/re-lock could be incorrectly wiped.
 func (t *RateLimitTracker) GetInfo() *RateLimitInfo {
-	t.mu.RLock()
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	if t.rateLimitInfo == nil {
-		t.mu.RUnlock()
 		return nil
 	}
 
-	// Check if expired
-	now := time.Now().Unix()
-	expired := now >= t.rateLimitInfo.RetryAfterTimestamp
-	t.mu.RUnlock()
-
-	if expired {
-		// Clear it (will acquire write lock)
-		t.Clear()
+	// Check if expired and clear atomically
+	if time.Now().Unix() >= t.rateLimitInfo.RetryAfterTimestamp {
+		t.rateLimitInfo = nil
 		return nil
 	}
 
-	// Return copy (need read lock again for safety)
-	t.mu.RLock()
+	// Return a copy so callers cannot mutate internal state
 	info := *t.rateLimitInfo
-	t.mu.RUnlock()
 	return &info
 }
 

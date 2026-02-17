@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -432,38 +433,9 @@ func ClassifyError(err error) ErrorDetail {
 
 // containsAny checks if s contains any of the substrings (case-insensitive).
 func containsAny(s string, substrs ...string) bool {
-	lower := toLower(s)
+	lower := strings.ToLower(s)
 	for _, sub := range substrs {
-		if contains(lower, toLower(sub)) {
-			return true
-		}
-	}
-	return false
-}
-
-// toLower converts string to lowercase without importing strings.
-func toLower(s string) string {
-	b := make([]byte, len(s))
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		if c >= 'A' && c <= 'Z' {
-			c += 'a' - 'A'
-		}
-		b[i] = c
-	}
-	return string(b)
-}
-
-// contains checks if s contains substr.
-func contains(s, substr string) bool {
-	if len(substr) == 0 {
-		return true
-	}
-	if len(substr) > len(s) {
-		return false
-	}
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
+		if strings.Contains(lower, strings.ToLower(sub)) {
 			return true
 		}
 	}

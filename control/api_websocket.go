@@ -24,8 +24,11 @@ const (
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
+	// TODO: In production, validate the Origin header against allowed hosts
+	// instead of accepting all origins. The permissive check is fine for local
+	// development but should be tightened for network-exposed deployments.
 	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all origins for development
+		return true
 	},
 }
 
@@ -197,21 +200,19 @@ func (lb *LogBroadcaster) writePump(client *wsClient) {
 				return
 			}
 
-			w, err := client.conn.NextWriter(websocket.TextMessage)
-			if err != nil {
+			// Send each message as its own WebSocket text frame so the
+			// client receives valid JSON per frame (no newline-delimited
+			// batching that would break JSON.parse on the receiver).
+			if err := client.conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				return
 			}
-			w.Write(message)
 
-			// Drain queued messages into the current write
+			// Drain queued messages, each as a separate frame
 			n := len(client.send)
 			for i := 0; i < n; i++ {
-				w.Write([]byte("\n"))
-				w.Write(<-client.send)
-			}
-
-			if err := w.Close(); err != nil {
-				return
+				if err := client.conn.WriteMessage(websocket.TextMessage, <-client.send); err != nil {
+					return
+				}
 			}
 
 		case <-ticker.C:

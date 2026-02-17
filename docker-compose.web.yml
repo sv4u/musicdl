@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   musicdl-api:
     build:
@@ -16,7 +14,7 @@ services:
       MUSICDL_CACHE_DIR: .cache
       MUSICDL_API_PORT: 5000
     volumes:
-      - ./:/download
+      - ./downloads:/download
       - ./config.yaml:/download/config.yaml:ro
     restart: unless-stopped
 
@@ -35,7 +33,7 @@ services:
       GO_API_HOST: musicdl-api
       GO_API_PORT: 5000
     volumes:
-      - ./:/download
+      - ./downloads:/download
       - ./config.yaml:/download/config.yaml:ro
     depends_on:
       - musicdl-api

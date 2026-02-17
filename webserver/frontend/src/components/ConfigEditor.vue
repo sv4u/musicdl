@@ -18,7 +18,7 @@
 
     <textarea
       v-model="configContent"
-      @change="configModified = true"
+      @input="configModified = true"
       class="w-full h-96 bg-slate-700 text-slate-100 border border-slate-600 rounded p-4 font-mono text-sm"
       placeholder="Config file content will appear here..."
     ></textarea>

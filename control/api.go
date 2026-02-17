@@ -20,6 +20,7 @@ import (
 	"github.com/sv4u/musicdl/download/plan"
 	"github.com/sv4u/musicdl/download/spotify"
 	"github.com/sv4u/spotigo"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -31,19 +32,19 @@ const (
 func apiCommand(args []string) int {
 	port := 5000
 
-	// Parse --port flag
+	// Environment variable (lower priority than CLI flag)
+	if envPort := os.Getenv("MUSICDL_API_PORT"); envPort != "" {
+		if p, err := strconv.Atoi(envPort); err == nil {
+			port = p
+		}
+	}
+
+	// Parse --port flag (highest priority, overrides env var)
 	for i, arg := range args {
 		if arg == "--port" && i+1 < len(args) {
 			if p, err := strconv.Atoi(args[i+1]); err == nil {
 				port = p
 			}
-		}
-	}
-
-	// Check environment variable override
-	if envPort := os.Getenv("MUSICDL_API_PORT"); envPort != "" {
-		if p, err := strconv.Atoi(envPort); err == nil {
-			port = p
 		}
 	}
 
@@ -54,11 +55,10 @@ func apiCommand(args []string) int {
 // APIServer manages the HTTP API server for musicdl.
 type APIServer struct {
 	port              int
+	spotifyClientMu   sync.RWMutex
 	spotifyClient     *spotify.SpotifyClient
 	runnerLock        sync.Mutex
-	isRunning         bool
 	currentRunTracker *RunTracker
-	configPath        string
 	logBroadcaster    *LogBroadcaster
 	statsTracker      *StatsTracker
 	circuitBreaker    *CircuitBreaker
@@ -131,7 +131,9 @@ func (s *APIServer) initClientsFromConfig(cfg *config.MusicDLConfig) (*spotify.S
 	if err != nil {
 		return nil, nil, fmt.Errorf("spotify client error: %w", err)
 	}
+	s.spotifyClientMu.Lock()
 	s.spotifyClient = spotifyClient
+	s.spotifyClientMu.Unlock()
 	audioConfig := &audio.Config{
 		OutputFormat:   cfg.Download.Format,
 		Bitrate:        cfg.Download.Bitrate,
@@ -188,6 +190,9 @@ func (s *APIServer) executePlan(configPath string) error {
 			trackCount++
 		}
 	}
+	// TODO: Plan generation currently has no per-item progress callback, so the
+	// progress jumps from 0/0 to N/N once complete. To support a real progress bar
+	// during plan generation, GeneratePlan would need an incremental callback.
 	s.currentRunTracker.mu.Lock()
 	s.currentRunTracker.total = trackCount
 	s.currentRunTracker.progress = trackCount
@@ -248,7 +253,7 @@ func (s *APIServer) executeDownload(configPath string, resume bool) error {
 			skipped := 0
 			for _, item := range loadedPlan.Items {
 				if item.ItemType == plan.PlanItemTypeTrack && s.resumeState.IsCompleted(item.ItemID) {
-					item.Status = plan.PlanItemStatusSkipped
+					item.MarkSkipped("")
 					skipped++
 				}
 			}
@@ -274,7 +279,13 @@ func (s *APIServer) executeDownload(configPath string, resume bool) error {
 		s.currentRunTracker.mu.Unlock()
 		switch item.Status {
 		case plan.PlanItemStatusCompleted:
-			s.statsTracker.RecordDownload(0)
+			var fileSize int64
+			if item.FilePath != "" {
+				if info, err := os.Stat(item.FilePath); err == nil {
+					fileSize = info.Size()
+				}
+			}
+			s.statsTracker.RecordDownload(fileSize)
 			s.resumeState.MarkCompleted(item.ItemID)
 			s.logBroadcaster.BroadcastString("info", fmt.Sprintf("Downloaded: %s", item.Name), "download")
 		case plan.PlanItemStatusFailed:
@@ -390,6 +401,9 @@ func (s *APIServer) Run() int {
 }
 
 // corsMiddleware adds CORS headers to all responses.
+// TODO: In production, replace "*" with the specific origin(s) of the frontend
+// to prevent cross-site request abuse. The wildcard is acceptable for local
+// development but should be locked down before any network-exposed deployment.
 func (s *APIServer) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -474,6 +488,17 @@ func (s *APIServer) saveConfigHandler(w http.ResponseWriter, r *http.Request) {
 	configContent, ok := req["config"]
 	if !ok {
 		http.Error(w, "Missing 'config' field", http.StatusBadRequest)
+		return
+	}
+
+	// Validate that the content is well-formed YAML before writing to disk.
+	var probe interface{}
+	if err := yaml.Unmarshal([]byte(configContent), &probe); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": fmt.Sprintf("Invalid YAML: %v", err),
+		})
 		return
 	}
 
@@ -709,8 +734,11 @@ func (s *APIServer) statusHandler(w http.ResponseWriter, r *http.Request) {
 func (s *APIServer) rateLimitStatusHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	if s.spotifyClient != nil {
-		info := s.spotifyClient.GetRateLimitInfo()
+	s.spotifyClientMu.RLock()
+	client := s.spotifyClient
+	s.spotifyClientMu.RUnlock()
+	if client != nil {
+		info := client.GetRateLimitInfo()
 		if info != nil {
 			now := time.Now().Unix()
 			remaining := info.RetryAfterTimestamp - now
