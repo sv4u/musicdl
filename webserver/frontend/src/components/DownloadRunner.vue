@@ -97,6 +97,11 @@ const statusMessage = ref('Ready to start');
 const errorDetail = ref<ErrorDetail | null>(null);
 const hasResumeData = ref(false);
 
+// Tracks the single active setTimeout so we never run parallel poll chains.
+// Every path that calls pollStatus() must cancel the pending timer first via
+// schedulePoll() or by calling pollStatus() through restartPoll().
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
 onMounted(() => {
   pollStatus();
   checkResumeState();
@@ -108,7 +113,7 @@ async function generatePlan() {
     await axios.post('/api/download/plan', { configPath: '/download/config.yaml' });
     isRunning.value = true;
     operationType.value = 'plan';
-    pollStatus();
+    restartPoll();
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.status === 503) {
       statusMessage.value = 'Circuit breaker is open - too many consecutive failures. Check the Statistics tab for recovery options.';
@@ -128,7 +133,7 @@ async function runDownload(resume: boolean) {
     isRunning.value = true;
     operationType.value = 'download';
     statusMessage.value = resume ? 'Resuming download...' : 'Starting download...';
-    pollStatus();
+    restartPoll();
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.status === 503) {
       statusMessage.value = 'Circuit breaker is open - too many consecutive failures. Check the Statistics tab for recovery options.';
@@ -138,7 +143,30 @@ async function runDownload(resume: boolean) {
   }
 }
 
+// Cancel any pending poll timer and immediately start a fresh poll cycle.
+// This is the only safe way to trigger an immediate poll from outside
+// pollStatus() — calling pollStatus() directly would create a second
+// parallel chain because the existing setTimeout is still pending.
+function restartPoll() {
+  if (pollTimer !== null) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+  pollStatus();
+}
+
+// Schedule the next poll after `delayMs`, cancelling any pending timer first
+// so at most one timer is ever active.
+function schedulePoll(delayMs: number) {
+  if (pollTimer !== null) {
+    clearTimeout(pollTimer);
+  }
+  pollTimer = setTimeout(pollStatus, delayMs);
+}
+
 async function pollStatus() {
+  // Clear the timer reference since we are now executing the poll.
+  pollTimer = null;
   try {
     const response = await axios.get('/api/download/status');
     isRunning.value = response.data.isRunning;
@@ -157,7 +185,7 @@ async function pollStatus() {
 
     if (isRunning.value) {
       statusMessage.value = `${operationType.value === 'plan' ? 'Generating plan' : 'Downloading'}... ${progress.value}/${total.value}`;
-      setTimeout(pollStatus, 1000);
+      schedulePoll(1000);
     } else {
       if (!errorDetail.value) {
         statusMessage.value = 'Idle';
@@ -165,11 +193,11 @@ async function pollStatus() {
       // Refresh resume state every idle poll so the Resume button appears
       // promptly after a partial failure — not only on page load.
       await checkResumeState();
-      setTimeout(pollStatus, 5000);
+      schedulePoll(5000);
     }
   } catch {
     statusMessage.value = 'Error connecting to API';
-    setTimeout(pollStatus, 5000);
+    schedulePoll(5000);
   }
 }
 
