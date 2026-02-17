@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -92,9 +93,12 @@ func (st *StatsTracker) save() {
 	os.WriteFile(st.filePath, data, 0644)
 }
 
-// StartRun begins tracking a new run. If a previous run was never finalized
-// via EndRun(), it is finalized first so cumulative stats are not lost.
-func (st *StatsTracker) StartRun(operationType string) {
+// StartRun begins tracking a new run and returns the run ID. If a previous run
+// was never finalized via EndRunByID(), it is finalized first so cumulative
+// stats are not lost. The returned run ID must be passed to EndRunByID() to
+// ensure only the correct run is finalized (preventing the race where a stale
+// goroutine's EndRun finalizes a newer run's stats).
+func (st *StatsTracker) StartRun(operationType string) string {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	// Finalize previous run if it was never ended, so cumulative time stats,
@@ -103,8 +107,9 @@ func (st *StatsTracker) StartRun(operationType string) {
 		st.finalizeCurrent()
 	}
 	now := time.Now()
+	runID := now.Format("20060102_150405") + fmt.Sprintf("_%d", now.UnixNano())
 	st.currentRun = &RunStats{
-		RunID:         now.Format("20060102_150405"),
+		RunID:         runID,
 		OperationType: operationType,
 		StartedAt:     now.Unix(),
 		IsRunning:     true,
@@ -118,13 +123,20 @@ func (st *StatsTracker) StartRun(operationType string) {
 	}
 	st.cumulative.LastRunAt = now.Unix()
 	st.save()
+	return runID
 }
 
-// EndRun finalizes the current run and persists cumulative stats.
-func (st *StatsTracker) EndRun() {
+// EndRunByID finalizes the current run only if its ID matches the given runID.
+// This prevents the race where a goroutine from a completed operation calls
+// EndRun after a new operation has already started, which would incorrectly
+// finalize the new run's stats.
+func (st *StatsTracker) EndRunByID(runID string) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if st.currentRun == nil || !st.currentRun.IsRunning {
+		return
+	}
+	if st.currentRun.RunID != runID {
 		return
 	}
 	st.finalizeCurrent()

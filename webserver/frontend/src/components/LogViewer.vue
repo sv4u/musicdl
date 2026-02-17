@@ -170,10 +170,11 @@ function connectWebSocket() {
             source: 'raw',
           });
         }
-        // Cap history after every push, not just successful JSON parses.
-        if (logs.value.length > maxHistory) {
-          logs.value = logs.value.slice(-maxHistory);
-        }
+      }
+      // Cap history once after processing all lines in the batch, rather than
+      // on every individual push, to avoid repeated array copies.
+      if (logs.value.length > maxHistory) {
+        logs.value = logs.value.slice(-maxHistory);
       }
     };
 

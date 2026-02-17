@@ -229,16 +229,32 @@ const resume = ref<ResumeStatus>({
   totalItems: 0, remainingCount: 0,
 });
 
-let pollInterval: ReturnType<typeof setInterval> | null = null;
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
+let mounted = false;
 
 onMounted(() => {
-  fetchAll();
-  pollInterval = setInterval(fetchAll, 3000);
+  mounted = true;
+  pollStats();
 });
 
 onUnmounted(() => {
-  if (pollInterval) clearInterval(pollInterval);
+  mounted = false;
+  if (pollTimer) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+  }
 });
+
+// Uses recursive setTimeout instead of setInterval so the next poll only
+// starts after the current fetch completes, preventing stacked requests if
+// fetchAll takes longer than the poll interval. The mounted guard prevents
+// scheduling a new timer if the component unmounted during the await.
+async function pollStats() {
+  await fetchAll();
+  if (mounted) {
+    pollTimer = setTimeout(pollStats, 3000);
+  }
+}
 
 async function fetchAll() {
   await Promise.all([fetchStats(), fetchRecovery()]);

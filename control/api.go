@@ -93,14 +93,16 @@ func NewAPIServer(port int) *APIServer {
 // completeRun finalizes a running operation, recording the outcome to the stats
 // tracker, circuit breaker, and run tracker. Call this exactly once when an
 // operation started by planHandler or downloadHandler finishes (successfully or
-// with an error). This is the single exit point for operation lifecycle tracking.
-func (s *APIServer) completeRun(err error) {
+// with an error). The runID parameter ensures EndRunByID only finalizes the
+// stats for the specific run that started it, preventing the race where a stale
+// goroutine could finalize a newer run's stats.
+func (s *APIServer) completeRun(runID string, err error) {
 	s.currentRunTracker.mu.Lock()
 	s.currentRunTracker.isRunning = false
 	s.currentRunTracker.err = err
 	s.currentRunTracker.mu.Unlock()
 
-	s.statsTracker.EndRun()
+	s.statsTracker.EndRunByID(runID)
 
 	if err != nil {
 		s.circuitBreaker.RecordFailure()
@@ -273,6 +275,8 @@ func (s *APIServer) executeDownload(configPath string, resume bool) error {
 		maxWorkers = 4
 	}
 	executor := plan.NewExecutor(downloader, maxWorkers)
+	var flushMu sync.Mutex
+	var itemsSinceFlush int
 	progressCallback := func(item *plan.PlanItem) {
 		s.currentRunTracker.mu.Lock()
 		s.currentRunTracker.progress++
@@ -303,10 +307,23 @@ func (s *APIServer) executeDownload(configPath string, resume bool) error {
 			s.statsTracker.RecordSkip()
 			s.logBroadcaster.BroadcastString("info", fmt.Sprintf("Skipped: %s", item.Name), "download")
 		}
+		// Batch resume state writes: flush to disk every 10 items instead of
+		// every single track to reduce I/O pressure during large downloads.
+		// The flush counter is protected by its own mutex because the executor
+		// calls this callback from up to maxWorkers concurrent goroutines.
+		flushMu.Lock()
+		itemsSinceFlush++
+		if itemsSinceFlush >= 10 {
+			s.resumeState.Flush()
+			itemsSinceFlush = 0
+		}
+		flushMu.Unlock()
 	}
 	// Set total items in resume state for progress tracking
 	s.resumeState.SetTotalItems(totalTracks)
 	stats, execErr := executor.Execute(ctx, loadedPlan, progressCallback)
+	// Final flush to persist any remaining batched changes.
+	s.resumeState.Flush()
 	if execErr != nil {
 		return fmt.Errorf("download failed: %w", execErr)
 	}
@@ -400,6 +417,17 @@ func (s *APIServer) Run() int {
 	return APIExitSuccess
 }
 
+// jsonError writes a JSON error response with the given status code.
+// This ensures all API error responses use a consistent JSON format
+// rather than mixing text/plain (from http.Error) and application/json.
+func jsonError(w http.ResponseWriter, message string, statusCode int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(map[string]string{
+		"error": message,
+	})
+}
+
 // corsMiddleware adds CORS headers to all responses.
 // TODO: In production, replace "*" with the specific origin(s) of the frontend
 // to prevent cross-site request abuse. The wildcard is acceptable for local
@@ -437,6 +465,16 @@ func (s *APIServer) healthHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// getDefaultConfigPath returns the path to config.yaml, using MUSICDL_WORK_DIR
+// if set (e.g. /download in Docker) or falling back to the current directory.
+func getDefaultConfigPath() string {
+	dir := os.Getenv("MUSICDL_WORK_DIR")
+	if dir == "" {
+		dir = "."
+	}
+	return filepath.Join(dir, "config.yaml")
+}
+
 // getConfigHandler returns the config file content.
 // @Summary Get config
 // @Description Retrieve the current config.yaml content
@@ -446,7 +484,7 @@ func (s *APIServer) healthHandler(w http.ResponseWriter, r *http.Request) {
 // @Failure 404 {object} map[string]string
 // @Router /api/config [get]
 func (s *APIServer) getConfigHandler(w http.ResponseWriter, r *http.Request) {
-	configPath := "/download/config.yaml"
+	configPath := getDefaultConfigPath()
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -458,7 +496,7 @@ func (s *APIServer) getConfigHandler(w http.ResponseWriter, r *http.Request) {
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Error reading config: %v", err), http.StatusInternalServerError)
+		jsonError(w, fmt.Sprintf("Error reading config: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -481,13 +519,13 @@ func (s *APIServer) getConfigHandler(w http.ResponseWriter, r *http.Request) {
 func (s *APIServer) saveConfigHandler(w http.ResponseWriter, r *http.Request) {
 	var req map[string]string
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+		jsonError(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
 		return
 	}
 
 	configContent, ok := req["config"]
 	if !ok {
-		http.Error(w, "Missing 'config' field", http.StatusBadRequest)
+		jsonError(w, "Missing 'config' field", http.StatusBadRequest)
 		return
 	}
 
@@ -502,9 +540,9 @@ func (s *APIServer) saveConfigHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	configPath := "/download/config.yaml"
+	configPath := getDefaultConfigPath()
 	if err := os.WriteFile(configPath, []byte(configContent), 0644); err != nil {
-		http.Error(w, fmt.Sprintf("Error saving config: %v", err), http.StatusInternalServerError)
+		jsonError(w, fmt.Sprintf("Error saving config: %v", err), http.StatusInternalServerError)
 		return
 	}
 
@@ -562,17 +600,17 @@ func (s *APIServer) planHandler(w http.ResponseWriter, r *http.Request) {
 
 	var req map[string]string
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+		jsonError(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
 		return
 	}
 
 	configPath, ok := req["configPath"]
 	if !ok {
-		configPath = "/download/config.yaml"
+		configPath = getDefaultConfigPath()
 	}
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		http.Error(w, "Config file not found", http.StatusNotFound)
+		jsonError(w, "Config file not found", http.StatusNotFound)
 		return
 	}
 
@@ -586,13 +624,14 @@ func (s *APIServer) planHandler(w http.ResponseWriter, r *http.Request) {
 	s.currentRunTracker.logs = nil
 	s.currentRunTracker.mu.Unlock()
 
-	s.statsTracker.StartRun("plan")
+	runID := s.statsTracker.StartRun("plan")
 	s.logBroadcaster.BroadcastString("info", "Plan generation started", "plan")
 
 	// Run the operation asynchronously. completeRun MUST be called when done
-	// to record the outcome in the circuit breaker and stats tracker.
+	// to record the outcome in the circuit breaker and stats tracker. The runID
+	// is captured so EndRunByID only finalizes this specific run's stats.
 	go func() {
-		s.completeRun(s.executePlan(configPath))
+		s.completeRun(runID, s.executePlan(configPath))
 	}()
 
 	w.Header().Set("Content-Type", "application/json")
@@ -649,17 +688,17 @@ func (s *APIServer) downloadHandler(w http.ResponseWriter, r *http.Request) {
 
 	var req map[string]string
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
+		jsonError(w, fmt.Sprintf("Invalid request: %v", err), http.StatusBadRequest)
 		return
 	}
 
 	configPath, ok := req["configPath"]
 	if !ok {
-		configPath = "/download/config.yaml"
+		configPath = getDefaultConfigPath()
 	}
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		http.Error(w, "Config file not found", http.StatusNotFound)
+		jsonError(w, "Config file not found", http.StatusNotFound)
 		return
 	}
 
@@ -676,13 +715,14 @@ func (s *APIServer) downloadHandler(w http.ResponseWriter, r *http.Request) {
 	s.currentRunTracker.logs = nil
 	s.currentRunTracker.mu.Unlock()
 
-	s.statsTracker.StartRun("download")
+	runID := s.statsTracker.StartRun("download")
 	s.logBroadcaster.BroadcastString("info", "Download started", "download")
 
 	// Run the operation asynchronously. completeRun MUST be called when done
-	// to record the outcome in the circuit breaker and stats tracker.
+	// to record the outcome in the circuit breaker and stats tracker. The runID
+	// is captured so EndRunByID only finalizes this specific run's stats.
 	go func() {
-		s.completeRun(s.executeDownload(configPath, resume))
+		s.completeRun(runID, s.executeDownload(configPath, resume))
 	}()
 
 	w.Header().Set("Content-Type", "application/json")
@@ -774,11 +814,19 @@ func (s *APIServer) rateLimitStatusHandler(w http.ResponseWriter, r *http.Reques
 // @Router /api/logs [get]
 func (s *APIServer) logsHandler(w http.ResponseWriter, r *http.Request) {
 	history := s.logBroadcaster.GetHistory()
+	// Derive WebSocket URL from the request's Host header so the URL is valid
+	// regardless of whether the client connects via localhost, a container
+	// hostname, or a remote address.
+	wsScheme := "ws"
+	if r.TLS != nil {
+		wsScheme = "wss"
+	}
+	wsURL := fmt.Sprintf("%s://%s/api/ws/logs", wsScheme, r.Host)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"logs":    history,
-		"wsUrl":   fmt.Sprintf("ws://localhost:%d/api/ws/logs", s.port),
-		"wsHint":  "Use the WebSocket endpoint for real-time log streaming",
+		"logs":   history,
+		"wsUrl":  wsURL,
+		"wsHint": "Use the WebSocket endpoint for real-time log streaming",
 	})
 }
 

@@ -90,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import axios from 'axios';
 import DownloadRunner from './components/DownloadRunner.vue';
 import ConfigEditor from './components/ConfigEditor.vue';
@@ -119,10 +119,18 @@ const rateLimitInfo = ref<RateLimitInfo>({
   remainingSeconds: 0,
 });
 
+let healthTimer: ReturnType<typeof setTimeout> | null = null;
+let rateLimitTimer: ReturnType<typeof setTimeout> | null = null;
+
 onMounted(() => {
   checkAPIHealth();
   checkConfigExists();
   pollRateLimitStatus();
+});
+
+onUnmounted(() => {
+  if (healthTimer !== null) clearTimeout(healthTimer);
+  if (rateLimitTimer !== null) clearTimeout(rateLimitTimer);
 });
 
 async function checkAPIHealth() {
@@ -133,7 +141,7 @@ async function checkAPIHealth() {
   } catch {
     apiHealthy.value = false;
   }
-  setTimeout(checkAPIHealth, 10000);
+  healthTimer = setTimeout(checkAPIHealth, 10000);
 }
 
 async function checkConfigExists() {
@@ -157,12 +165,12 @@ async function pollRateLimitStatus() {
     };
 
     if (response.data.active) {
-      setTimeout(pollRateLimitStatus, 1000);
+      rateLimitTimer = setTimeout(pollRateLimitStatus, 1000);
     } else {
-      setTimeout(pollRateLimitStatus, 5000);
+      rateLimitTimer = setTimeout(pollRateLimitStatus, 5000);
     }
   } catch {
-    setTimeout(pollRateLimitStatus, 5000);
+    rateLimitTimer = setTimeout(pollRateLimitStatus, 5000);
   }
 }
 </script>

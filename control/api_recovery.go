@@ -158,12 +158,15 @@ func (cb *CircuitBreaker) GetStatus() CircuitBreakerStatus {
 }
 
 // ResumeState tracks which items have been downloaded so incomplete runs can resume.
+// Mutations are batched: MarkCompleted and MarkFailed set a dirty flag, and the
+// state is only persisted to disk when Flush() is called (or on Clear/SetTotalItems).
 type ResumeState struct {
 	mu             sync.RWMutex
 	CompletedItems map[string]bool `json:"completedItems"` // key: item URL or ID
 	FailedItems    map[string]FailedItemInfo `json:"failedItems"`
 	TotalItems     int  `json:"totalItems"`
 	filePath       string
+	dirty          bool
 }
 
 // FailedItemInfo holds details about a failed download item.
@@ -233,20 +236,34 @@ func (rs *ResumeState) save() {
 }
 
 // MarkCompleted marks an item as successfully completed.
+// The change is batched in memory; call Flush() to persist to disk.
 func (rs *ResumeState) MarkCompleted(itemKey string) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 	rs.CompletedItems[itemKey] = true
 	delete(rs.FailedItems, itemKey)
-	rs.save()
+	rs.dirty = true
 }
 
 // MarkFailed marks an item as failed.
+// The change is batched in memory; call Flush() to persist to disk.
 func (rs *ResumeState) MarkFailed(itemKey string, info FailedItemInfo) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 	rs.FailedItems[itemKey] = info
-	rs.save()
+	rs.dirty = true
+}
+
+// Flush persists the resume state to disk if any changes have been made since
+// the last save. Call this periodically during downloads rather than after every
+// individual track to reduce I/O pressure.
+func (rs *ResumeState) Flush() {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	if rs.dirty {
+		rs.save()
+		rs.dirty = false
+	}
 }
 
 // IsCompleted checks if an item has already been completed.

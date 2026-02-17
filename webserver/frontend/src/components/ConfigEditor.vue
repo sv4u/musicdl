@@ -64,7 +64,11 @@ async function saveConfig() {
     messageType.value = 'success';
     setTimeout(() => (message.value = ''), 3000);
   } catch (error) {
-    message.value = 'Failed to save config';
+    if (axios.isAxiosError(error) && error.response?.data?.error) {
+      message.value = error.response.data.error;
+    } else {
+      message.value = 'Failed to save config';
+    }
     messageType.value = 'error';
   }
 }
