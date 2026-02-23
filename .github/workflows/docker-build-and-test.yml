@@ -59,25 +59,26 @@ jobs:
         run: |
           echo "Testing CLI exit codes..."
           # plan with missing config -> exit 1 (config error)
-          EXIT_CODE=$(docker run --rm --entrypoint /usr/local/bin/musicdl -w /download "$IMAGE_TAG" plan /download/nonexistent.yaml 2>/dev/null; echo $?)
+          EXIT_CODE=$(docker run --rm --entrypoint /usr/local/bin/musicdl -w /download "$IMAGE_TAG" plan /download/nonexistent.yaml >/dev/null 2>&1; echo $?)
           if [ "$EXIT_CODE" = "1" ]; then
             echo "✓ plan with missing config exits 1"
           else
             echo "✗ plan with missing config expected exit 1, got $EXIT_CODE"
             exit 1
           fi
-          # download with no plan file -> exit 2 (plan not found); need a valid config so hash can be computed
+          # download with empty config -> exit 0 (plan generated, 0 items, success)
+          # Note: download always runs plan first; with no songs/playlists/albums it produces empty plan
           printf '%s\n' \
             'version: "1.2"' \
             'download:' \
             '  client_id: "id"' \
             '  client_secret: "secret"' \
             '  output: "{title}.mp3"' > /tmp/test-config.yaml
-          EXIT_CODE=$(docker run --rm --entrypoint /usr/local/bin/musicdl -w /download -v /tmp/test-config.yaml:/download/config.yaml:ro "$IMAGE_TAG" download /download/config.yaml 2>/dev/null; echo $?)
-          if [ "$EXIT_CODE" = "2" ]; then
-            echo "✓ download with no plan exits 2"
+          EXIT_CODE=$(docker run --rm --entrypoint /usr/local/bin/musicdl -w /download -v /tmp/test-config.yaml:/download/config.yaml:ro "$IMAGE_TAG" download /download/config.yaml >/dev/null 2>&1; echo $?)
+          if [ "$EXIT_CODE" = "0" ]; then
+            echo "✓ download with empty config exits 0"
           else
-            echo "✗ download with no plan expected exit 2, got $EXIT_CODE"
+            echo "✗ download with empty config expected exit 0, got $EXIT_CODE"
             exit 1
           fi
           echo "✓ All CLI exit code tests passed"
