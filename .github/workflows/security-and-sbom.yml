@@ -164,7 +164,7 @@ jobs:
             ${{ steps.release-tag.outputs.image }} \
             --output sarif \
             --file /output/grype-image-results.sarif \
-            --fail-on none || true
+            --fail-on none
 
       - name: Upload Grype image results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4

@@ -29,15 +29,15 @@ jobs:
         with:
           go-version: '1.24'
 
+      # Cache only module cache (not build cache) to reduce "File exists" / tar restore races
+      # when multiple go test invocations run. Build cache is ephemeral and can cause contention.
       - name: Cache Go modules
         uses: actions/cache@v5
         with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go-mod-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go-
+            ${{ runner.os }}-go-mod-
 
       - name: Install yt-dlp for integration tests
         run: |
