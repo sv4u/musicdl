@@ -29,7 +29,7 @@ app.use(express.static('public'));
 // upgrade requests. We must explicitly bind the proxy's upgrade handler to
 // the HTTP server's 'upgrade' event (done below after app.listen()).
 const wsProxy = createProxyMiddleware({
-  target: `ws://${goAPIHost}:${goAPIPort}`,
+  target: `http://${goAPIHost}:${goAPIPort}`,
   pathFilter: '/api/ws',
   ws: true,
   changeOrigin: true,

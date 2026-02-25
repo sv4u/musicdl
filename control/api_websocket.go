@@ -237,7 +237,14 @@ func (lb *LogBroadcaster) readPump(client *wsClient) {
 	for {
 		_, _, err := client.conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+			// 1005 (no status) and 1006 (abnormal closure) are common when clients
+			// disconnect without proper close handshake (e.g. tab close, proxy drop).
+			if websocket.IsUnexpectedCloseError(err,
+				websocket.CloseGoingAway,
+				websocket.CloseNormalClosure,
+				websocket.CloseNoStatusReceived,
+				websocket.CloseAbnormalClosure,
+			) {
 				log.Printf("WARN: websocket unexpected close: %v", err)
 			}
 			break
