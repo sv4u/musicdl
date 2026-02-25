@@ -88,19 +88,19 @@ RUN npm ci --omit=dev
 
 WORKDIR /download
 
-# Create entrypoint script
-RUN echo '#!/bin/sh\n\
-if [ "$1" = "web" ]; then\n\
-  # Start both API server and Express server\n\
-  echo "Starting musicdl services..."\n\
-  musicdl api &\n\
-  sleep 2\n\
-  exec node /opt/musicdl/backend/dist/index.js\n\
-else\n\
-  # Default to CLI mode (user passes full command, e.g. musicdl plan config.yaml)\n\
-  exec "$@"\n\
-fi\n\
-' > /entrypoint.sh && chmod +x /entrypoint.sh
+# Create entrypoint script (use printf for proper Unix line endings; echo \n is literal in sh)
+# Node must run from /opt/musicdl/backend so express.static('public') resolves correctly
+RUN printf '%s\n' \
+    '#!/bin/sh' \
+    'if [ "$1" = "web" ]; then' \
+    '  echo "Starting musicdl services..."' \
+    '  musicdl api &' \
+    '  sleep 2' \
+    '  cd /opt/musicdl/backend && exec node dist/index.js' \
+    'else' \
+    '  exec "$@"' \
+    'fi' \
+    > /entrypoint.sh && chmod +x /entrypoint.sh
 
 EXPOSE 80 3000 5000
 

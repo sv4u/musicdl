@@ -1,0 +1,16 @@
+# TrueNAS Custom App: paste into Install via YAML → Custom Config
+# Adjust host paths for your setup (e.g. /mnt/pool/dataset/Music)
+# Config: place config.yaml in the downloads dir, or mount separately:
+#   - /path/to/config.yaml:/download/config.yaml:ro
+services:
+  musicdl:
+    image: ghcr.io/sv4u/musicdl:latest
+    container_name: musicdl
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      MUSICDL_WORK_DIR: /download
+      MUSICDL_CACHE_DIR: .cache
+    volumes:
+      - /mnt/peace-house-storage-pool/peace-house-storage/Music:/download
