@@ -3,12 +3,54 @@ package spotify
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/sv4u/spotigo"
 )
+
+// rateLimitLogger implements spotigo.Logger and updates RateLimitTracker when
+// spotigo logs its rate limit warning. Spotigo retries 429 internally and
+// never returns the error on successful retry, so handleError is never called.
+// This logger hooks into spotigo's logRetry to keep the tracker in sync.
+type rateLimitLogger struct {
+	tracker *RateLimitTracker
+}
+
+func (l *rateLimitLogger) Debug(format string, v ...interface{}) {}
+
+func (l *rateLimitLogger) Info(format string, v ...interface{}) {
+	log.Printf("[INFO] "+format, v...)
+}
+
+func (l *rateLimitLogger) Warn(format string, v ...interface{}) {
+	// Spotigo logs: "Your application has reached a rate/request limit. Retry will occur after: %.0f s"
+	if strings.Contains(format, "rate/request limit") && len(v) >= 1 {
+		if sec, ok := toIntSeconds(v[0]); ok && sec > 0 {
+			l.tracker.Update(sec)
+		}
+	}
+	log.Printf("[WARN] "+format, v...)
+}
+
+func (l *rateLimitLogger) Error(format string, v ...interface{}) {
+	log.Printf("[ERROR] "+format, v...)
+}
+
+func toIntSeconds(v interface{}) (int, bool) {
+	switch x := v.(type) {
+	case float64:
+		return int(x), true
+	case int:
+		return x, true
+	case int64:
+		return int(x), true
+	default:
+		return 0, false
+	}
+}
 
 // Config holds configuration for the Spotify client wrapper.
 type Config struct {
@@ -60,12 +102,6 @@ func NewSpotifyClient(config *Config) (*SpotifyClient, error) {
 		return nil, fmt.Errorf("failed to create auth: %w", err)
 	}
 
-	// Create spotigo client
-	spotigoClient, err := spotigo.NewClient(auth)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create spotigo client: %w", err)
-	}
-
 	// Create wrapper components
 	cache := NewTTLCache(config.CacheMaxSize, config.CacheTTL)
 	if config.CacheCleanupInterval > 0 {
@@ -79,6 +115,10 @@ func NewSpotifyClient(config *Config) (*SpotifyClient, error) {
 	)
 
 	tracker := NewRateLimitTracker()
+	spotigoClient, err := spotigo.NewClient(auth, spotigo.WithLogger(&rateLimitLogger{tracker: tracker}))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create spotigo client: %w", err)
+	}
 
 	return &SpotifyClient{
 		client:             spotigoClient,

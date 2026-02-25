@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"sync"
 	"syscall"
@@ -350,6 +351,7 @@ func (s *APIServer) Run() int {
 
 	// Health check
 	mux.HandleFunc("GET /api/health", s.healthHandler)
+	mux.HandleFunc("GET /api/version", s.versionHandler)
 
 	// Config endpoints
 	mux.HandleFunc("GET /api/config", s.getConfigHandler)
@@ -462,6 +464,33 @@ func (s *APIServer) healthHandler(w http.ResponseWriter, r *http.Request) {
 		"time":               time.Now().Unix(),
 		"wsClients":          s.logBroadcaster.ClientCount(),
 		"circuitBreakerState": cbStatus.State,
+	})
+}
+
+// versionHandler returns musicdl and spotigo versions.
+// @Summary Get version info
+// @Description Returns musicdl and spotigo (Spotify API client) versions
+// @Tags system
+// @Produce json
+// @Success 200 {object} map[string]string
+// @Router /api/version [get]
+func (s *APIServer) versionHandler(w http.ResponseWriter, r *http.Request) {
+	spotigoVersion := "unknown"
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, dep := range info.Deps {
+			if dep.Path == "github.com/sv4u/spotigo" {
+				spotigoVersion = dep.Version
+				if dep.Replace != nil {
+					spotigoVersion = dep.Replace.Version
+				}
+				break
+			}
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"musicdl": Version,
+		"spotigo": spotigoVersion,
 	})
 }
 
