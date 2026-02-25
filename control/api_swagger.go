@@ -90,6 +90,29 @@ func generateOpenAPISpec(port int) string {
         }
       }
     },
+    "/api/version": {
+      "get": {
+        "tags": ["system"],
+        "summary": "Get version info",
+        "description": "Returns musicdl and spotigo (Spotify API client) versions",
+        "responses": {
+          "200": {
+            "description": "Version information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "musicdl": {"type": "string", "description": "musicdl version"},
+                    "spotigo": {"type": "string", "description": "spotigo (Spotify API client) version"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/config": {
       "get": {
         "tags": ["config"],

@@ -29,7 +29,7 @@ app.use(express.static('public'));
 // upgrade requests. We must explicitly bind the proxy's upgrade handler to
 // the HTTP server's 'upgrade' event (done below after app.listen()).
 const wsProxy = createProxyMiddleware({
-  target: `ws://${goAPIHost}:${goAPIPort}`,
+  target: `http://${goAPIHost}:${goAPIPort}`,
   pathFilter: '/api/ws',
   ws: true,
   changeOrigin: true,
@@ -70,6 +70,7 @@ function proxyPost(path: string, errorMsg: string) {
 
 // System
 proxyGet('/api/health', 'Go API server is not available');
+proxyGet('/api/version', 'Failed to fetch version');
 
 // Config
 proxyGet('/api/config', 'Failed to fetch config');

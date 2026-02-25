@@ -3,12 +3,16 @@
     <!-- Header -->
     <header class="bg-slate-900 border-b border-slate-700 shadow-lg">
       <div class="max-w-7xl mx-auto px-4 py-6 flex items-center justify-between">
-        <h1 class="text-3xl font-bold text-white flex items-center gap-2">
-          <svg class="w-8 h-8 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M3 2a2 2 0 012-2h10a2 2 0 012 2v16a2 2 0 01-2 2H5a2 2 0 01-2-2V2z" />
-          </svg>
-          musicdl
-        </h1>
+        <div class="flex items-center gap-4">
+          <h1 class="text-3xl font-bold text-white flex items-center gap-2">
+            <svg class="w-8 h-8 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+              <path d="M3 2a2 2 0 012-2h10a2 2 0 012 2v16a2 2 0 01-2 2H5a2 2 0 01-2-2V2z" />
+            </svg>
+            musicdl
+            <span v-if="versionInfo.musicdl" class="text-slate-500 font-normal text-base ml-1">v{{ versionInfo.musicdl }}</span>
+          </h1>
+          <span v-if="versionInfo.spotigo" class="text-slate-500 text-sm border-l border-slate-600 pl-4">spotigo {{ versionInfo.spotigo }}</span>
+        </div>
         <a
           href="/api/docs"
           target="_blank"
@@ -106,6 +110,11 @@ interface RateLimitInfo {
   remainingSeconds: number;
 }
 
+interface VersionInfo {
+  musicdl: string;
+  spotigo: string;
+}
+
 const activeTab = ref<'Download' | 'Configuration' | 'Logs' | 'Statistics'>('Download');
 const tabs = ['Download', 'Configuration', 'Logs', 'Statistics'];
 const apiHealthy = ref(false);
@@ -118,6 +127,7 @@ const rateLimitInfo = ref<RateLimitInfo>({
   detectedAt: 0,
   remainingSeconds: 0,
 });
+const versionInfo = ref<VersionInfo>({ musicdl: '', spotigo: '' });
 
 let healthTimer: ReturnType<typeof setTimeout> | null = null;
 let rateLimitTimer: ReturnType<typeof setTimeout> | null = null;
@@ -126,6 +136,7 @@ onMounted(() => {
   checkAPIHealth();
   checkConfigExists();
   pollRateLimitStatus();
+  fetchVersion();
 });
 
 onUnmounted(() => {
@@ -152,6 +163,15 @@ async function checkConfigExists() {
     if (axios.isAxiosError(error) && error.response?.status === 404) {
       configExists.value = false;
     }
+  }
+}
+
+async function fetchVersion() {
+  try {
+    const response = await axios.get<VersionInfo>('/api/version');
+    versionInfo.value = response.data;
+  } catch {
+    // Leave versionInfo empty on error
   }
 }
 
