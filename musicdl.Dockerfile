@@ -33,7 +33,7 @@ RUN if [ -n "$VERSION" ]; then \
 		./control
 
 # Stage 2: Build Node.js frontend and backend
-FROM node:20-alpine AS web-builder
+FROM node:25-alpine AS web-builder
 
 WORKDIR /web
 
