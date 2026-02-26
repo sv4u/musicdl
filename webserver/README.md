@@ -90,6 +90,7 @@ The webserver acts as a proxy to the Go API:
 - `POST /api/config` - Save config.yaml
 - `POST /api/download/plan` - Generate download plan
 - `POST /api/download/run` - Execute download
+- `POST /api/download/stop` - Pause or stop the current operation
 - `GET /api/download/status` - Get current operation status
 - `GET /api/rate-limit-status` - Get rate limit information
 - `GET /api/logs` - Get recent logs

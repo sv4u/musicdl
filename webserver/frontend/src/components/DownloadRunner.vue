@@ -30,7 +30,16 @@
     <div v-if="isRunning" class="bg-slate-700 rounded-lg p-6 border border-slate-600">
       <div class="flex items-center justify-between mb-4">
         <h3 class="text-white font-semibold">{{ operationType === 'plan' ? 'Generating Plan' : 'Downloading' }}</h3>
-        <span class="text-slate-400 text-sm">{{ progress }}/{{ total }}</span>
+        <div class="flex items-center gap-3">
+          <span class="text-slate-400 text-sm">{{ progress }}/{{ total }}</span>
+          <button
+            @click="stopOperation"
+            class="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition-colors text-sm"
+            :title="operationType === 'download' ? 'Stop the current operation (progress is saved; use Resume to continue)' : 'Stop the current operation'"
+          >
+            Stop
+          </button>
+        </div>
       </div>
       <div class="w-full bg-slate-600 rounded-full h-2">
         <div
@@ -139,6 +148,20 @@ async function runDownload(resume: boolean) {
       statusMessage.value = 'Circuit breaker is open - too many consecutive failures. Check the Statistics tab for recovery options.';
     } else {
       statusMessage.value = 'Error: Failed to start download';
+    }
+  }
+}
+
+async function stopOperation() {
+  try {
+    await axios.post('/api/download/stop');
+    statusMessage.value = 'Stopping...';
+    restartPoll();
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 409) {
+      statusMessage.value = 'No operation is currently running';
+    } else {
+      statusMessage.value = 'Error: Failed to stop operation';
     }
   }
 }

@@ -2,7 +2,21 @@
 
 ## For Users (Docker)
 
-### Access Web Interface
+### TrueNAS Community Edition App
+
+Use the canonical configuration file [`truenas-musicdl-compose.yaml`](truenas-musicdl-compose.yaml):
+
+1. In TrueNAS Scale: **Apps** → **Discover Apps** → **Custom App** → **Install via YAML**
+2. Paste the contents of `truenas-musicdl-compose.yaml` into **Custom Config**
+3. Adjust the volume path if needed (default: `/mnt/peace-house-storage-pool/peace-house-storage/Music`)
+4. Deploy and access the web UI at `http://<truenas-host>:3000`
+
+Paths (host):
+- Config: `.../Music/config.yaml`
+- Logs: `.../Music/.logs`
+- Cache: `.../Music/.cache`
+
+### Access Web Interface (Standalone Docker)
 
 ```bash
 docker run -p 80:3000 \

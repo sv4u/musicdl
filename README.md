@@ -266,9 +266,29 @@ docker run --rm -v /path/to/workspace:/download \
   ghcr.io/sv4u/musicdl:latest musicdl download config.yaml
 ```
 
-### Docker Compose
+### TrueNAS Community Edition App
 
-For development with both API and web server:
+Use the canonical configuration file for TrueNAS Scale:
+
+```bash
+# Copy the config and deploy
+cp truenas-musicdl-compose.yaml /path/to/your/apps/musicdl/docker-compose.yaml
+# Or paste truenas-musicdl-compose.yaml into TrueNAS Apps → Install via YAML → Custom Config
+```
+
+See [`truenas-musicdl-compose.yaml`](truenas-musicdl-compose.yaml) for the full configuration. It defines:
+
+- **Volume**: `/mnt/peace-house-storage-pool/peace-house-storage/Music` → `/download`
+- **Config**: `config.yaml` in the Music directory
+- **Logs**: `.logs/` in the Music directory
+- **Cache**: `.cache/` in the Music directory
+- **Web UI**: port 3000
+- **Resources**: 2 GB memory, 2 CPUs
+- **User**: 3000:3000 (peace-house-admin) so files/folders are owned correctly
+
+### Docker Compose (Development)
+
+For local development with both API and web server:
 
 ```bash
 docker-compose -f docker-compose.web.yml up
@@ -291,6 +311,30 @@ Working directory in the image is `/download`. Set `MUSICDL_CACHE_DIR` if you wa
 
 - **YouTube playlist has no tracks in plan**  
   Plan generation for YouTube playlists uses `yt-dlp` with `--flat-playlist --dump-json`. Ensure `yt-dlp` is installed and on your PATH when running `musicdl plan`. If the playlist appears in the plan with zero tracks, check that the playlist URL is correct and that `yt-dlp` can access it (e.g. `yt-dlp --flat-playlist --dump-json "<playlist-url>"`).
+
+## Plex Integration
+
+musicdl creates M3U playlist files (with `create_m3u: true` on playlists/albums) using relative paths for Plex compatibility. To push these playlists to a Plex server:
+
+```bash
+python3 scripts/plex-playlist-push.py --server http://PLEX_HOST:32400 --path /path/to/music
+```
+
+**Arguments:**
+- `--server` – Plex server URL (e.g. `http://192.168.50.42:32400`)
+- `--path` – Path to your music library (must exist locally for scanning)
+- `--plex-path` – Optional. If Plex runs in Docker with a different mount path, use this to translate. Example: `--path /mnt/nas/Music --plex-path /data`
+- `--token` – Optional. Plex auth token (or set `PLEX_TOKEN` env). If omitted, the script uses the PIN flow: visit https://app.plex.tv/link and enter the displayed PIN.
+
+**Example (Plex in Docker):**
+```bash
+python3 scripts/plex-playlist-push.py \
+  --server http://192.168.50.42:32400 \
+  --path /mnt/peace-house-storage-pool/peace-house-storage/Music \
+  --plex-path /data
+```
+
+Ensure your Plex Music library includes the folder where the M3U files and music live.
 
 ## Development
 
@@ -351,9 +395,12 @@ musicdl/
 │   ├── backend/            # Express.js + TypeScript
 │   ├── frontend/           # Vue 3 + TypeScript + Vite
 │   └── README.md           # Web server documentation
-├── musicdl.Dockerfile      # Multi-stage Docker build
-├── docker-compose.web.yml  # Development compose file
+├── musicdl.Dockerfile         # Multi-stage Docker build
+├── truenas-musicdl-compose.yaml  # TrueNAS Scale App config
+├── docker-compose.web.yml    # Development compose file
 ├── dev.sh                  # Development startup script
+├── scripts/
+│   └── plex-playlist-push.py  # Push M3U playlists to Plex
 └── README.md              # This file
 ```
 

@@ -64,6 +64,9 @@ type APIServer struct {
 	statsTracker      *StatsTracker
 	circuitBreaker    *CircuitBreaker
 	resumeState       *ResumeState
+	cancelFuncMu      sync.Mutex
+	cancelFunc        context.CancelFunc
+	cancelGen         uint64 // incremented on each run start; used to avoid clearing a newer run's cancel
 }
 
 // RunTracker tracks the current running operation.
@@ -151,10 +154,22 @@ func (s *APIServer) initClientsFromConfig(cfg *config.MusicDLConfig) (*spotify.S
 	return spotifyClient, audioProvider, nil
 }
 
+// cancelRunForGen cancels the operation only if it still belongs to the given generation.
+// This prevents a stop request from cancelling a newly started operation when the user
+// intended to stop the previous one.
+func (s *APIServer) cancelRunForGen(targetGen uint64) {
+	s.cancelFuncMu.Lock()
+	defer s.cancelFuncMu.Unlock()
+	if s.cancelGen == targetGen && s.cancelFunc != nil {
+		s.cancelFunc()
+		s.cancelFunc = nil
+	}
+}
+
 // executePlan loads config, generates a download plan, optimizes it, and saves
 // it to the cache directory. Progress and log messages are broadcast through the
 // logBroadcaster and currentRunTracker so the web UI can display real-time status.
-func (s *APIServer) executePlan(configPath string) error {
+func (s *APIServer) executePlan(ctx context.Context, configPath string) error {
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("configuration error: %w", err)
@@ -177,7 +192,6 @@ func (s *APIServer) executePlan(configPath string) error {
 	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc, audioProvider)
 	optimizer := plan.NewOptimizer(true)
 	s.logBroadcaster.BroadcastString("info", "Generating download plan...", "plan")
-	ctx := context.Background()
 	generatedPlan, err := generator.GeneratePlan(ctx)
 	if err != nil {
 		return fmt.Errorf("plan generation failed: %w", err)
@@ -208,7 +222,7 @@ func (s *APIServer) executePlan(configPath string) error {
 // It updates currentRunTracker with per-item progress and records statistics for
 // each completed, failed, or skipped track. The resume parameter controls whether
 // previously completed items (tracked via ResumeState) should be skipped.
-func (s *APIServer) executeDownload(configPath string, resume bool) error {
+func (s *APIServer) executeDownload(ctx context.Context, configPath string, resume bool) error {
 	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		return fmt.Errorf("configuration error: %w", err)
@@ -232,7 +246,6 @@ func (s *APIServer) executeDownload(configPath string, resume bool) error {
 	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc, audioProvider)
 	optimizer := plan.NewOptimizer(true)
 	s.logBroadcaster.BroadcastString("info", "Generating download plan...", "download")
-	ctx := context.Background()
 	generatedPlan, err := generator.GeneratePlan(ctx)
 	if err != nil {
 		return fmt.Errorf("plan generation failed: %w", err)
@@ -362,6 +375,7 @@ func (s *APIServer) Run() int {
 
 	// Download endpoints
 	mux.HandleFunc("POST /api/download/run", s.downloadHandler)
+	mux.HandleFunc("POST /api/download/stop", s.stopHandler)
 
 	// Status endpoints
 	mux.HandleFunc("GET /api/download/status", s.statusHandler)
@@ -656,11 +670,33 @@ func (s *APIServer) planHandler(w http.ResponseWriter, r *http.Request) {
 	runID := s.statsTracker.StartRun("plan")
 	s.logBroadcaster.BroadcastString("info", "Plan generation started", "plan")
 
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancelFuncMu.Lock()
+	s.cancelGen++
+	myGen := s.cancelGen
+	s.cancelFunc = cancel
+	s.cancelFuncMu.Unlock()
+
 	// Run the operation asynchronously. completeRun MUST be called when done
 	// to record the outcome in the circuit breaker and stats tracker. The runID
 	// is captured so EndRunByID only finalizes this specific run's stats.
+	// Panic recovery ensures completeRun is always called so isRunning is cleared.
 	go func() {
-		s.completeRun(runID, s.executePlan(configPath))
+		var runErr error
+		defer func() {
+			if p := recover(); p != nil {
+				s.completeRun(runID, fmt.Errorf("panic: %v", p))
+			}
+		}()
+		defer func() {
+			s.cancelFuncMu.Lock()
+			if s.cancelGen == myGen {
+				s.cancelFunc = nil
+			}
+			s.cancelFuncMu.Unlock()
+		}()
+		runErr = s.executePlan(ctx, configPath)
+		s.completeRun(runID, runErr)
 	}()
 
 	w.Header().Set("Content-Type", "application/json")
@@ -747,11 +783,33 @@ func (s *APIServer) downloadHandler(w http.ResponseWriter, r *http.Request) {
 	runID := s.statsTracker.StartRun("download")
 	s.logBroadcaster.BroadcastString("info", "Download started", "download")
 
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancelFuncMu.Lock()
+	s.cancelGen++
+	myGen := s.cancelGen
+	s.cancelFunc = cancel
+	s.cancelFuncMu.Unlock()
+
 	// Run the operation asynchronously. completeRun MUST be called when done
 	// to record the outcome in the circuit breaker and stats tracker. The runID
 	// is captured so EndRunByID only finalizes this specific run's stats.
+	// Panic recovery ensures completeRun is always called so isRunning is cleared.
 	go func() {
-		s.completeRun(runID, s.executeDownload(configPath, resume))
+		var runErr error
+		defer func() {
+			if p := recover(); p != nil {
+				s.completeRun(runID, fmt.Errorf("panic: %v", p))
+			}
+		}()
+		defer func() {
+			s.cancelFuncMu.Lock()
+			if s.cancelGen == myGen {
+				s.cancelFunc = nil
+			}
+			s.cancelFuncMu.Unlock()
+		}()
+		runErr = s.executeDownload(ctx, configPath, resume)
+		s.completeRun(runID, runErr)
 	}()
 
 	w.Header().Set("Content-Type", "application/json")
@@ -761,6 +819,45 @@ func (s *APIServer) downloadHandler(w http.ResponseWriter, r *http.Request) {
 		"message":      "Download started. Use /api/download/status to check progress.",
 		"resumeActive": resume && resumeStatus.HasResumeData,
 		"resumeStatus": resumeStatus,
+	})
+}
+
+// stopHandler cancels the currently running plan or download operation.
+// @Summary Stop operation
+// @Description Cancel the currently running plan generation or download. Progress is saved for downloads; use Resume to continue.
+// @Tags download
+// @Produce json
+// @Success 200 {object} map[string]string
+// @Failure 409 {object} map[string]string "No operation is running"
+// @Router /api/download/stop [post]
+func (s *APIServer) stopHandler(w http.ResponseWriter, r *http.Request) {
+	// Hold runnerLock to prevent a new operation from starting between reading
+	// isRunning/cancelGen and calling cancelRunForGen. Without this, a new
+	// operation could start and we would cancel it instead of the one the user
+	// intended to stop.
+	s.runnerLock.Lock()
+	defer s.runnerLock.Unlock()
+
+	s.currentRunTracker.mu.RLock()
+	running := s.currentRunTracker.isRunning
+	s.currentRunTracker.mu.RUnlock()
+
+	s.cancelFuncMu.Lock()
+	targetGen := s.cancelGen
+	s.cancelFuncMu.Unlock()
+	if !running {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "No operation is currently running",
+		})
+		return
+	}
+	s.cancelRunForGen(targetGen)
+	s.logBroadcaster.BroadcastString("info", "Operation stop requested", "runner")
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Stop requested. The operation will stop as soon as possible.",
 	})
 }
 

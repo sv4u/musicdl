@@ -79,6 +79,7 @@ proxyPost('/api/config', 'Failed to save config');
 // Download
 proxyPost('/api/download/plan', 'Failed to start plan generation');
 proxyPost('/api/download/run', 'Failed to start download');
+proxyPost('/api/download/stop', 'Failed to stop operation');
 proxyGet('/api/download/status', 'Failed to fetch status');
 proxyGet('/api/rate-limit-status', 'Failed to fetch rate limit status');
 

@@ -383,6 +383,10 @@ func (e *Executor) createM3UFile(playlistName string, tracks []*PlanItem) (strin
 
 	firstTrackPath := tracks[0].FilePath
 	baseDir := filepath.Dir(firstTrackPath)
+	baseDirAbs, err := filepath.Abs(baseDir)
+	if err != nil {
+		baseDirAbs = baseDir
+	}
 
 	m3uPath := filepath.Join(baseDir, playlistNameSafe+".m3u")
 
@@ -427,10 +431,14 @@ func (e *Executor) createM3UFile(playlistName string, tracks []*PlanItem) (strin
 			title = "Track"
 		}
 
-		// Get absolute path
+		// Get path relative to M3U file for portability (e.g. Plex in Docker)
 		absPath, err := filepath.Abs(item.FilePath)
 		if err != nil {
 			continue // Skip if we can't get absolute path
+		}
+		relPath, err := filepath.Rel(baseDirAbs, absPath)
+		if err != nil {
+			relPath = absPath // Fallback to absolute if Rel fails (e.g. different roots)
 		}
 
 		// Write EXTINF line
@@ -438,8 +446,8 @@ func (e *Executor) createM3UFile(playlistName string, tracks []*PlanItem) (strin
 			continue
 		}
 
-		// Write file path
-		if _, err := file.WriteString(absPath + "\n"); err != nil {
+		// Write file path (relative for portability)
+		if _, err := file.WriteString(relPath + "\n"); err != nil {
 			continue
 		}
 	}

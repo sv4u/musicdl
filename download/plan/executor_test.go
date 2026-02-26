@@ -294,9 +294,53 @@ func TestExecutor_CreateM3UFile(t *testing.T) {
 		t.Errorf("M3U file missing header, got: %s", contentStr[:min(20, len(contentStr))])
 	}
 
-	// Check if tracks are included
-	if !contains(contentStr, track1File) || !contains(contentStr, track2File) {
-		t.Errorf("M3U file missing track paths")
+	// Check if tracks are included (relative paths for portability)
+	if !contains(contentStr, "track1.mp3") || !contains(contentStr, "track2.mp3") {
+		t.Errorf("M3U file missing track paths, got: %s", contentStr)
+	}
+}
+
+func TestExecutor_CreateM3UFile_RelativePathsCrossDirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Simulate Artist/Album structure: M3U in Artist1/Album1/, track2 in Artist2/Album2/
+	dir1 := filepath.Join(tmpDir, "Artist1", "Album1")
+	dir2 := filepath.Join(tmpDir, "Artist2", "Album2")
+	_ = os.MkdirAll(dir1, 0755)
+	_ = os.MkdirAll(dir2, 0755)
+
+	track1File := filepath.Join(dir1, "track1.mp3")
+	track2File := filepath.Join(dir2, "track2.mp3")
+	_ = os.WriteFile(track1File, []byte("test1"), 0644)
+	_ = os.WriteFile(track2File, []byte("test2"), 0644)
+
+	executor := NewExecutor(&mockDownloader{}, 2)
+	tracks := []*PlanItem{
+		{ItemID: "track:1", ItemType: PlanItemTypeTrack, Status: PlanItemStatusCompleted, FilePath: track1File},
+		{ItemID: "track:2", ItemType: PlanItemTypeTrack, Status: PlanItemStatusCompleted, FilePath: track2File},
+	}
+
+	m3uPath, err := executor.createM3UFile("Cross Dir Playlist", tracks)
+	if err != nil {
+		t.Fatalf("createM3UFile() returned error: %v", err)
+	}
+
+	content, err := os.ReadFile(m3uPath)
+	if err != nil {
+		t.Fatalf("Failed to read M3U file: %v", err)
+	}
+	contentStr := string(content)
+
+	// M3U is in Artist1/Album1/; track2 is in Artist2/Album2/ -> ../../Artist2/Album2/track2.mp3
+	if !contains(contentStr, "track1.mp3") {
+		t.Errorf("M3U missing track1, got: %s", contentStr)
+	}
+	if !contains(contentStr, "Artist2") || !contains(contentStr, "track2.mp3") {
+		t.Errorf("M3U missing relative path to track2, got: %s", contentStr)
+	}
+	// Should not contain absolute paths (no leading slash for track paths in same-dir case, but cross-dir uses ..)
+	if contains(contentStr, tmpDir) {
+		t.Errorf("M3U should use relative paths, not absolute; got: %s", contentStr)
 	}
 }
 
