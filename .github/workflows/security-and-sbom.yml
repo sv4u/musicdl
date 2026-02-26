@@ -34,7 +34,7 @@ jobs:
 
       - name: Upload Trivy results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
+        if: always() && hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: 'trivy-results.sarif'
 
@@ -106,6 +106,14 @@ jobs:
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
           echo "image=ghcr.io/sv4u/musicdl:${TAG}" >> $GITHUB_OUTPUT
 
+      - name: Wait for image availability
+        run: |
+          echo "Waiting 30s for GHCR image propagation..."
+          sleep 30
+
+      - name: Pull Docker image
+        run: docker pull ${{ steps.release-tag.outputs.image }}
+
       - name: Run Trivy vulnerability scanner on Docker image
         uses: aquasecurity/trivy-action@master
         with:
@@ -116,7 +124,7 @@ jobs:
 
       - name: Upload Trivy image results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
+        if: always() && hashFiles('trivy-image-results.sarif') != ''
         with:
           sarif_file: 'trivy-image-results.sarif'
 
@@ -163,11 +171,11 @@ jobs:
             anchore/grype:latest \
             ${{ steps.release-tag.outputs.image }} \
             --output sarif \
-            --file /output/grype-image-results.sarif \
+            --file grype-image-results.sarif \
             --fail-on none
 
       - name: Upload Grype image results to GitHub Security
         uses: github/codeql-action/upload-sarif@v4
-        if: always()
+        if: always() && hashFiles('grype-image-results.sarif') != ''
         with:
           sarif_file: 'grype-image-results.sarif'
