@@ -145,15 +145,21 @@ def find_m3u_files(path: Path) -> list[Path]:
     return sorted(path.rglob("*.m3u"))
 
 
-def upload_playlist(server_url: str, token: str, m3u_path: str) -> bool:
+def upload_playlist(server_url: str, token: str, m3u_path: str, section_id: int) -> bool:
     """
     Upload a single M3U file to Plex.
     Returns True on success, False on failure.
     """
     base = server_url.rstrip("/")
-    url = f"{base}/playlists/upload?path={urllib.parse.quote(m3u_path, safe='/')}"
+    url = (
+        f"{base}/playlists/upload"
+        f"?path={urllib.parse.quote(m3u_path, safe='/')}"
+        f"&sectionID={section_id}"
+    )
     headers = {**get_plex_headers(), "X-Plex-Token": token}
-    status, _ = request(url, method="POST", headers=headers)
+    status, body = request(url, method="POST", headers=headers)
+    if status != 200:
+        log(f"    HTTP {status}: {body if isinstance(body, str) else json.dumps(body)}")
     return status == 200
 
 
@@ -184,6 +190,12 @@ def main() -> None:
         "--token",
         default=os.environ.get("PLEX_TOKEN"),
         help="Plex auth token (or set PLEX_TOKEN env). If omitted, uses PIN flow.",
+    )
+    parser.add_argument(
+        "--section-id",
+        type=int,
+        default=int(os.environ.get("PLEX_SECTION_ID", "1")),
+        help="Plex music library section ID (or set PLEX_SECTION_ID env). Default: 1.",
     )
     args = parser.parse_args()
 
@@ -220,7 +232,7 @@ def main() -> None:
             # Translate path for Plex (e.g. Docker mount)
             rel = m3u_str[len(lib_path_str) :].lstrip("/")
             m3u_str = f"{plex_path_prefix}/{rel}" if rel else plex_path_prefix
-        if upload_playlist(server_url, token, m3u_str):
+        if upload_playlist(server_url, token, m3u_str, args.section_id):
             log(f"  OK: {m3u.name}")
             success += 1
         else:
