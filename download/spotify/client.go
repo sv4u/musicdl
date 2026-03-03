@@ -196,20 +196,16 @@ func (c *SpotifyClient) isRateLimitError(err error) bool {
 }
 
 // extractRetryAfter extracts Retry-After value from error.
+// spotigo.SpotifyError.RetryAfter returns (time.Duration, bool).
 func (c *SpotifyClient) extractRetryAfter(err error) int {
-	// Default retry after 1 second if we can't determine
 	defaultRetryAfter := 1
-
-	// Try to extract from error if it has retry-after information
-	// This is a simplified version - spotigo may provide this differently
 	if httpErr, ok := err.(interface {
-		RetryAfter() int
+		RetryAfter() (time.Duration, bool)
 	}); ok {
-		if retryAfter := httpErr.RetryAfter(); retryAfter > 0 {
-			return retryAfter
+		if duration, hasRetryAfter := httpErr.RetryAfter(); hasRetryAfter && duration > 0 {
+			return int(duration.Seconds())
 		}
 	}
-
 	return defaultRetryAfter
 }
 

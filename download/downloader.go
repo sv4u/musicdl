@@ -96,58 +96,118 @@ func (d *Downloader) downloadTrackAttempt(ctx context.Context, item *plan.PlanIt
 	return false, "", fmt.Errorf("no Spotify URL or YouTube URL provided in plan item")
 }
 
+// songFromPlanItemMetadata builds a Song from plan item metadata when present.
+// Returns (song, true) if item has at least artist and title for path resolution; otherwise (nil, false).
+func songFromPlanItemMetadata(item *plan.PlanItem) (*metadata.Song, bool) {
+	if item.Metadata == nil {
+		return nil, false
+	}
+	artist := getMetaString(item.Metadata, "artist")
+	title := getMetaString(item.Metadata, "title")
+	if title == "" {
+		title = item.Name
+	}
+	if artist == "" || title == "" {
+		return nil, false
+	}
+	album := getMetaString(item.Metadata, "album")
+	trackNum := getMetaInt(item.Metadata, "track_number")
+	discNum := getMetaInt(item.Metadata, "disc_number")
+	durationSec := 0
+	if ms, ok := item.Metadata["duration_ms"].(int); ok && ms > 0 {
+		durationSec = ms / 1000
+	} else if ms, ok := item.Metadata["duration_ms"].(float64); ok && ms > 0 {
+		durationSec = int(ms) / 1000
+	} else if sec, ok := item.Metadata["duration"].(int); ok && sec > 0 {
+		durationSec = sec
+	}
+	song := &metadata.Song{
+		Artist:      artist,
+		Title:       title,
+		Album:       album,
+		TrackNumber: trackNum,
+		DiscNumber:  discNum,
+		Duration:    durationSec,
+		SpotifyURL:  item.SpotifyURL,
+	}
+	return song, true
+}
+
+func getMetaString(m map[string]interface{}, key string) string {
+	if m == nil {
+		return ""
+	}
+	v, _ := m[key].(string)
+	return v
+}
+
+func getMetaInt(m map[string]interface{}, key string) int {
+	if m == nil {
+		return 0
+	}
+	switch v := m[key].(type) {
+	case int:
+		return v
+	case float64:
+		return int(v)
+	default:
+		return 0
+	}
+}
+
 // downloadSpotifyTrack downloads a track from Spotify.
 func (d *Downloader) downloadSpotifyTrack(ctx context.Context, item *plan.PlanItem) (bool, string, error) {
 	spotifyURL := item.SpotifyURL
 
-	// 1. Get metadata from Spotify
-	track, err := d.spotifyClient.GetTrack(ctx, spotifyURL)
-	if err != nil {
-		return false, "", fmt.Errorf("failed to get track metadata: %w", err)
+	var song *metadata.Song
+	if built, ok := songFromPlanItemMetadata(item); ok {
+		song = built
 	}
 
-	// Get album metadata
-	albumID := ""
-	if track.Album != nil {
-		albumID = track.Album.ID
+	if song == nil {
+		// Fetch from Spotify API
+		track, err := d.spotifyClient.GetTrack(ctx, spotifyURL)
+		if err != nil {
+			return false, "", fmt.Errorf("failed to get track metadata: %w", err)
+		}
+		albumID := ""
+		if track.Album != nil {
+			albumID = track.Album.ID
+		}
+		if albumID == "" {
+			return false, "", fmt.Errorf("track has no album ID")
+		}
+		album, err := d.spotifyClient.GetAlbum(ctx, albumID)
+		if err != nil {
+			return false, "", fmt.Errorf("failed to get album metadata: %w", err)
+		}
+		song = spotifyTrackToSong(track, album)
 	}
-	if albumID == "" {
-		return false, "", fmt.Errorf("track has no album ID")
+
+	outputPath := item.FilePath
+	if outputPath == "" {
+		outputPath = d.getOutputPath(song)
 	}
-
-	album, err := d.spotifyClient.GetAlbum(ctx, albumID)
-	if err != nil {
-		return false, "", fmt.Errorf("failed to get album metadata: %w", err)
-	}
-
-	// Convert to Song model
-	song := spotifyTrackToSong(track, album)
-
-	// Log download start
-	log.Printf("INFO: download_start spotify_id=%s track=%s artist=%s album=%s", track.ID, song.Title, song.Artist, song.Album)
-
-	// 2. Check if file already exists
-	outputPath := d.getOutputPath(song)
 	fileExists := d.fileExistsCached(outputPath)
-
+	spotifyID := item.SpotifyID
+	if spotifyID == "" {
+		spotifyID = "unknown"
+	}
 	if fileExists && d.config.Overwrite == config.OverwriteSkip {
-		// File exists and we should skip
-		log.Printf("INFO: download_skipped reason=file_exists spotify_id=%s track=%s path=%s", track.ID, song.Title, outputPath)
+		log.Printf("INFO: download_skipped reason=file_exists spotify_id=%s track=%s path=%s", spotifyID, song.Title, outputPath)
 		return true, outputPath, nil
 	}
-
 	if fileExists && d.config.Overwrite == config.OverwriteMetadata {
-		// File exists, update metadata only
-		log.Printf("INFO: metadata_update_start spotify_id=%s track=%s path=%s", track.ID, song.Title, outputPath)
+		log.Printf("INFO: metadata_update_start spotify_id=%s track=%s path=%s", spotifyID, song.Title, outputPath)
 		if err := d.metadataEmbedder.Embed(ctx, outputPath, song, song.CoverURL); err != nil {
-			log.Printf("ERROR: metadata_update_failed spotify_id=%s track=%s path=%s error=%v", track.ID, song.Title, outputPath, err)
+			log.Printf("ERROR: metadata_update_failed spotify_id=%s track=%s path=%s error=%v", spotifyID, song.Title, outputPath, err)
 			return false, "", fmt.Errorf("failed to update metadata: %w", err)
 		}
-		log.Printf("INFO: metadata_update_complete spotify_id=%s track=%s path=%s", track.ID, song.Title, outputPath)
+		log.Printf("INFO: metadata_update_complete spotify_id=%s track=%s path=%s", spotifyID, song.Title, outputPath)
 		return true, outputPath, nil
 	}
 
-	// 3. Search for audio using audio provider
+	// Search for audio using audio provider
 	searchQuery := fmt.Sprintf("%s - %s", song.Artist, song.Title)
 	audioURL, err := d.audioProvider.Search(ctx, searchQuery)
 	if err != nil {
@@ -163,24 +223,17 @@ func (d *Downloader) downloadSpotifyTrack(ctx context.Context, item *plan.PlanIt
 		return false, "", fmt.Errorf("failed to download audio: %w", err)
 	}
 
-	// 5. Embed metadata
 	if err := d.metadataEmbedder.Embed(ctx, downloadedPath, song, song.CoverURL); err != nil {
-		// Log warning but don't fail - file is downloaded
-		log.Printf("WARN: metadata_embed_failed spotify_id=%s track=%s path=%s error=%v", track.ID, song.Title, downloadedPath, err)
+		log.Printf("WARN: metadata_embed_failed spotify_id=%s track=%s path=%s error=%v", spotifyID, song.Title, downloadedPath, err)
 	} else {
-		log.Printf("INFO: metadata_embed_complete spotify_id=%s track=%s path=%s", track.ID, song.Title, downloadedPath)
+		log.Printf("INFO: metadata_embed_complete spotify_id=%s track=%s path=%s", spotifyID, song.Title, downloadedPath)
 	}
-
-	// Verify file exists
 	if _, err := os.Stat(downloadedPath); err != nil {
 		d.setFileExistsCached(downloadedPath, false)
 		return false, "", fmt.Errorf("file not found after download: %w", err)
 	}
-
-	// Invalidate cache entry (file now exists)
 	d.invalidateFileCache(downloadedPath)
-
-	log.Printf("INFO: download_complete spotify_id=%s track=%s artist=%s path=%s", track.ID, song.Title, song.Artist, downloadedPath)
+	log.Printf("INFO: download_complete spotify_id=%s track=%s artist=%s path=%s", spotifyID, song.Title, song.Artist, downloadedPath)
 	return true, downloadedPath, nil
 }
 

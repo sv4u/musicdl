@@ -255,6 +255,20 @@ func (g *Generator) processSong(ctx context.Context, plan *DownloadPlan, song co
 		spotifyURL = song.URL
 	}
 
+	metadata := map[string]interface{}{
+		"source_name":   song.Name,
+		"source_url":    song.URL,
+		"title":         trackName,
+		"track_number":  track.TrackNumber,
+		"disc_number":   track.DiscNumber,
+		"duration_ms":   track.DurationMs,
+	}
+	if len(track.Artists) > 0 {
+		metadata["artist"] = track.Artists[0].Name
+	}
+	if track.Album != nil {
+		metadata["album"] = track.Album.Name
+	}
 	item := &PlanItem{
 		ItemID:     fmt.Sprintf("track:%s", trackID),
 		ItemType:   PlanItemTypeTrack,
@@ -262,16 +276,8 @@ func (g *Generator) processSong(ctx context.Context, plan *DownloadPlan, song co
 		SpotifyURL: spotifyURL,
 		Name:       trackName,
 		Status:     PlanItemStatusPending,
-		Metadata: map[string]interface{}{
-			"source_name": song.Name,
-			"source_url":  song.URL,
-		},
+		Metadata:   metadata,
 	}
-
-	if len(track.Artists) > 0 {
-		item.Metadata["artist"] = track.Artists[0].Name
-	}
-
 	plan.AddItem(item)
 	g.seenTrackIDs[trackID] = true
 	return nil
@@ -320,22 +326,26 @@ func (g *Generator) processYouTubeVideo(ctx context.Context, plan *DownloadPlan,
 		trackName = song.Name
 	}
 
+	metadata := map[string]interface{}{
+		"source_name":      song.Name,
+		"source_url":       song.URL,
+		"title":            trackName,
+		"album":            "YouTube",
+		"youtube_metadata": videoMetadata,
+	}
+	if videoMetadata.Uploader != "" {
+		metadata["artist"] = videoMetadata.Uploader
+	}
+	if videoMetadata.Duration > 0 {
+		metadata["duration"] = videoMetadata.Duration
+	}
 	item := &PlanItem{
 		ItemID:     fmt.Sprintf("track:youtube:%s", videoID),
 		ItemType:   PlanItemTypeTrack,
 		YouTubeURL: song.URL,
 		Name:       trackName,
 		Status:     PlanItemStatusPending,
-		Metadata: map[string]interface{}{
-			"source_name":      song.Name,
-			"source_url":       song.URL,
-			"youtube_metadata": videoMetadata,
-		},
-	}
-
-	// Add uploader as artist if available
-	if videoMetadata.Uploader != "" {
-		item.Metadata["artist"] = videoMetadata.Uploader
+		Metadata:   metadata,
 	}
 
 	// Attempt Spotify enhancement (non-blocking)
@@ -746,6 +756,16 @@ func (g *Generator) processAlbumTracks(ctx context.Context, plan *DownloadPlan, 
 			trackSpotifyURL = track.ExternalURLs.Spotify
 		}
 
+		metadata := map[string]interface{}{
+			"track_number": track.TrackNumber,
+			"disc_number":  track.DiscNumber,
+			"title":        track.Name,
+			"album":        album.Name,
+			"duration_ms":  track.DurationMs,
+		}
+		if len(track.Artists) > 0 {
+			metadata["artist"] = track.Artists[0].Name
+		}
 		trackItem := &PlanItem{
 			ItemID:     fmt.Sprintf("track:%s", trackID),
 			ItemType:   PlanItemTypeTrack,
@@ -754,10 +774,7 @@ func (g *Generator) processAlbumTracks(ctx context.Context, plan *DownloadPlan, 
 			ParentID:   albumItem.ItemID,
 			Name:       track.Name,
 			Status:     PlanItemStatusPending,
-			Metadata: map[string]interface{}{
-				"track_number": track.TrackNumber,
-				"disc_number":  track.DiscNumber,
-			},
+			Metadata:   metadata,
 		}
 		plan.AddItem(trackItem)
 		albumItem.ChildIDs = append(albumItem.ChildIDs, trackItem.ItemID)
@@ -810,6 +827,16 @@ func (g *Generator) processAlbumTracks(ctx context.Context, plan *DownloadPlan, 
 				trackSpotifyURL = track.ExternalURLs.Spotify
 			}
 
+			metadata := map[string]interface{}{
+				"track_number": track.TrackNumber,
+				"disc_number":  track.DiscNumber,
+				"title":        track.Name,
+				"album":        album.Name,
+				"duration_ms":  track.DurationMs,
+			}
+			if len(track.Artists) > 0 {
+				metadata["artist"] = track.Artists[0].Name
+			}
 			trackItem := &PlanItem{
 				ItemID:     fmt.Sprintf("track:%s", trackID),
 				ItemType:   PlanItemTypeTrack,
@@ -818,10 +845,7 @@ func (g *Generator) processAlbumTracks(ctx context.Context, plan *DownloadPlan, 
 				ParentID:   albumItem.ItemID,
 				Name:       track.Name,
 				Status:     PlanItemStatusPending,
-				Metadata: map[string]interface{}{
-					"track_number": track.TrackNumber,
-					"disc_number":  track.DiscNumber,
-				},
+				Metadata:   metadata,
 			}
 			plan.AddItem(trackItem)
 			albumItem.ChildIDs = append(albumItem.ChildIDs, trackItem.ItemID)
@@ -897,8 +921,9 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 		Name:       playlistName,
 		Status:     PlanItemStatusPending,
 		Metadata: map[string]interface{}{
-			"source_name": playlist.Name,
-			"source_url":  playlist.URL,
+			"source_name":  playlist.Name,
+			"source_url":   playlist.URL,
+			"create_m3u":   playlist.CreateM3U,
 		},
 	}
 	if playlistData.Description != nil && *playlistData.Description != "" {
@@ -925,11 +950,10 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 	// Process first page
 	for _, trackItem := range tracks.Items {
 		// trackItem.Track can be a Track or SimplifiedTrack
-		// We need to handle both cases
-		var trackID, trackName, trackSpotifyURL string
+		var trackID, trackName, trackSpotifyURL, artist, album string
+		var trackNumber, discNumber, durationMs int
 		var isLocal bool
 
-		// Type assert to get the actual track
 		switch t := trackItem.Track.(type) {
 		case *spotigo.Track:
 			if t == nil {
@@ -941,6 +965,15 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 			if t.ExternalURLs != nil {
 				trackSpotifyURL = t.ExternalURLs.Spotify
 			}
+			if len(t.Artists) > 0 {
+				artist = t.Artists[0].Name
+			}
+			if t.Album != nil {
+				album = t.Album.Name
+			}
+			trackNumber = t.TrackNumber
+			discNumber = t.DiscNumber
+			durationMs = t.DurationMs
 		case spotigo.Track:
 			isLocal = t.IsLocal
 			trackID = t.ID
@@ -948,6 +981,15 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 			if t.ExternalURLs != nil {
 				trackSpotifyURL = t.ExternalURLs.Spotify
 			}
+			if len(t.Artists) > 0 {
+				artist = t.Artists[0].Name
+			}
+			if t.Album != nil {
+				album = t.Album.Name
+			}
+			trackNumber = t.TrackNumber
+			discNumber = t.DiscNumber
+			durationMs = t.DurationMs
 		case *spotigo.SimplifiedTrack:
 			if t == nil {
 				continue
@@ -958,6 +1000,13 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 			if t.ExternalURLs != nil {
 				trackSpotifyURL = t.ExternalURLs.Spotify
 			}
+			if len(t.Artists) > 0 {
+				artist = t.Artists[0].Name
+			}
+			// SimplifiedTrack has no Album field; album remains empty
+			trackNumber = t.TrackNumber
+			discNumber = t.DiscNumber
+			durationMs = t.DurationMs
 		case spotigo.SimplifiedTrack:
 			isLocal = t.IsLocal
 			trackID = t.ID
@@ -965,21 +1014,20 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 			if t.ExternalURLs != nil {
 				trackSpotifyURL = t.ExternalURLs.Spotify
 			}
+			if len(t.Artists) > 0 {
+				artist = t.Artists[0].Name
+			}
+			trackNumber = t.TrackNumber
+			discNumber = t.DiscNumber
+			durationMs = t.DurationMs
 		default:
-			// Unknown track type, skip
 			continue
 		}
 
-		// Check if track is local (not downloadable)
-		if isLocal {
+		if isLocal || trackID == "" {
 			continue
 		}
 
-		if trackID == "" {
-			continue
-		}
-
-		// Check for duplicate tracks
 		if g.seenTrackIDs[trackID] {
 			log.Printf("INFO: duplicate_detected type=track spotify_id=%s track_name=%s context=playlist", trackID, trackName)
 			existingTrackItemID := fmt.Sprintf("track:%s", trackID)
@@ -990,7 +1038,13 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 			continue
 		}
 
-		// Create track item
+		metadata := map[string]interface{}{"added_at": trackItem.AddedAt, "title": trackName, "track_number": trackNumber, "disc_number": discNumber, "duration_ms": durationMs}
+		if artist != "" {
+			metadata["artist"] = artist
+		}
+		if album != "" {
+			metadata["album"] = album
+		}
 		trackPlanItem := &PlanItem{
 			ItemID:     fmt.Sprintf("track:%s", trackID),
 			ItemType:   PlanItemTypeTrack,
@@ -999,9 +1053,7 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 			ParentID:   playlistItem.ItemID,
 			Name:       trackName,
 			Status:     PlanItemStatusPending,
-			Metadata: map[string]interface{}{
-				"added_at": trackItem.AddedAt,
-			},
+			Metadata:   metadata,
 		}
 		plan.AddItem(trackPlanItem)
 		playlistItem.ChildIDs = append(playlistItem.ChildIDs, trackPlanItem.ItemID)
@@ -1032,12 +1084,10 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 
 		// Process tracks from next page
 		for _, trackItem := range nextTracks.Items {
-			// trackItem.Track can be a Track or SimplifiedTrack
-			// We need to handle both cases
-			var trackID, trackName, trackSpotifyURL string
+			var trackID, trackName, trackSpotifyURL, artist, album string
+			var trackNumber, discNumber, durationMs int
 			var isLocal bool
 
-			// Type assert to get the actual track
 			switch t := trackItem.Track.(type) {
 			case *spotigo.Track:
 				if t == nil {
@@ -1049,6 +1099,15 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 				if t.ExternalURLs != nil {
 					trackSpotifyURL = t.ExternalURLs.Spotify
 				}
+				if len(t.Artists) > 0 {
+					artist = t.Artists[0].Name
+				}
+				if t.Album != nil {
+					album = t.Album.Name
+				}
+				trackNumber = t.TrackNumber
+				discNumber = t.DiscNumber
+				durationMs = t.DurationMs
 			case spotigo.Track:
 				isLocal = t.IsLocal
 				trackID = t.ID
@@ -1056,6 +1115,15 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 				if t.ExternalURLs != nil {
 					trackSpotifyURL = t.ExternalURLs.Spotify
 				}
+				if len(t.Artists) > 0 {
+					artist = t.Artists[0].Name
+				}
+				if t.Album != nil {
+					album = t.Album.Name
+				}
+				trackNumber = t.TrackNumber
+				discNumber = t.DiscNumber
+				durationMs = t.DurationMs
 			case *spotigo.SimplifiedTrack:
 				if t == nil {
 					continue
@@ -1066,6 +1134,12 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 				if t.ExternalURLs != nil {
 					trackSpotifyURL = t.ExternalURLs.Spotify
 				}
+				if len(t.Artists) > 0 {
+					artist = t.Artists[0].Name
+				}
+				trackNumber = t.TrackNumber
+				discNumber = t.DiscNumber
+				durationMs = t.DurationMs
 			case spotigo.SimplifiedTrack:
 				isLocal = t.IsLocal
 				trackID = t.ID
@@ -1073,21 +1147,20 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 				if t.ExternalURLs != nil {
 					trackSpotifyURL = t.ExternalURLs.Spotify
 				}
+				if len(t.Artists) > 0 {
+					artist = t.Artists[0].Name
+				}
+				trackNumber = t.TrackNumber
+				discNumber = t.DiscNumber
+				durationMs = t.DurationMs
 			default:
-				// Unknown track type, skip
 				continue
 			}
 
-			// Check if track is local (not downloadable)
-			if isLocal {
+			if isLocal || trackID == "" {
 				continue
 			}
 
-			if trackID == "" {
-				continue
-			}
-
-			// Check for duplicate tracks
 			if g.seenTrackIDs[trackID] {
 				log.Printf("INFO: duplicate_detected type=track spotify_id=%s track_name=%s context=playlist", trackID, trackName)
 				existingTrackItemID := fmt.Sprintf("track:%s", trackID)
@@ -1098,7 +1171,13 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 				continue
 			}
 
-			// Create track item
+			metadata := map[string]interface{}{"added_at": trackItem.AddedAt, "title": trackName, "track_number": trackNumber, "disc_number": discNumber, "duration_ms": durationMs}
+			if artist != "" {
+				metadata["artist"] = artist
+			}
+			if album != "" {
+				metadata["album"] = album
+			}
 			trackPlanItem := &PlanItem{
 				ItemID:     fmt.Sprintf("track:%s", trackID),
 				ItemType:   PlanItemTypeTrack,
@@ -1107,32 +1186,30 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 				ParentID:   playlistItem.ItemID,
 				Name:       trackName,
 				Status:     PlanItemStatusPending,
-				Metadata: map[string]interface{}{
-					"added_at": trackItem.AddedAt,
-				},
+				Metadata:   metadata,
 			}
 			plan.AddItem(trackPlanItem)
 			playlistItem.ChildIDs = append(playlistItem.ChildIDs, trackPlanItem.ItemID)
 			g.seenTrackIDs[trackID] = true
 		}
 
-		// Update tracks to next page for next iteration
 		tracks = nextTracks
 	}
 
-	// Create M3U item (child of playlist)
-	m3uItem := &PlanItem{
-		ItemID:   fmt.Sprintf("m3u:%s", playlistID),
-		ItemType: PlanItemTypeM3U,
-		ParentID: playlistItem.ItemID,
-		Name:     fmt.Sprintf("%s.m3u", playlistName),
-		Status:   PlanItemStatusPending,
-		Metadata: map[string]interface{}{
-			"playlist_name": playlistName,
-		},
+	if playlist.CreateM3U {
+		m3uItem := &PlanItem{
+			ItemID:   fmt.Sprintf("m3u:%s", playlistID),
+			ItemType: PlanItemTypeM3U,
+			ParentID: playlistItem.ItemID,
+			Name:     fmt.Sprintf("%s.m3u", playlistName),
+			Status:   PlanItemStatusPending,
+			Metadata: map[string]interface{}{
+				"playlist_name": playlistName,
+			},
+		}
+		plan.AddItem(m3uItem)
+		playlistItem.ChildIDs = append(playlistItem.ChildIDs, m3uItem.ItemID)
 	}
-	plan.AddItem(m3uItem)
-	playlistItem.ChildIDs = append(playlistItem.ChildIDs, m3uItem.ItemID)
 
 	return nil
 }
@@ -1189,6 +1266,7 @@ func (g *Generator) processYouTubePlaylist(ctx context.Context, plan *DownloadPl
 		Metadata: map[string]interface{}{
 			"source_name":           playlist.Name,
 			"source_url":            playlist.URL,
+			"create_m3u":            playlist.CreateM3U,
 			"youtube_playlist_info": playlistInfo,
 		},
 	}
@@ -1224,6 +1302,17 @@ func (g *Generator) processYouTubePlaylist(ctx context.Context, plan *DownloadPl
 			videoURL = fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID)
 		}
 
+		metadata := map[string]interface{}{
+			"youtube_metadata": videoMeta,
+			"title":            videoMeta.Title,
+			"album":            "YouTube",
+		}
+		if videoMeta.Uploader != "" {
+			metadata["artist"] = videoMeta.Uploader
+		}
+		if videoMeta.Duration > 0 {
+			metadata["duration"] = videoMeta.Duration
+		}
 		trackItem := &PlanItem{
 			ItemID:     fmt.Sprintf("track:youtube:%s", videoID),
 			ItemType:   PlanItemTypeTrack,
@@ -1231,14 +1320,7 @@ func (g *Generator) processYouTubePlaylist(ctx context.Context, plan *DownloadPl
 			ParentID:   playlistItem.ItemID,
 			Name:       videoMeta.Title,
 			Status:     PlanItemStatusPending,
-			Metadata: map[string]interface{}{
-				"youtube_metadata": videoMeta,
-			},
-		}
-
-		// Add uploader as artist if available
-		if videoMeta.Uploader != "" {
-			trackItem.Metadata["artist"] = videoMeta.Uploader
+			Metadata:   metadata,
 		}
 
 		// Attempt Spotify enhancement (non-blocking)
@@ -1249,19 +1331,20 @@ func (g *Generator) processYouTubePlaylist(ctx context.Context, plan *DownloadPl
 		g.seenYouTubeVideoIDs[videoID] = true
 	}
 
-	// Create M3U item (child of playlist)
-	m3uItem := &PlanItem{
-		ItemID:   fmt.Sprintf("m3u:youtube:%s", playlistID),
-		ItemType: PlanItemTypeM3U,
-		ParentID: playlistItem.ItemID,
-		Name:     fmt.Sprintf("%s.m3u", playlistName),
-		Status:   PlanItemStatusPending,
-		Metadata: map[string]interface{}{
-			"playlist_name": playlistName,
-		},
+	if playlist.CreateM3U {
+		m3uItem := &PlanItem{
+			ItemID:   fmt.Sprintf("m3u:youtube:%s", playlistID),
+			ItemType: PlanItemTypeM3U,
+			ParentID: playlistItem.ItemID,
+			Name:     fmt.Sprintf("%s.m3u", playlistName),
+			Status:   PlanItemStatusPending,
+			Metadata: map[string]interface{}{
+				"playlist_name": playlistName,
+			},
+		}
+		plan.AddItem(m3uItem)
+		playlistItem.ChildIDs = append(playlistItem.ChildIDs, m3uItem.ItemID)
 	}
-	plan.AddItem(m3uItem)
-	playlistItem.ChildIDs = append(playlistItem.ChildIDs, m3uItem.ItemID)
 
 	return nil
 }
@@ -1351,35 +1434,8 @@ func (g *Generator) processAlbum(ctx context.Context, plan *DownloadPlan, album 
 		albumName = album.Name
 	}
 
-	albumSpotifyURL := ""
-	if albumData.ExternalURLs != nil {
-		albumSpotifyURL = albumData.ExternalURLs.Spotify
-	}
-	if albumSpotifyURL == "" {
-		albumSpotifyURL = album.URL
-	}
-
-	// Create album item
-	albumItem := &PlanItem{
-		ItemID:     fmt.Sprintf("album:%s", albumID),
-		ItemType:   PlanItemTypeAlbum,
-		SpotifyID:  albumID,
-		SpotifyURL: albumSpotifyURL,
-		Name:       albumName,
-		Status:     PlanItemStatusPending,
-		Metadata: map[string]interface{}{
-			"source_name":  album.Name,
-			"source_url":   album.URL,
-			"create_m3u":   album.CreateM3U,
-			"album_type":   albumData.AlbumType,
-			"release_date": albumData.ReleaseDate,
-		},
-	}
-	plan.AddItem(albumItem)
-	g.seenAlbumIDs[albumID] = true
-
-	// Process album tracks
-	// Create a simplified album for processAlbumTracks
+	// Do not create the album item here. Let processAlbumTracks create the sole
+	// album item so its ChildIDs are the track IDs (not a duplicate album ref).
 	simplifiedAlbum := spotigo.SimplifiedAlbum{
 		ID:           albumID,
 		Name:         albumName,
@@ -1387,8 +1443,6 @@ func (g *Generator) processAlbum(ctx context.Context, plan *DownloadPlan, album 
 		ReleaseDate:  albumData.ReleaseDate,
 		ExternalURLs: albumData.ExternalURLs,
 	}
-
-	// Use a dummy parent item for albums processed directly (not from artist)
 	dummyParent := &PlanItem{
 		ItemID:   fmt.Sprintf("album_parent:%s", albumID),
 		ItemType: PlanItemTypeAlbum,
@@ -1397,10 +1451,24 @@ func (g *Generator) processAlbum(ctx context.Context, plan *DownloadPlan, album 
 		return fmt.Errorf("failed to process album tracks: %w", err)
 	}
 
-	// Update album item with child IDs from dummy parent
-	albumItem.ChildIDs = dummyParent.ChildIDs
+	// Get the single album item created by processAlbumTracks and fix it up for
+	// direct-album-from-config: root-level (no parent) and spec metadata.
+	albumItem := plan.GetItem(fmt.Sprintf("album:%s", albumID))
+	if albumItem == nil {
+		return fmt.Errorf("processAlbumTracks did not create album item for %s", albumID)
+	}
+	albumItem.ParentID = ""
+	albumItem.SpotifyURL = ""
+	if albumData.ExternalURLs != nil {
+		albumItem.SpotifyURL = albumData.ExternalURLs.Spotify
+	}
+	if albumItem.SpotifyURL == "" {
+		albumItem.SpotifyURL = album.URL
+	}
+	albumItem.Metadata["source_name"] = album.Name
+	albumItem.Metadata["source_url"] = album.URL
+	albumItem.Metadata["create_m3u"] = album.CreateM3U
 
-	// Create M3U item only if requested
 	if album.CreateM3U {
 		m3uItem := &PlanItem{
 			ItemID:   fmt.Sprintf("m3u:album:%s", albumID),

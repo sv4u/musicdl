@@ -1369,7 +1369,7 @@ func TestGeneratePlan_WithYouTubePlaylist_Unit(t *testing.T) {
 			ClientSecret: "test_secret",
 		},
 		Playlists: []config.MusicSource{
-			{Name: "Test Playlist", URL: "https://www.youtube.com/playlist?list=PLtest123"},
+			{Name: "Test Playlist", URL: "https://www.youtube.com/playlist?list=PLtest123", CreateM3U: true},
 		},
 	}
 

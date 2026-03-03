@@ -52,7 +52,7 @@ func runPlanPhase(ctx context.Context, cancel context.CancelFunc, configPath str
 		return spotifyClient.GetPlaylistTracks(cctx, playlistID, opts)
 	}
 	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc, audioProvider)
-	optimizer := plan.NewOptimizer(true)
+	optimizer := plan.NewOptimizer(true, cfg.Download.Overwrite, cfg.Download.Output, cfg.Download.Format)
 
 	if !WantTUI(noTUI) {
 		logFile, err := os.OpenFile(planLogPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)

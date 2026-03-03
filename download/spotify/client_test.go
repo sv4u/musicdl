@@ -344,8 +344,11 @@ func (e *mockHTTPError) StatusCode() int {
 	return e.statusCode
 }
 
-func (e *mockHTTPError) RetryAfter() int {
-	return e.retryAfter
+func (e *mockHTTPError) RetryAfter() (time.Duration, bool) {
+	if e.retryAfter <= 0 {
+		return 0, false
+	}
+	return time.Duration(e.retryAfter) * time.Second, true
 }
 
 func (e *mockHTTPError) Error() string {

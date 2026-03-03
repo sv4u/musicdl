@@ -390,20 +390,7 @@ func (e *Executor) createM3UFile(playlistName string, tracks []*PlanItem) (strin
 
 	m3uPath := filepath.Join(baseDir, playlistNameSafe+".m3u")
 
-	// Handle name collisions
-	counter := 1
-	for {
-		if _, err := os.Stat(m3uPath); os.IsNotExist(err) {
-			break
-		}
-		m3uPath = filepath.Join(baseDir, fmt.Sprintf("%s_%d.m3u", playlistNameSafe, counter))
-		counter++
-		if counter > 100 {
-			return "", fmt.Errorf("too many M3U file collisions for %s", playlistName)
-		}
-	}
-
-	// Create M3U file
+	// Create M3U file (overwrite if it already exists)
 	file, err := os.Create(m3uPath)
 	if err != nil {
 		return "", fmt.Errorf("cannot create M3U file: %w", err)
@@ -417,18 +404,31 @@ func (e *Executor) createM3UFile(playlistName string, tracks []*PlanItem) (strin
 
 	// Write tracks
 	for _, item := range tracks {
-		// Extract title from filename (basename without extension)
-		base := filepath.Base(item.FilePath)
-		ext := filepath.Ext(item.FilePath)
-		title := base
-		if len(ext) > 0 && len(base) > len(ext) {
-			title = base[:len(base)-len(ext)]
-		}
+		title := item.Name
 		if title == "" {
+			base := filepath.Base(item.FilePath)
+			ext := filepath.Ext(item.FilePath)
 			title = base
+			if len(ext) > 0 && len(base) > len(ext) {
+				title = base[:len(base)-len(ext)]
+			}
+			if title == "" {
+				title = "Track"
+			}
 		}
-		if title == "" {
-			title = "Track"
+
+		// Duration in seconds for EXTINF (-1 if unknown)
+		durationSec := -1
+		if item.Metadata != nil {
+			if sec, ok := item.Metadata["duration"].(int); ok && sec >= 0 {
+				durationSec = sec
+			} else if sec, ok := item.Metadata["duration"].(float64); ok && sec >= 0 {
+				durationSec = int(sec)
+			} else if ms, ok := item.Metadata["duration_ms"].(float64); ok && ms >= 0 {
+				durationSec = int(ms / 1000)
+			} else if ms, ok := item.Metadata["duration_ms"].(int); ok && ms >= 0 {
+				durationSec = ms / 1000
+			}
 		}
 
 		// Get path relative to M3U file for portability (e.g. Plex in Docker)
@@ -441,8 +441,8 @@ func (e *Executor) createM3UFile(playlistName string, tracks []*PlanItem) (strin
 			relPath = absPath // Fallback to absolute if Rel fails (e.g. different roots)
 		}
 
-		// Write EXTINF line
-		if _, err := fmt.Fprintf(file, "#EXTINF:-1,%s\n", title); err != nil {
+		// Write EXTINF line (duration,title)
+		if _, err := fmt.Fprintf(file, "#EXTINF:%d,%s\n", durationSec, title); err != nil {
 			continue
 		}
 

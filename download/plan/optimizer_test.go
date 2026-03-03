@@ -4,10 +4,12 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/sv4u/musicdl/download/config"
 )
 
 func TestNewOptimizer(t *testing.T) {
-	optimizer := NewOptimizer(true)
+	optimizer := NewOptimizer(true, config.OverwriteSkip, "", "")
 	if optimizer == nil {
 		t.Fatal("NewOptimizer() returned nil")
 	}
@@ -17,7 +19,7 @@ func TestNewOptimizer(t *testing.T) {
 }
 
 func TestOptimizer_RemoveDuplicates(t *testing.T) {
-	optimizer := NewOptimizer(false)
+	optimizer := NewOptimizer(false, config.OverwriteSkip, "", "")
 	plan := NewDownloadPlan(nil)
 
 	// Add duplicate tracks
@@ -74,7 +76,7 @@ func TestOptimizer_CheckFiles(t *testing.T) {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
-	optimizer := NewOptimizer(true)
+	optimizer := NewOptimizer(true, config.OverwriteSkip, "", "")
 	plan := NewDownloadPlan(nil)
 
 	// Add track with existing file
@@ -117,7 +119,7 @@ func TestOptimizer_Optimize(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.mp3")
 	_ = os.WriteFile(testFile, []byte("test"), 0644)
 
-	optimizer := NewOptimizer(true)
+	optimizer := NewOptimizer(true, config.OverwriteSkip, "", "")
 	plan := NewDownloadPlan(nil)
 
 	// Add duplicate tracks
@@ -154,7 +156,7 @@ func TestOptimizer_Optimize(t *testing.T) {
 }
 
 func TestOptimizer_RemoveDuplicates_MultipleDuplicates(t *testing.T) {
-	optimizer := NewOptimizer(false)
+	optimizer := NewOptimizer(false, config.OverwriteSkip, "", "")
 	plan := NewDownloadPlan(nil)
 
 	// Add original track
@@ -206,7 +208,7 @@ func TestOptimizer_RemoveDuplicates_MultipleDuplicates(t *testing.T) {
 }
 
 func TestOptimizer_RemoveDuplicates_MultipleParents(t *testing.T) {
-	optimizer := NewOptimizer(false)
+	optimizer := NewOptimizer(false, config.OverwriteSkip, "", "")
 	plan := NewDownloadPlan(nil)
 
 	// Add original track
@@ -284,7 +286,7 @@ func TestOptimizer_RemoveDuplicates_MultipleParents(t *testing.T) {
 }
 
 func TestOptimizer_RemoveDuplicates_NoParents(t *testing.T) {
-	optimizer := NewOptimizer(false)
+	optimizer := NewOptimizer(false, config.OverwriteSkip, "", "")
 	plan := NewDownloadPlan(nil)
 
 	// Add original track (no parent)
@@ -316,7 +318,7 @@ func TestOptimizer_RemoveDuplicates_NoParents(t *testing.T) {
 }
 
 func TestOptimizer_RemoveDuplicates_EmptySpotifyID(t *testing.T) {
-	optimizer := NewOptimizer(false)
+	optimizer := NewOptimizer(false, config.OverwriteSkip, "", "")
 	plan := NewDownloadPlan(nil)
 
 	// Add track with empty SpotifyID
@@ -348,7 +350,7 @@ func TestOptimizer_RemoveDuplicates_EmptySpotifyID(t *testing.T) {
 }
 
 func TestOptimizer_RemoveDuplicates_NonTrackItems(t *testing.T) {
-	optimizer := NewOptimizer(false)
+	optimizer := NewOptimizer(false, config.OverwriteSkip, "", "")
 	plan := NewDownloadPlan(nil)
 
 	// Add album items (should not be deduplicated)
@@ -383,7 +385,7 @@ func TestOptimizer_CheckFiles_Disabled(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.mp3")
 	_ = os.WriteFile(testFile, []byte("test"), 0644)
 
-	optimizer := NewOptimizer(false) // File checking disabled
+	optimizer := NewOptimizer(false, config.OverwriteSkip, "", "") // File checking disabled
 	plan := NewDownloadPlan(nil)
 
 	track1 := &PlanItem{
@@ -412,7 +414,7 @@ func TestOptimizer_CheckFiles_NonPendingStatus(t *testing.T) {
 	testFile := filepath.Join(tmpDir, "test.mp3")
 	_ = os.WriteFile(testFile, []byte("test"), 0644)
 
-	optimizer := NewOptimizer(true)
+	optimizer := NewOptimizer(true, config.OverwriteSkip, "", "")
 	plan := NewDownloadPlan(nil)
 
 	// Add track with completed status
@@ -435,7 +437,7 @@ func TestOptimizer_CheckFiles_NonPendingStatus(t *testing.T) {
 }
 
 func TestOptimizer_CheckFiles_NoFilePath(t *testing.T) {
-	optimizer := NewOptimizer(true)
+	optimizer := NewOptimizer(true, config.OverwriteSkip, "", "")
 	plan := NewDownloadPlan(nil)
 
 	// Add track without FilePath
@@ -463,7 +465,7 @@ func TestOptimizer_CheckFiles_MixedStatuses(t *testing.T) {
 	nonexistentFile := filepath.Join(tmpDir, "nonexistent.mp3")
 	_ = os.WriteFile(existingFile, []byte("test"), 0644)
 
-	optimizer := NewOptimizer(true)
+	optimizer := NewOptimizer(true, config.OverwriteSkip, "", "")
 	plan := NewDownloadPlan(nil)
 
 	// Add track with existing file
@@ -534,7 +536,7 @@ func TestOptimizer_CheckFiles_MixedStatuses(t *testing.T) {
 }
 
 func TestOptimizer_Optimize_FileExistenceDisabled(t *testing.T) {
-	optimizer := NewOptimizer(false) // File checking disabled
+	optimizer := NewOptimizer(false, config.OverwriteSkip, "", "") // File checking disabled
 	plan := NewDownloadPlan(nil)
 
 	// Add duplicate tracks
@@ -570,7 +572,7 @@ func TestOptimizer_Optimize_FileExistenceDisabled(t *testing.T) {
 }
 
 func TestOptimizer_RemoveDuplicates_ComplexParentChildRelationships(t *testing.T) {
-	optimizer := NewOptimizer(false)
+	optimizer := NewOptimizer(false, config.OverwriteSkip, "", "")
 	plan := NewDownloadPlan(nil)
 
 	// Add original track

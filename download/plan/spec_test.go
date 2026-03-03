@@ -163,7 +163,7 @@ func TestPlanToSpecAndSpecToPlan_M3URoundTrip(t *testing.T) {
 	}
 }
 
-func TestPlanToSpec_AlbumM3UOmitted(t *testing.T) {
+func TestPlanToSpec_AlbumM3URoundTrip(t *testing.T) {
 	plan := NewDownloadPlan(nil)
 	plan.AddItem(&PlanItem{
 		ItemID:     "m3u:album:aid",
@@ -176,8 +176,14 @@ func TestPlanToSpec_AlbumM3UOmitted(t *testing.T) {
 		Progress:   0,
 	})
 	spec := PlanToSpec(plan, "h", "c.yml", time.Now().UTC())
-	if len(spec.M3Us) != 0 {
-		t.Errorf("album M3U should be omitted from spec (Option B), got len(M3Us)=%d", len(spec.M3Us))
+	if len(spec.M3Us) != 1 {
+		t.Fatalf("expected 1 M3U (album M3U round-trip), got len(M3Us)=%d", len(spec.M3Us))
+	}
+	if spec.M3Us[0].AlbumName != "Album Name" {
+		t.Errorf("expected AlbumName=Album Name, got %q", spec.M3Us[0].AlbumName)
+	}
+	if spec.M3Us[0].ParentID != "album:aid" {
+		t.Errorf("expected ParentID=album:aid, got %q", spec.M3Us[0].ParentID)
 	}
 }
 

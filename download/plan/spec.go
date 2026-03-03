@@ -37,12 +37,13 @@ type SpecPlaylist struct {
 	TrackIDs  []string `json:"track_ids"`
 }
 
-// SpecM3UItem is the spec JSON shape for an M3U playlist file (playlist M3U only; album M3U is not round-tripped).
+// SpecM3UItem is the spec JSON shape for an M3U playlist file (playlist or album).
 type SpecM3UItem struct {
 	ID           string `json:"id"`
 	ParentID     string `json:"parent_id"`
 	Name         string `json:"name"`
-	PlaylistName string `json:"playlist_name"`
+	PlaylistName string `json:"playlist_name,omitempty"`
+	AlbumName    string `json:"album_name,omitempty"`
 }
 
 // SpecPlan is the spec JSON shape for the full plan file.
@@ -105,10 +106,14 @@ func PlanToSpec(plan *DownloadPlan, configHash, configFile string, generatedAt t
 					trackIDs = append(trackIDs, childID)
 				}
 			}
+			sourceURL := item.SpotifyURL
+			if sourceURL == "" {
+				sourceURL = item.YouTubeURL
+			}
 			spec.Playlists = append(spec.Playlists, SpecPlaylist{
 				ID:        item.ItemID,
 				Name:      item.Name,
-				SourceURL: item.SpotifyURL,
+				SourceURL: sourceURL,
 				TrackIDs:  trackIDs,
 			})
 			if item.Metadata != nil {
@@ -117,11 +122,15 @@ func PlanToSpec(plan *DownloadPlan, configHash, configFile string, generatedAt t
 				}
 			}
 		}
-		if item.ItemType == PlanItemTypeM3U && item.ParentID != "" && strings.HasPrefix(item.ParentID, "playlist:") {
+		if item.ItemType == PlanItemTypeM3U && item.ParentID != "" {
 			playlistName := ""
+			albumName := ""
 			if item.Metadata != nil {
 				if n, ok := item.Metadata["playlist_name"].(string); ok {
 					playlistName = n
+				}
+				if n, ok := item.Metadata["album_name"].(string); ok {
+					albumName = n
 				}
 			}
 			spec.M3Us = append(spec.M3Us, SpecM3UItem{
@@ -129,6 +138,7 @@ func PlanToSpec(plan *DownloadPlan, configHash, configFile string, generatedAt t
 				ParentID:     item.ParentID,
 				Name:         item.Name,
 				PlaylistName: playlistName,
+				AlbumName:    albumName,
 			})
 		}
 	}
@@ -197,12 +207,16 @@ func SpecToPlan(spec *SpecPlan) (*DownloadPlan, error) {
 			ItemID:     playlistItemID,
 			ItemType:   PlanItemTypePlaylist,
 			Name:       p.Name,
-			SpotifyURL: p.SourceURL,
 			ChildIDs:   append([]string{}, p.TrackIDs...),
 			Status:     PlanItemStatusPending,
 			Metadata:   map[string]interface{}{"create_m3u": p.CreateM3U},
 			CreatedAt:  time.Now(),
 			Progress:   0,
+		}
+		if strings.Contains(playlistItemID, "youtube") {
+			item.YouTubeURL = p.SourceURL
+		} else {
+			item.SpotifyURL = p.SourceURL
 		}
 		plan.AddItem(item)
 	}
@@ -211,6 +225,9 @@ func SpecToPlan(spec *SpecPlan) (*DownloadPlan, error) {
 		metadata := make(map[string]interface{})
 		if m.PlaylistName != "" {
 			metadata["playlist_name"] = m.PlaylistName
+		}
+		if m.AlbumName != "" {
+			metadata["album_name"] = m.AlbumName
 		}
 		item := &PlanItem{
 			ItemID:     m.ID,
@@ -223,6 +240,13 @@ func SpecToPlan(spec *SpecPlan) (*DownloadPlan, error) {
 			Progress:   0,
 		}
 		plan.AddItem(item)
+		// Add M3U item to parent's ChildIDs so container status tracking is complete
+		if m.ParentID != "" {
+			parent := plan.GetItem(m.ParentID)
+			if parent != nil {
+				parent.ChildIDs = append(parent.ChildIDs, m.ID)
+			}
+		}
 	}
 
 	return plan, nil

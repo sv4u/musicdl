@@ -103,7 +103,7 @@ func TestE2E_SingleTrackDownload(t *testing.T) {
 	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc, audioProvider)
 
 	// Create optimizer
-	optimizer := plan.NewOptimizer(true)
+	optimizer := plan.NewOptimizer(true, config.OverwriteSkip, "", "")
 
 	ctx := context.Background()
 
@@ -222,7 +222,7 @@ func TestE2E_PlanWorkflow_WithRealSpotify(t *testing.T) {
 		return spotifyClient.GetPlaylistTracks(ctx, playlistID, opts)
 	}
 	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc, audioProvider)
-	optimizer := plan.NewOptimizer(true)
+	optimizer := plan.NewOptimizer(true, config.OverwriteSkip, "", "")
 
 	ctx := context.Background()
 
@@ -321,7 +321,7 @@ func TestE2E_PlanPersistence_WithRealDownload(t *testing.T) {
 		return spotifyClient.GetPlaylistTracks(ctx, playlistID, opts)
 	}
 	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc, audioProvider)
-	optimizer := plan.NewOptimizer(true)
+	optimizer := plan.NewOptimizer(true, config.OverwriteSkip, "", "")
 
 	ctx := context.Background()
 

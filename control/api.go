@@ -190,7 +190,7 @@ func (s *APIServer) executePlan(ctx context.Context, configPath string) error {
 		return spotifyClient.GetPlaylistTracks(ctx, playlistID, opts)
 	}
 	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc, audioProvider)
-	optimizer := plan.NewOptimizer(true)
+	optimizer := plan.NewOptimizer(true, cfg.Download.Overwrite, cfg.Download.Output, cfg.Download.Format)
 	s.logBroadcaster.BroadcastString("info", "Generating download plan...", "plan")
 	generatedPlan, err := generator.GeneratePlan(ctx)
 	if err != nil {
@@ -244,7 +244,7 @@ func (s *APIServer) executeDownload(ctx context.Context, configPath string, resu
 		return spotifyClient.GetPlaylistTracks(ctx, playlistID, opts)
 	}
 	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc, audioProvider)
-	optimizer := plan.NewOptimizer(true)
+	optimizer := plan.NewOptimizer(true, cfg.Download.Overwrite, cfg.Download.Output, cfg.Download.Format)
 	s.logBroadcaster.BroadcastString("info", "Generating download plan...", "download")
 	generatedPlan, err := generator.GeneratePlan(ctx)
 	if err != nil {
@@ -292,9 +292,12 @@ func (s *APIServer) executeDownload(ctx context.Context, configPath string, resu
 	var flushMu sync.Mutex
 	var itemsSinceFlush int
 	progressCallback := func(item *plan.PlanItem) {
-		s.currentRunTracker.mu.Lock()
-		s.currentRunTracker.progress++
-		s.currentRunTracker.mu.Unlock()
+		switch item.Status {
+		case plan.PlanItemStatusCompleted, plan.PlanItemStatusFailed, plan.PlanItemStatusSkipped:
+			s.currentRunTracker.mu.Lock()
+			s.currentRunTracker.progress++
+			s.currentRunTracker.mu.Unlock()
+		}
 		switch item.Status {
 		case plan.PlanItemStatusCompleted:
 			var fileSize int64

@@ -9,7 +9,7 @@
               <path d="M3 2a2 2 0 012-2h10a2 2 0 012 2v16a2 2 0 01-2 2H5a2 2 0 01-2-2V2z" />
             </svg>
             musicdl
-            <span v-if="versionInfo.musicdl" class="text-slate-500 font-normal text-base ml-1">v{{ versionInfo.musicdl }}</span>
+            <span v-if="versionInfo.musicdl" class="text-slate-500 font-normal text-base ml-1">{{ versionInfo.musicdl }}</span>
           </h1>
           <span v-if="versionInfo.spotigo" class="text-slate-500 text-sm border-l border-slate-600 pl-4">spotigo {{ versionInfo.spotigo }}</span>
         </div>

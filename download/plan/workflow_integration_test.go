@@ -49,7 +49,7 @@ func TestPlanWorkflow_GenerateOptimizeExecute_SingleSong(t *testing.T) {
 	}
 
 	// Step 2: Optimize plan
-	optimizer := NewOptimizer(true)
+	optimizer := NewOptimizer(true, config.OverwriteSkip, "", "")
 	optimizer.Optimize(plan)
 
 	// Plan should still have track (no duplicates to remove)
@@ -123,7 +123,7 @@ func TestPlanWorkflow_GenerateOptimizeExecute_WithDuplicates(t *testing.T) {
 	}
 
 	// Step 2: Optimize plan (should still have 1 track)
-	optimizer := NewOptimizer(true)
+	optimizer := NewOptimizer(true, config.OverwriteSkip, "", "")
 	optimizer.Optimize(plan)
 
 	if len(plan.Items) != 1 {
@@ -200,7 +200,7 @@ func TestPlanWorkflow_GenerateOptimizeExecute_WithArtist(t *testing.T) {
 	}
 
 	// Step 2: Optimize plan
-	optimizer := NewOptimizer(true)
+	optimizer := NewOptimizer(true, config.OverwriteSkip, "", "")
 	optimizer.Optimize(plan)
 
 	// Should still have same items (no duplicates)

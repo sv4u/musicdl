@@ -1,30 +1,138 @@
 package plan
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/sv4u/musicdl/download/config"
 )
 
-// Optimizer optimizes download plans by removing duplicates and checking file existence.
+// Optimizer optimizes download plans by removing duplicates, pre-computing output paths, and checking file existence.
 type Optimizer struct {
 	checkFileExistence bool
+	overwriteMode      config.OverwriteMode
+	outputTemplate     string
+	outputFormat       string
 }
 
 // NewOptimizer creates a new plan optimizer.
-func NewOptimizer(checkFileExistence bool) *Optimizer {
+// If outputTemplate is non-empty, the optimizer will resolve output paths from plan item metadata before checking files.
+// overwriteMode is used to decide whether to mark existing files as skipped (only when OverwriteSkip).
+func NewOptimizer(checkFileExistence bool, overwriteMode config.OverwriteMode, outputTemplate, outputFormat string) *Optimizer {
+	if outputTemplate == "" {
+		outputTemplate = "{artist}/{album}/{track-number} - {title}.{output-ext}"
+	}
+	if outputFormat == "" {
+		outputFormat = "mp3"
+	}
 	return &Optimizer{
 		checkFileExistence: checkFileExistence,
+		overwriteMode:      overwriteMode,
+		outputTemplate:     outputTemplate,
+		outputFormat:       outputFormat,
 	}
 }
 
 // Optimize optimizes a download plan.
 func (o *Optimizer) Optimize(plan *DownloadPlan) {
-	// Remove duplicate tracks (keep first occurrence)
 	o.removeDuplicates(plan)
-
-	// Check file existence if enabled
+	o.resolveOutputPaths(plan)
 	if o.checkFileExistence {
 		o.checkFiles(plan)
 	}
+}
+
+// resolveOutputPaths sets FilePath on track items that have sufficient metadata.
+func (o *Optimizer) resolveOutputPaths(plan *DownloadPlan) {
+	for _, item := range plan.Items {
+		if item.ItemType != PlanItemTypeTrack || item.Status != PlanItemStatusPending {
+			continue
+		}
+		if item.Metadata == nil {
+			continue
+		}
+		path := o.pathFromMetadata(item)
+		if path != "" {
+			item.FilePath = path
+		}
+	}
+}
+
+func (o *Optimizer) pathFromMetadata(item *PlanItem) string {
+	artist := getMetaString(item.Metadata, "artist")
+	album := getMetaString(item.Metadata, "album")
+	title := getMetaString(item.Metadata, "title")
+	if title == "" {
+		title = item.Name
+	}
+	trackNum := getMetaInt(item.Metadata, "track_number")
+	discNum := getMetaInt(item.Metadata, "disc_number")
+	output := o.outputTemplate
+	output = strings.ReplaceAll(output, "{artist}", sanitizePathPart(artist))
+	output = strings.ReplaceAll(output, "{album}", sanitizePathPart(album))
+	output = strings.ReplaceAll(output, "{title}", sanitizePathPart(title))
+	output = strings.ReplaceAll(output, "{track-number}", fmt.Sprintf("%02d", trackNum))
+	output = strings.ReplaceAll(output, "{disc-number}", fmt.Sprintf("%02d", discNum))
+	output = strings.ReplaceAll(output, "{output-ext}", o.outputFormat)
+	return filepath.Clean(output)
+}
+
+func getMetaString(m map[string]interface{}, key string) string {
+	if m == nil {
+		return ""
+	}
+	v, ok := m[key]
+	if !ok {
+		return ""
+	}
+	s, _ := v.(string)
+	return s
+}
+
+func getMetaInt(m map[string]interface{}, key string) int {
+	if m == nil {
+		return 0
+	}
+	v, ok := m[key]
+	if !ok {
+		return 0
+	}
+	switch n := v.(type) {
+	case int:
+		return n
+	case float64:
+		return int(n)
+	default:
+		return 0
+	}
+}
+
+func sanitizePathPart(name string) string {
+	if name == "" {
+		return "_"
+	}
+	const maxLen = 255
+	result := []rune(name)
+	if len(result) > maxLen {
+		result = result[:maxLen]
+	}
+	invalid := []rune{'/', '\\', ':', '*', '?', '"', '<', '>', '|'}
+	for i, r := range result {
+		for _, inv := range invalid {
+			if r == inv {
+				result[i] = '_'
+				break
+			}
+		}
+	}
+	s := strings.ReplaceAll(string(result), "..", "_")
+	s = strings.Trim(s, ". ")
+	if s == "" {
+		return "_"
+	}
+	return s
 }
 
 // removeDuplicates removes duplicate track items from the plan.
@@ -97,22 +205,20 @@ func (o *Optimizer) removeDuplicates(plan *DownloadPlan) {
 	plan.Items = newItems
 }
 
-// checkFiles checks if files already exist and marks items as skipped if appropriate.
+// checkFiles checks if files already exist and marks items as skipped only when overwrite mode is skip.
 func (o *Optimizer) checkFiles(plan *DownloadPlan) {
+	if o.overwriteMode != config.OverwriteSkip {
+		return
+	}
 	for _, item := range plan.Items {
 		if item.ItemType != PlanItemTypeTrack {
 			continue
 		}
-
-		// Only check pending items
 		if item.Status != PlanItemStatusPending {
 			continue
 		}
-
-		// If item already has a file path, check if it exists
 		if item.FilePath != "" {
 			if _, err := os.Stat(item.FilePath); err == nil {
-				// File exists - mark as skipped
 				item.MarkSkipped(item.FilePath)
 			}
 		}
