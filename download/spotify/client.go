@@ -2,6 +2,7 @@ package spotify
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -120,7 +121,8 @@ func (c *SpotifyClient) handleError(err error) error {
 		return nil
 	}
 
-	if spotifyErr, ok := err.(*spotigo.SpotifyError); ok && spotifyErr.StatusCode() == 429 {
+	var spotifyErr *spotigo.SpotifyError
+	if errors.As(err, &spotifyErr) && spotifyErr.StatusCode() == 429 {
 		retryAfter := 1
 		if duration, hasRetryAfter := spotifyErr.RetryAfter(); hasRetryAfter && duration > 0 {
 			retryAfter = int(duration.Seconds())
