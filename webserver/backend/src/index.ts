@@ -25,7 +25,7 @@ if (goAPIPort && !/^\d+$/.test(String(goAPIPort))) {
 
 const goAPIBaseURL = `http://${goAPIHost}:${goAPIPort}`;
 
-// Security headers
+// Security headers (tuned for HTTP-only local network deployment)
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -38,6 +38,9 @@ app.use(
         upgradeInsecureRequests: null,
       },
     },
+    hsts: false,
+    crossOriginOpenerPolicy: false,
+    originAgentCluster: false,
   }),
 );
 
