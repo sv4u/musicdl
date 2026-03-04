@@ -44,23 +44,7 @@ app.use(
   }),
 );
 
-// CORS restricted to local network
-const allowedOrigins = [
-  `http://localhost:${port}`,
-  `http://127.0.0.1:${port}`,
-  `http://localhost:5173`,
-  `http://127.0.0.1:5173`,
-];
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('CORS: origin not allowed'));
-    }
-  },
-  methods: ['GET', 'POST'],
-}));
+app.use(cors({ methods: ["GET", "POST"] }));
 
 // Rate limiter: 100 requests per minute per IP
 const apiLimiter = rateLimit({
