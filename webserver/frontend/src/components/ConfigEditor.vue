@@ -3,16 +3,17 @@
     <div class="flex gap-2">
       <button
         @click="loadConfig"
-        class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition-colors"
+        :disabled="isBusy"
+        class="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold py-2 px-4 rounded transition-colors"
       >
-        Load
+        {{ isBusy && busyAction === 'load' ? 'Loading...' : 'Load' }}
       </button>
       <button
         @click="saveConfig"
-        :disabled="!configModified"
+        :disabled="!configModified || isBusy"
         class="bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white font-semibold py-2 px-4 rounded transition-colors"
       >
-        Save
+        {{ isBusy && busyAction === 'save' ? 'Saving...' : 'Save' }}
       </button>
     </div>
 
@@ -37,12 +38,17 @@ const configContent = ref('');
 const configModified = ref(false);
 const message = ref('');
 const messageType = ref<'success' | 'error'>('success');
+const isBusy = ref(false);
+const busyAction = ref<'load' | 'save'>('load');
 
 onMounted(() => {
   loadConfig();
 });
 
 async function loadConfig() {
+  if (isBusy.value) return;
+  isBusy.value = true;
+  busyAction.value = 'load';
   try {
     const response = await axios.get('/api/config');
     configContent.value = response.data.config;
@@ -53,10 +59,15 @@ async function loadConfig() {
   } catch (error) {
     message.value = 'Failed to load config';
     messageType.value = 'error';
+  } finally {
+    isBusy.value = false;
   }
 }
 
 async function saveConfig() {
+  if (isBusy.value) return;
+  isBusy.value = true;
+  busyAction.value = 'save';
   try {
     await axios.post('/api/config', { config: configContent.value });
     configModified.value = false;
@@ -70,6 +81,8 @@ async function saveConfig() {
       message.value = 'Failed to save config';
     }
     messageType.value = 'error';
+  } finally {
+    isBusy.value = false;
   }
 }
 </script>

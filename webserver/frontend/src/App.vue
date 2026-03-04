@@ -66,12 +66,12 @@
 
         <div class="p-8">
           <!-- Download Tab -->
-          <div v-if="activeTab === 'Download'" class="space-y-6">
+          <div v-show="activeTab === 'Download'" class="space-y-6">
             <DownloadRunner />
           </div>
 
           <!-- Configuration Tab -->
-          <div v-if="activeTab === 'Configuration'" class="space-y-6">
+          <div v-show="activeTab === 'Configuration'" class="space-y-6">
             <ConfigEditor v-if="configExists" />
             <div v-else class="text-center py-12">
               <p class="text-slate-400">No configuration file found at /download/config.yaml</p>
@@ -79,12 +79,12 @@
           </div>
 
           <!-- Logs Tab -->
-          <div v-if="activeTab === 'Logs'" class="space-y-6">
+          <div v-show="activeTab === 'Logs'" class="space-y-6">
             <LogViewer />
           </div>
 
           <!-- Statistics Tab -->
-          <div v-if="activeTab === 'Statistics'" class="space-y-6">
+          <div v-show="activeTab === 'Statistics'" class="space-y-6">
             <StatsDashboard />
           </div>
         </div>
@@ -131,6 +131,7 @@ const versionInfo = ref<VersionInfo>({ musicdl: '', spotigo: '' });
 
 let healthTimer: ReturnType<typeof setTimeout> | null = null;
 let rateLimitTimer: ReturnType<typeof setTimeout> | null = null;
+let unmounted = false;
 
 onMounted(() => {
   checkAPIHealth();
@@ -140,6 +141,7 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  unmounted = true;
   if (healthTimer !== null) clearTimeout(healthTimer);
   if (rateLimitTimer !== null) clearTimeout(rateLimitTimer);
 });
@@ -152,7 +154,7 @@ async function checkAPIHealth() {
   } catch {
     apiHealthy.value = false;
   }
-  healthTimer = setTimeout(checkAPIHealth, 10000);
+  if (!unmounted) healthTimer = setTimeout(checkAPIHealth, 10000);
 }
 
 async function checkConfigExists() {
@@ -184,13 +186,11 @@ async function pollRateLimitStatus() {
       remainingSeconds: Math.max(0, response.data.retryAfterTimestamp - now),
     };
 
-    if (response.data.active) {
-      rateLimitTimer = setTimeout(pollRateLimitStatus, 1000);
-    } else {
-      rateLimitTimer = setTimeout(pollRateLimitStatus, 5000);
+    if (!unmounted) {
+      rateLimitTimer = setTimeout(pollRateLimitStatus, response.data.active ? 1000 : 5000);
     }
   } catch {
-    rateLimitTimer = setTimeout(pollRateLimitStatus, 5000);
+    if (!unmounted) rateLimitTimer = setTimeout(pollRateLimitStatus, 5000);
   }
 }
 </script>

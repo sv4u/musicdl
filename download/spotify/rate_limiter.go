@@ -53,8 +53,8 @@ func (rl *RateLimiter) WaitIfNeeded(ctx context.Context) error {
 			return nil
 		}
 
-		// At limit - calculate wait time
-		// Safety check: ensure we have at least one request time
+		// At limit - calculate wait time.
+		// Reachable when maxRequests is 0: the slice is empty but len < max is false.
 		if len(rl.requestTimes) == 0 {
 			rl.mu.Unlock()
 			continue

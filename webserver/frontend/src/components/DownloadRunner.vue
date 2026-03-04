@@ -86,8 +86,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import axios from 'axios';
+
+const CONFIG_PATH = '/download/config.yaml';
 
 interface ErrorDetail {
   code: string;
@@ -110,16 +112,25 @@ const hasResumeData = ref(false);
 // Every path that calls pollStatus() must cancel the pending timer first via
 // schedulePoll() or by calling pollStatus() through restartPoll().
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
+let unmounted = false;
 
 onMounted(() => {
   pollStatus();
   checkResumeState();
 });
 
+onUnmounted(() => {
+  unmounted = true;
+  if (pollTimer !== null) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+  }
+});
+
 async function generatePlan() {
   try {
     errorDetail.value = null;
-    await axios.post('/api/download/plan', { configPath: '/download/config.yaml' });
+    await axios.post('/api/download/plan', { configPath: CONFIG_PATH });
     isRunning.value = true;
     operationType.value = 'plan';
     restartPoll();
@@ -136,7 +147,7 @@ async function runDownload(resume: boolean) {
   try {
     errorDetail.value = null;
     await axios.post('/api/download/run', {
-      configPath: '/download/config.yaml',
+      configPath: CONFIG_PATH,
       resume: resume ? 'true' : 'false',
     });
     isRunning.value = true;
@@ -181,6 +192,7 @@ function restartPoll() {
 // Schedule the next poll after `delayMs`, cancelling any pending timer first
 // so at most one timer is ever active.
 function schedulePoll(delayMs: number) {
+  if (unmounted) return;
   if (pollTimer !== null) {
     clearTimeout(pollTimer);
   }

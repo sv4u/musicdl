@@ -418,6 +418,11 @@ func (s *APIServer) Run() int {
 	go func() {
 		<-sigCh
 		fmt.Println("\nShutting down API server...")
+		s.spotifyClientMu.Lock()
+		if s.spotifyClient != nil {
+			s.spotifyClient.Close()
+		}
+		s.spotifyClientMu.Unlock()
 		server.Close()
 	}()
 
@@ -470,9 +475,9 @@ func (s *APIServer) healthHandler(w http.ResponseWriter, r *http.Request) {
 	cbStatus := s.circuitBreaker.GetStatus()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":             "healthy",
-		"time":               time.Now().Unix(),
-		"wsClients":          s.logBroadcaster.ClientCount(),
+		"status":              "healthy",
+		"time":                time.Now().Unix(),
+		"wsClients":           s.logBroadcaster.ClientCount(),
 		"circuitBreakerState": cbStatus.State,
 	})
 }
@@ -911,8 +916,8 @@ func (s *APIServer) rateLimitStatusHandler(w http.ResponseWriter, r *http.Reques
 				"active":              true,
 				"retryAfterSeconds":   info.RetryAfterSeconds,
 				"retryAfterTimestamp": info.RetryAfterTimestamp,
-				"detectedAt":         info.DetectedAt,
-				"remainingSeconds":   remaining,
+				"detectedAt":          info.DetectedAt,
+				"remainingSeconds":    remaining,
 			})
 			return
 		}
@@ -1051,7 +1056,7 @@ func (s *APIServer) resumeRetryFailedHandler(w http.ResponseWriter, r *http.Requ
 	s.logBroadcaster.BroadcastString("info", fmt.Sprintf("Retrying %d failed items", len(retryable)), "recovery")
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message":       fmt.Sprintf("Found %d retryable items", len(retryable)),
+		"message":        fmt.Sprintf("Found %d retryable items", len(retryable)),
 		"retryableItems": retryable,
 	})
 }

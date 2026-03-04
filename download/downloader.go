@@ -72,7 +72,11 @@ func (d *Downloader) DownloadTrack(ctx context.Context, item *plan.PlanItem) (bo
 				url = item.YouTubeURL
 			}
 			log.Printf("INFO: retry attempt=%d max_retries=%d url=%s error=%v wait_seconds=%d", attempt, maxRetries, url, err, int(waitTime.Seconds()))
-			time.Sleep(waitTime)
+			select {
+			case <-ctx.Done():
+				return false, "", ctx.Err()
+			case <-time.After(waitTime):
+			}
 		}
 	}
 
@@ -617,41 +621,9 @@ func (d *Downloader) getOutputPath(song *metadata.Song) string {
 	return output
 }
 
-// sanitizeFilename sanitizes a filename by removing invalid characters.
-// Also removes directory traversal sequences for additional security.
+// sanitizeFilename delegates to plan.SanitizeFilename for a single implementation.
 func sanitizeFilename(name string) string {
-	if name == "" {
-		return "_"
-	}
-
-	// Limit length by rune count to prevent filesystem issues and invalid UTF-8
-	const maxLen = 255
-	result := []rune(name)
-	if len(result) > maxLen {
-		result = result[:maxLen]
-	}
-
-	invalidChars := []rune{'/', '\\', ':', '*', '?', '"', '<', '>', '|'}
-	for i, r := range result {
-		for _, invalid := range invalidChars {
-			if r == invalid {
-				result[i] = '_'
-				break
-			}
-		}
-	}
-
-	// Remove directory traversal sequences
-	sanitized := string(result)
-	sanitized = strings.ReplaceAll(sanitized, "..", "_")
-
-	// Remove leading/trailing dots and spaces (Windows issue)
-	sanitized = strings.Trim(sanitized, ". ")
-	if sanitized == "" {
-		return "_"
-	}
-
-	return sanitized
+	return plan.SanitizeFilename(name)
 }
 
 // fileExistsCached checks if file exists using cache.

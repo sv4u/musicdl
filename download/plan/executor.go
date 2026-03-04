@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -374,7 +375,7 @@ func (e *Executor) processM3UFiles(plan *DownloadPlan) {
 // createM3UFile creates an M3U playlist file.
 func (e *Executor) createM3UFile(playlistName string, tracks []*PlanItem) (string, error) {
 	// Sanitize playlist name for filename
-	playlistNameSafe := sanitizeFilename(playlistName)
+	playlistNameSafe := SanitizeFilename(playlistName)
 
 	// Get base output directory from first track
 	if len(tracks) == 0 {
@@ -456,10 +457,19 @@ func (e *Executor) createM3UFile(playlistName string, tracks []*PlanItem) (strin
 }
 
 // sanitizeFilename sanitizes a filename by removing invalid characters.
-func sanitizeFilename(name string) string {
-	// Remove invalid filename characters
-	invalidChars := []rune{'/', '\\', ':', '*', '?', '"', '<', '>', '|'}
+// SanitizeFilename removes invalid filename characters and applies safety limits.
+func SanitizeFilename(name string) string {
+	if name == "" {
+		return "_"
+	}
+
+	const maxLen = 255
 	result := []rune(name)
+	if len(result) > maxLen {
+		result = result[:maxLen]
+	}
+
+	invalidChars := []rune{'/', '\\', ':', '*', '?', '"', '<', '>', '|'}
 	for i, r := range result {
 		for _, invalid := range invalidChars {
 			if r == invalid {
@@ -468,7 +478,14 @@ func sanitizeFilename(name string) string {
 			}
 		}
 	}
-	return string(result)
+
+	sanitized := strings.ReplaceAll(string(result), "..", "_")
+	sanitized = strings.Trim(sanitized, ". ")
+	if sanitized == "" {
+		return "_"
+	}
+
+	return sanitized
 }
 
 // notifyProgress notifies progress callback if set.

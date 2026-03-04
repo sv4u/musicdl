@@ -49,10 +49,10 @@ func (e *Embedder) embedFLACWithMutagen(ctx context.Context, filePath string, so
 	// Generate Python script content
 	script := fmt.Sprintf(`#!/usr/bin/env python3
 import sys
-from mutagen.flac import FLAC
+from mutagen.flac import FLAC, Picture
 
 try:
-    audio = FLAC('%s')
+    audio = FLAC(%q)
     
     # Clear existing tags
     audio.clear()
@@ -91,8 +91,13 @@ try:
 	if coverPath != "" {
 		script += fmt.Sprintf(`
     # Add cover art
+    pic = Picture()
+    pic.type = 3  # Cover (front)
+    pic.mime = 'image/jpeg'
     with open(%q, 'rb') as f:
-        audio['PICTURE'] = f.read()
+        pic.data = f.read()
+    audio.clear_pictures()
+    audio.add_picture(pic)
 `, coverPath)
 	}
 

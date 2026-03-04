@@ -5,6 +5,18 @@ import (
 	"strings"
 )
 
+var (
+	videoPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`(?i)(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]{11})`),
+		regexp.MustCompile(`(?i)youtube\.com/embed/([a-zA-Z0-9_-]{11})`),
+		regexp.MustCompile(`(?i)youtube\.com/v/([a-zA-Z0-9_-]{11})`),
+	}
+	playlistPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`(?i)[?&]list=([a-zA-Z0-9_-]+)`),
+		regexp.MustCompile(`(?i)youtube\.com/playlist\?list=([a-zA-Z0-9_-]+)`),
+	}
+)
+
 // IsYouTubeURL checks if a URL is a YouTube URL (video or playlist).
 func IsYouTubeURL(url string) bool {
 	if url == "" {
@@ -21,12 +33,6 @@ func IsYouTubeVideo(url string) bool {
 	if !IsYouTubeURL(url) {
 		return false
 	}
-	// Use case-insensitive regex patterns to handle uppercase URLs consistently
-	videoPatterns := []*regexp.Regexp{
-		regexp.MustCompile(`(?i)(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]{11})`),
-		regexp.MustCompile(`(?i)youtube\.com/embed/([a-zA-Z0-9_-]{11})`),
-		regexp.MustCompile(`(?i)youtube\.com/v/([a-zA-Z0-9_-]{11})`),
-	}
 	for _, pattern := range videoPatterns {
 		if pattern.MatchString(url) {
 			return true
@@ -39,11 +45,6 @@ func IsYouTubeVideo(url string) bool {
 func IsYouTubePlaylist(url string) bool {
 	if !IsYouTubeURL(url) {
 		return false
-	}
-	// Use case-insensitive regex patterns to handle uppercase URLs consistently
-	playlistPatterns := []*regexp.Regexp{
-		regexp.MustCompile(`(?i)[?&]list=([a-zA-Z0-9_-]+)`),
-		regexp.MustCompile(`(?i)youtube\.com/playlist\?list=([a-zA-Z0-9_-]+)`),
 	}
 	for _, pattern := range playlistPatterns {
 		if pattern.MatchString(url) {
@@ -58,13 +59,7 @@ func ExtractYouTubeVideoID(url string) string {
 	if !IsYouTubeVideo(url) {
 		return ""
 	}
-	// Use case-insensitive regex patterns to handle uppercase URLs consistently
-	patterns := []*regexp.Regexp{
-		regexp.MustCompile(`(?i)(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]{11})`),
-		regexp.MustCompile(`(?i)youtube\.com/embed/([a-zA-Z0-9_-]{11})`),
-		regexp.MustCompile(`(?i)youtube\.com/v/([a-zA-Z0-9_-]{11})`),
-	}
-	for _, pattern := range patterns {
+	for _, pattern := range videoPatterns {
 		matches := pattern.FindStringSubmatch(url)
 		if len(matches) > 1 {
 			return matches[1]
@@ -78,12 +73,7 @@ func ExtractYouTubePlaylistID(url string) string {
 	if !IsYouTubePlaylist(url) {
 		return ""
 	}
-	// Use case-insensitive regex patterns to handle uppercase URLs consistently
-	patterns := []*regexp.Regexp{
-		regexp.MustCompile(`(?i)[?&]list=([a-zA-Z0-9_-]+)`),
-		regexp.MustCompile(`(?i)youtube\.com/playlist\?list=([a-zA-Z0-9_-]+)`),
-	}
-	for _, pattern := range patterns {
+	for _, pattern := range playlistPatterns {
 		matches := pattern.FindStringSubmatch(url)
 		if len(matches) > 1 {
 			return matches[1]

@@ -45,16 +45,18 @@ func (e *Embedder) embedVorbisWithMutagen(ctx context.Context, filePath string, 
 	// Generate Python script content
 	script := fmt.Sprintf(`#!/usr/bin/env python3
 import sys
+import base64
 from mutagen.oggvorbis import OggVorbis
 from mutagen.oggopus import OggOpus
+from mutagen.flac import Picture
 
 try:
     # Try OggVorbis first (for .ogg files)
     try:
-        audio = OggVorbis('%s')
+        audio = OggVorbis(%q)
     except:
         # Try OggOpus (for .opus files)
-        audio = OggOpus('%s')
+        audio = OggOpus(%q)
     
     # Clear existing tags
     audio.clear()
@@ -93,8 +95,12 @@ try:
 	if coverPath != "" {
 		script += fmt.Sprintf(`
     # Add cover art
+    pic = Picture()
+    pic.type = 3  # Cover (front)
+    pic.mime = 'image/jpeg'
     with open(%q, 'rb') as f:
-        audio['METADATA_BLOCK_PICTURE'] = f.read()
+        pic.data = f.read()
+    audio['METADATA_BLOCK_PICTURE'] = [base64.b64encode(pic.write()).decode('ascii')]
 `, coverPath)
 	}
 

@@ -50,6 +50,7 @@
     <div
       ref="logContainer"
       class="bg-slate-950 border border-slate-600 rounded p-4 h-96 overflow-y-auto font-mono text-sm"
+      @scroll="handleScroll"
     >
       <div v-if="filteredLogs.length === 0" class="text-slate-500">
         {{ logs.length === 0 ? 'No logs yet. Waiting for messages...' : 'No logs match the current filter.' }}
@@ -242,6 +243,13 @@ function toggleConnection() {
 
 function clearLogs() {
   logs.value = [];
+}
+
+function handleScroll() {
+  if (!logContainer.value) return;
+  const el = logContainer.value;
+  const threshold = 40;
+  autoScroll = el.scrollTop + el.clientHeight >= el.scrollHeight - threshold;
 }
 
 function scrollToBottom() {

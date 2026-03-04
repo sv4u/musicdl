@@ -44,10 +44,10 @@ func (e *Embedder) embedM4AWithMutagen(ctx context.Context, filePath string, son
 	// Generate Python script content
 	script := fmt.Sprintf(`#!/usr/bin/env python3
 import sys
-from mutagen.mp4 import MP4
+from mutagen.mp4 import MP4, MP4Cover
 
 try:
-    audio = MP4('%s')
+    audio = MP4(%q)
     
     # Clear existing tags
     audio.clear()
@@ -94,8 +94,7 @@ try:
 		script += fmt.Sprintf(`
     # Add cover art
     with open(%q, 'rb') as f:
-        cover_data = f.read()
-        audio['covr'] = [cover_data]
+        audio['covr'] = [MP4Cover(f.read(), imageformat=MP4Cover.FORMAT_JPEG)]
 `, coverPath)
 	}
 

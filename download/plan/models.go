@@ -158,6 +158,7 @@ func (p *PlanItem) GetMetadata() map[string]interface{} {
 type DownloadPlan struct {
 	Items    []*PlanItem            `json:"items"`
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
+	itemIdx  map[string]*PlanItem   `json:"-"`
 }
 
 // NewDownloadPlan creates a new download plan.
@@ -165,16 +166,37 @@ func NewDownloadPlan(metadata map[string]interface{}) *DownloadPlan {
 	return &DownloadPlan{
 		Items:    make([]*PlanItem, 0),
 		Metadata: metadata,
+		itemIdx:  make(map[string]*PlanItem),
 	}
 }
 
 // AddItem adds an item to the plan.
 func (p *DownloadPlan) AddItem(item *PlanItem) {
 	p.Items = append(p.Items, item)
+	if p.itemIdx == nil {
+		p.itemIdx = make(map[string]*PlanItem)
+	}
+	if item.ItemID != "" {
+		p.itemIdx[item.ItemID] = item
+	}
 }
 
-// GetItem retrieves an item by ID.
+// RebuildIndex rebuilds the internal lookup index from the Items slice.
+// Call after deserializing a plan from JSON.
+func (p *DownloadPlan) RebuildIndex() {
+	p.itemIdx = make(map[string]*PlanItem, len(p.Items))
+	for _, item := range p.Items {
+		if item.ItemID != "" {
+			p.itemIdx[item.ItemID] = item
+		}
+	}
+}
+
+// GetItem retrieves an item by ID using the internal index.
 func (p *DownloadPlan) GetItem(itemID string) *PlanItem {
+	if p.itemIdx != nil {
+		return p.itemIdx[itemID]
+	}
 	for _, item := range p.Items {
 		if item.ItemID == itemID {
 			return item
@@ -267,7 +289,7 @@ func (p *DownloadPlan) Save(filePath string) error {
 	return os.WriteFile(filePath, data, 0644)
 }
 
-// Load loads a plan from a JSON file.
+// Load loads a plan from a JSON file and rebuilds the lookup index.
 func LoadPlan(filePath string) (*DownloadPlan, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -279,5 +301,6 @@ func LoadPlan(filePath string) (*DownloadPlan, error) {
 		return nil, err
 	}
 
+	plan.RebuildIndex()
 	return &plan, nil
 }

@@ -1,5 +1,7 @@
 import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import axios from 'axios';
 import dotenv from 'dotenv';
 import { createProxyMiddleware } from 'http-proxy-middleware';
@@ -10,11 +12,61 @@ const app: Express = express();
 const port = process.env.PORT || 3000;
 const goAPIPort = process.env.GO_API_PORT || 5000;
 const goAPIHost = process.env.GO_API_HOST || 'localhost';
+
+const allowedHosts = new Set(["localhost", "127.0.0.1", "::1"]);
+if (goAPIHost && !allowedHosts.has(goAPIHost)) {
+  if (!/^[\w.-]+$/.test(goAPIHost)) {
+    throw new Error(`Invalid GO_API_HOST: ${goAPIHost}`);
+  }
+}
+if (goAPIPort && !/^\d+$/.test(String(goAPIPort))) {
+  throw new Error(`Invalid GO_API_PORT: ${goAPIPort}`);
+}
+
 const goAPIBaseURL = `http://${goAPIHost}:${goAPIPort}`;
 
-// Middleware
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+// Security headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'", `ws://localhost:${port}`, `ws://127.0.0.1:${port}`],
+    },
+  },
+}));
+
+// CORS restricted to local network
+const allowedOrigins = [
+  `http://localhost:${port}`,
+  `http://127.0.0.1:${port}`,
+  `http://localhost:5173`,
+  `http://127.0.0.1:5173`,
+];
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('CORS: origin not allowed'));
+    }
+  },
+  methods: ['GET', 'POST'],
+}));
+
+// Rate limiter: 100 requests per minute per IP
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later' },
+});
+app.use('/api/', apiLimiter);
+
+app.use(express.json({ limit: '1mb' }));
 app.use(express.static('public'));
 
 // WebSocket proxy for real-time logs.
@@ -36,15 +88,41 @@ const wsProxy = createProxyMiddleware({
 });
 app.use(wsProxy);
 
+// Helper to build upstream URL with query parameters forwarded
+function buildUpstreamURL(path: string, query: Record<string, unknown>): string {
+  const url = new URL(`${goAPIBaseURL}${path}`);
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null) {
+      url.searchParams.append(key, String(value));
+    }
+  }
+  return url.toString();
+}
+
+// Builds a safe error payload: forwards the upstream `error` field if present,
+// otherwise falls back to the static errorMsg. Never leaks raw response bodies.
+function safeErrorPayload(upstreamData: unknown, errorMsg: string, status: number) {
+  const msg =
+    typeof upstreamData === 'object' && upstreamData !== null && 'error' in upstreamData
+      ? (upstreamData as Record<string, unknown>).error
+      : errorMsg;
+  return { error: msg, status };
+}
+
 // Helper to proxy GET requests
 function proxyGet(path: string, errorMsg: string) {
   app.get(path, async (req: Request, res: Response) => {
     try {
-      const response = await axios.get(`${goAPIBaseURL}${path}`);
+      const response = await axios.get(
+        buildUpstreamURL(path, req.query as Record<string, unknown>),
+      );
       res.json(response.data);
     } catch (error) {
       if (axios.isAxiosError(error) && error.response) {
-        res.status(error.response.status).json(error.response.data);
+        const status = error.response.status;
+        res
+          .status(status)
+          .json(safeErrorPayload(error.response.data, errorMsg, status));
       } else {
         res.status(500).json({ error: errorMsg });
       }
@@ -56,11 +134,15 @@ function proxyGet(path: string, errorMsg: string) {
 function proxyPost(path: string, errorMsg: string) {
   app.post(path, async (req: Request, res: Response) => {
     try {
-      const response = await axios.post(`${goAPIBaseURL}${path}`, req.body);
+      const url = buildUpstreamURL(path, req.query as Record<string, unknown>);
+      const response = await axios.post(url, req.body);
       res.status(response.status).json(response.data);
     } catch (error) {
       if (axios.isAxiosError(error) && error.response) {
-        res.status(error.response.status).json(error.response.data);
+        const status = error.response.status;
+        res
+          .status(status)
+          .json(safeErrorPayload(error.response.data, errorMsg, status));
       } else {
         res.status(500).json({ error: errorMsg });
       }
