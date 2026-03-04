@@ -3,54 +3,10 @@ package spotify
 import (
 	"context"
 	"fmt"
-	"log"
-	"net/http"
-	"strings"
 	"time"
 
-	"github.com/sv4u/spotigo"
+	"github.com/sv4u/spotigo/v2"
 )
-
-// rateLimitLogger implements spotigo.Logger and updates RateLimitTracker when
-// spotigo logs its rate limit warning. Spotigo retries 429 internally and
-// never returns the error on successful retry, so handleError is never called.
-// This logger hooks into spotigo's logRetry to keep the tracker in sync.
-type rateLimitLogger struct {
-	tracker *RateLimitTracker
-}
-
-func (l *rateLimitLogger) Debug(format string, v ...interface{}) {}
-
-func (l *rateLimitLogger) Info(format string, v ...interface{}) {
-	log.Printf("[INFO] "+format, v...)
-}
-
-func (l *rateLimitLogger) Warn(format string, v ...interface{}) {
-	// Spotigo logs: "Your application has reached a rate/request limit. Retry will occur after: %.0f s"
-	if strings.Contains(format, "rate/request limit") && len(v) >= 1 {
-		if sec, ok := toIntSeconds(v[0]); ok && sec > 0 {
-			l.tracker.Update(sec)
-		}
-	}
-	log.Printf("[WARN] "+format, v...)
-}
-
-func (l *rateLimitLogger) Error(format string, v ...interface{}) {
-	log.Printf("[ERROR] "+format, v...)
-}
-
-func toIntSeconds(v interface{}) (int, bool) {
-	switch x := v.(type) {
-	case float64:
-		return int(x), true
-	case int:
-		return x, true
-	case int64:
-		return int(x), true
-	default:
-		return 0, false
-	}
-}
 
 // Config holds configuration for the Spotify client wrapper.
 type Config struct {
@@ -82,7 +38,7 @@ type Config struct {
 // SpotifyClient is a wrapper around spotigo.Client that adds:
 // - Proactive rate limiting
 // - Response caching
-// - Rate limit state tracking
+// - Rate limit state tracking via WithRateLimitCallback
 type SpotifyClient struct {
 	client             *spotigo.Client
 	cache              *TTLCache
@@ -96,13 +52,11 @@ type SpotifyClient struct {
 
 // NewSpotifyClient creates a new Spotify client wrapper.
 func NewSpotifyClient(config *Config) (*SpotifyClient, error) {
-	// Create spotigo auth manager
 	auth, err := spotigo.NewClientCredentials(config.ClientID, config.ClientSecret)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create auth: %w", err)
 	}
 
-	// Create wrapper components
 	cache := NewTTLCache(config.CacheMaxSize, config.CacheTTL)
 	if config.CacheCleanupInterval > 0 {
 		cache.StartCleanup(config.CacheCleanupInterval)
@@ -115,7 +69,14 @@ func NewSpotifyClient(config *Config) (*SpotifyClient, error) {
 	)
 
 	tracker := NewRateLimitTracker()
-	spotigoClient, err := spotigo.NewClient(auth, spotigo.WithLogger(&rateLimitLogger{tracker: tracker}))
+
+	spotigoClient, err := spotigo.NewClient(auth,
+		spotigo.WithRateLimitCallback(func(retryAfter time.Duration) {
+			if sec := int(retryAfter.Seconds()); sec > 0 {
+				tracker.Update(sec)
+			}
+		}),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create spotigo client: %w", err)
 	}
@@ -132,7 +93,6 @@ func NewSpotifyClient(config *Config) (*SpotifyClient, error) {
 
 // applyRateLimiting applies both general and Spotify-specific rate limiting.
 func (c *SpotifyClient) applyRateLimiting(ctx context.Context) error {
-	// Check context cancellation
 	if ctx != nil {
 		select {
 		case <-ctx.Done():
@@ -141,14 +101,12 @@ func (c *SpotifyClient) applyRateLimiting(ctx context.Context) error {
 		}
 	}
 
-	// Apply general rate limiter if enabled
 	if c.generalRateLimiter != nil {
 		if err := c.generalRateLimiter.WaitForRequest(ctx); err != nil {
 			return err
 		}
 	}
 
-	// Apply Spotify-specific rate limiter
 	if err := c.rateLimiter.WaitIfNeeded(ctx); err != nil {
 		return err
 	}
@@ -162,9 +120,11 @@ func (c *SpotifyClient) handleError(err error) error {
 		return nil
 	}
 
-	// Check if it's a rate limit error
-	if c.isRateLimitError(err) {
-		retryAfter := c.extractRetryAfter(err)
+	if spotifyErr, ok := err.(*spotigo.SpotifyError); ok && spotifyErr.StatusCode() == 429 {
+		retryAfter := 1
+		if duration, hasRetryAfter := spotifyErr.RetryAfter(); hasRetryAfter && duration > 0 {
+			retryAfter = int(duration.Seconds())
+		}
 		c.rateLimitTracker.Update(retryAfter)
 		return &RateLimitError{
 			RetryAfter: retryAfter,
@@ -172,41 +132,10 @@ func (c *SpotifyClient) handleError(err error) error {
 		}
 	}
 
-	// Wrap other errors
 	return &SpotifyError{
 		Message:  "Spotify API error",
 		Original: err,
 	}
-}
-
-// isRateLimitError checks if an error is a rate limit error (HTTP 429).
-func (c *SpotifyClient) isRateLimitError(err error) bool {
-	// Check for HTTP 429 status
-	if httpErr, ok := err.(interface {
-		StatusCode() int
-	}); ok {
-		return httpErr.StatusCode() == http.StatusTooManyRequests
-	}
-
-	// Check error message for rate limit indicators
-	errStr := strings.ToLower(err.Error())
-	return strings.Contains(errStr, "429") ||
-		strings.Contains(errStr, "rate limit") ||
-		strings.Contains(errStr, "too many requests")
-}
-
-// extractRetryAfter extracts Retry-After value from error.
-// spotigo.SpotifyError.RetryAfter returns (time.Duration, bool).
-func (c *SpotifyClient) extractRetryAfter(err error) int {
-	defaultRetryAfter := 1
-	if httpErr, ok := err.(interface {
-		RetryAfter() (time.Duration, bool)
-	}); ok {
-		if duration, hasRetryAfter := httpErr.RetryAfter(); hasRetryAfter && duration > 0 {
-			return int(duration.Seconds())
-		}
-	}
-	return defaultRetryAfter
 }
 
 // GetRateLimitInfo returns the current rate limit state.
@@ -231,13 +160,11 @@ func (c *SpotifyClient) Close() {
 
 // GetTrack retrieves track metadata (cached).
 func (c *SpotifyClient) GetTrack(ctx context.Context, trackIDOrURL string) (*spotigo.Track, error) {
-	// Extract ID for cache key (spotigo handles URL/URI/ID parsing)
 	trackID, err := spotigo.GetID(trackIDOrURL, "track")
 	if err != nil {
 		return nil, fmt.Errorf("invalid track ID/URL: %w", err)
 	}
 
-	// Check cache
 	cacheKey := fmt.Sprintf("track:%s", trackID)
 	if cached := c.cache.Get(cacheKey); cached != nil {
 		if track, ok := cached.(*spotigo.Track); ok {
@@ -245,21 +172,16 @@ func (c *SpotifyClient) GetTrack(ctx context.Context, trackIDOrURL string) (*spo
 		}
 	}
 
-	// Apply rate limiting
 	if err := c.applyRateLimiting(ctx); err != nil {
 		return nil, err
 	}
 
-	// Call spotigo (it handles URL/URI/ID parsing)
 	track, err := c.client.Track(ctx, trackIDOrURL)
 	if err != nil {
 		return nil, c.handleError(err)
 	}
 
-	// Cache result
 	c.cache.Set(cacheKey, track)
-
-	// Clear rate limit state on success
 	c.rateLimitTracker.Clear()
 
 	return track, nil
@@ -352,9 +274,9 @@ func (c *SpotifyClient) GetArtist(ctx context.Context, artistIDOrURL string) (*s
 	return artist, nil
 }
 
-// GetArtistAlbums retrieves all albums and singles for an artist (cached).
-// Excludes compilations and "Appears On" albums.
-func (c *SpotifyClient) GetArtistAlbums(ctx context.Context, artistIDOrURL string) ([]spotigo.SimplifiedAlbum, error) {
+// AllArtistAlbums retrieves all albums and singles for an artist (cached).
+// Delegates pagination to spotigo's AllArtistAlbums. Excludes compilations and "Appears On" albums.
+func (c *SpotifyClient) AllArtistAlbums(ctx context.Context, artistIDOrURL string) ([]spotigo.SimplifiedAlbum, error) {
 	artistID, err := spotigo.GetID(artistIDOrURL, "artist")
 	if err != nil {
 		return nil, fmt.Errorf("invalid artist ID/URL: %w", err)
@@ -367,13 +289,11 @@ func (c *SpotifyClient) GetArtistAlbums(ctx context.Context, artistIDOrURL strin
 		}
 	}
 
-	// Fetch first page with rate limiting
 	if err := c.applyRateLimiting(ctx); err != nil {
 		return nil, err
 	}
 
-	// Get first page - filter to albums and singles only
-	paging, err := c.client.ArtistAlbums(ctx, artistID, &spotigo.ArtistAlbumsOptions{
+	allAlbums, err := c.client.AllArtistAlbums(ctx, artistID, &spotigo.ArtistAlbumsOptions{
 		IncludeGroups: []string{"album", "single"},
 		Limit:         50,
 	})
@@ -381,103 +301,74 @@ func (c *SpotifyClient) GetArtistAlbums(ctx context.Context, artistIDOrURL strin
 		return nil, c.handleError(err)
 	}
 
-	allAlbums := make([]spotigo.SimplifiedAlbum, 0, len(paging.Items))
-	allAlbums = append(allAlbums, paging.Items...)
-
-	// Paginate through remaining pages
-	for paging.GetNext() != nil {
-		// Check context before each page
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
-		}
-
-		// Get next page with rate limiting
-		paging, err = c.NextWithRateLimit(ctx, paging)
-		if err != nil {
-			return nil, fmt.Errorf("failed to paginate artist albums: %w", err)
-		}
-		if paging == nil {
-			break
-		}
-
-		allAlbums = append(allAlbums, paging.Items...)
-	}
-
-	// Cache complete result
 	c.cache.Set(cacheKey, allAlbums)
 	c.rateLimitTracker.Clear()
 
 	return allAlbums, nil
 }
 
-// NextWithRateLimit gets the next page of results with rate limiting.
-func (c *SpotifyClient) NextWithRateLimit(ctx context.Context, paging interface{ GetNext() *string }) (*spotigo.Paging[spotigo.SimplifiedAlbum], error) {
-	// Apply rate limiting
-	if err := c.applyRateLimiting(ctx); err != nil {
-		return nil, err
+// AllAlbumTracks retrieves all tracks from an album (cached).
+// Delegates pagination to spotigo's AllAlbumTracks.
+func (c *SpotifyClient) AllAlbumTracks(ctx context.Context, albumIDOrURL string) ([]spotigo.SimplifiedTrack, error) {
+	albumID, err := spotigo.GetID(albumIDOrURL, "album")
+	if err != nil {
+		return nil, fmt.Errorf("invalid album ID/URL: %w", err)
 	}
 
-	// Use spotigo's type-safe pagination
-	return spotigo.NextGeneric[spotigo.SimplifiedAlbum](c.client, ctx, paging)
-}
-
-// NextAlbumTracks gets the next page of album tracks with rate limiting.
-func (c *SpotifyClient) NextAlbumTracks(ctx context.Context, paging interface{ GetNext() *string }) (*spotigo.Paging[spotigo.SimplifiedTrack], error) {
-	// Apply rate limiting
-	if err := c.applyRateLimiting(ctx); err != nil {
-		return nil, err
-	}
-
-	// Use spotigo's type-safe pagination
-	return spotigo.NextGeneric[spotigo.SimplifiedTrack](c.client, ctx, paging)
-}
-
-// NextPlaylistTracks gets the next page of playlist tracks with rate limiting.
-func (c *SpotifyClient) NextPlaylistTracks(ctx context.Context, paging interface{ GetNext() *string }) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-	// Apply rate limiting
-	if err := c.applyRateLimiting(ctx); err != nil {
-		return nil, err
-	}
-
-	// Use spotigo's type-safe pagination
-	return spotigo.NextGeneric[spotigo.PlaylistTrack](c.client, ctx, paging)
-}
-
-// GetPlaylistTracks retrieves tracks from a playlist (cached).
-func (c *SpotifyClient) GetPlaylistTracks(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-	// Check cache
-	cacheKey := fmt.Sprintf("playlist_tracks:%s", playlistID)
+	cacheKey := fmt.Sprintf("album_tracks:%s", albumID)
 	if cached := c.cache.Get(cacheKey); cached != nil {
-		if tracks, ok := cached.(*spotigo.Paging[spotigo.PlaylistTrack]); ok {
+		if tracks, ok := cached.([]spotigo.SimplifiedTrack); ok {
 			return tracks, nil
 		}
 	}
 
-	// Apply rate limiting
 	if err := c.applyRateLimiting(ctx); err != nil {
 		return nil, err
 	}
 
-	// Call spotigo
-	tracks, err := c.client.PlaylistTracks(ctx, playlistID, opts)
+	allTracks, err := c.client.AllAlbumTracks(ctx, albumID, nil)
 	if err != nil {
 		return nil, c.handleError(err)
 	}
 
-	// Cache result
-	c.cache.Set(cacheKey, tracks)
-
-	// Clear rate limit state on success
+	c.cache.Set(cacheKey, allTracks)
 	c.rateLimitTracker.Clear()
 
-	return tracks, nil
+	return allTracks, nil
 }
 
-// Search searches for tracks, artists, albums, etc. on Spotify (cached).
-// searchType should be one of: "track", "artist", "album", "playlist", "show", "episode", "audiobook"
-// or a comma-separated list like "track,album"
+// AllPlaylistTracks retrieves all tracks from a playlist (cached).
+// Delegates pagination to spotigo's AllPlaylistTracks.
+func (c *SpotifyClient) AllPlaylistTracks(ctx context.Context, playlistIDOrURL string) ([]spotigo.PlaylistTrack, error) {
+	playlistID, err := spotigo.GetID(playlistIDOrURL, "playlist")
+	if err != nil {
+		return nil, fmt.Errorf("invalid playlist ID/URL: %w", err)
+	}
+
+	cacheKey := fmt.Sprintf("all_playlist_tracks:%s", playlistID)
+	if cached := c.cache.Get(cacheKey); cached != nil {
+		if tracks, ok := cached.([]spotigo.PlaylistTrack); ok {
+			return tracks, nil
+		}
+	}
+
+	if err := c.applyRateLimiting(ctx); err != nil {
+		return nil, err
+	}
+
+	allTracks, err := c.client.AllPlaylistTracks(ctx, playlistID, nil)
+	if err != nil {
+		return nil, c.handleError(err)
+	}
+
+	c.cache.Set(cacheKey, allTracks)
+	c.rateLimitTracker.Clear()
+
+	return allTracks, nil
+}
+
+// Search searches for tracks on Spotify (cached).
 func (c *SpotifyClient) Search(ctx context.Context, query, searchType string, opts *spotigo.SearchOptions) (*spotigo.SearchResponse, error) {
-	// Create cache key from query and search type
 	cacheKey := fmt.Sprintf("search:%s:%s", searchType, query)
 	if cached := c.cache.Get(cacheKey); cached != nil {
 		if response, ok := cached.(*spotigo.SearchResponse); ok {
@@ -485,21 +376,16 @@ func (c *SpotifyClient) Search(ctx context.Context, query, searchType string, op
 		}
 	}
 
-	// Apply rate limiting
 	if err := c.applyRateLimiting(ctx); err != nil {
 		return nil, err
 	}
 
-	// Call spotigo
 	response, err := c.client.Search(ctx, query, searchType, opts)
 	if err != nil {
 		return nil, c.handleError(err)
 	}
 
-	// Cache result
 	c.cache.Set(cacheKey, response)
-
-	// Clear rate limit state on success
 	c.rateLimitTracker.Clear()
 
 	return response, nil

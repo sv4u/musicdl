@@ -15,7 +15,6 @@ import (
 	"github.com/sv4u/musicdl/download/metadata"
 	"github.com/sv4u/musicdl/download/plan"
 	"github.com/sv4u/musicdl/download/spotify"
-	"github.com/sv4u/spotigo"
 )
 
 func loadSpotifyCredentials(t *testing.T) (string, string) {
@@ -97,10 +96,7 @@ func TestE2E_SingleTrackDownload(t *testing.T) {
 	executor := plan.NewExecutor(downloader, 1)
 
 	// Create generator
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return spotifyClient.GetPlaylistTracks(ctx, playlistID, opts)
-	}
-	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc, audioProvider)
+	generator := plan.NewGenerator(cfg, spotifyClient, audioProvider)
 
 	// Create optimizer
 	optimizer := plan.NewOptimizer(true, config.OverwriteSkip, "", "")
@@ -218,10 +214,7 @@ func TestE2E_PlanWorkflow_WithRealSpotify(t *testing.T) {
 	downloader := NewDownloader(&cfg.Download, spotifyClient, audioProvider, metadataEmbedder)
 	executor := plan.NewExecutor(downloader, cfg.Download.Threads)
 
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return spotifyClient.GetPlaylistTracks(ctx, playlistID, opts)
-	}
-	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc, audioProvider)
+	generator := plan.NewGenerator(cfg, spotifyClient, audioProvider)
 	optimizer := plan.NewOptimizer(true, config.OverwriteSkip, "", "")
 
 	ctx := context.Background()
@@ -317,10 +310,7 @@ func TestE2E_PlanPersistence_WithRealDownload(t *testing.T) {
 	metadataEmbedder := metadata.NewEmbedder()
 	downloader := NewDownloader(&cfg.Download, spotifyClient, audioProvider, metadataEmbedder)
 
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return spotifyClient.GetPlaylistTracks(ctx, playlistID, opts)
-	}
-	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc, audioProvider)
+	generator := plan.NewGenerator(cfg, spotifyClient, audioProvider)
 	optimizer := plan.NewOptimizer(true, config.OverwriteSkip, "", "")
 
 	ctx := context.Background()

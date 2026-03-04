@@ -5,14 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/sv4u/musicdl/download/audio"
 	"github.com/sv4u/musicdl/download/config"
 	"github.com/sv4u/musicdl/download/spotify"
-	"github.com/sv4u/spotigo"
+	"github.com/sv4u/spotigo/v2"
 )
 
 const rateLimitRetryMaxAttempts = 3
@@ -66,22 +65,22 @@ type YouTubeMetadataProvider interface {
 	GetPlaylistInfo(ctx context.Context, playlistURL string) (*audio.YouTubePlaylistInfo, error)
 }
 
+// SpotifyClientInterface defines the interface for Spotify client operations.
+type SpotifyClientInterface interface {
+	GetTrack(ctx context.Context, trackIDOrURL string) (*spotigo.Track, error)
+	GetAlbum(ctx context.Context, albumIDOrURL string) (*spotigo.Album, error)
+	GetArtist(ctx context.Context, artistIDOrURL string) (*spotigo.Artist, error)
+	GetPlaylist(ctx context.Context, playlistIDOrURL string) (*spotigo.Playlist, error)
+	AllArtistAlbums(ctx context.Context, artistIDOrURL string) ([]spotigo.SimplifiedAlbum, error)
+	AllAlbumTracks(ctx context.Context, albumIDOrURL string) ([]spotigo.SimplifiedTrack, error)
+	AllPlaylistTracks(ctx context.Context, playlistIDOrURL string) ([]spotigo.PlaylistTrack, error)
+	Search(ctx context.Context, query, searchType string, opts *spotigo.SearchOptions) (*spotigo.SearchResponse, error)
+}
+
 // Generator generates download plans from configuration.
 type Generator struct {
-	config        *config.MusicDLConfig
-	spotifyClient interface {
-		GetTrack(ctx context.Context, trackIDOrURL string) (*spotigo.Track, error)
-		GetAlbum(ctx context.Context, albumIDOrURL string) (*spotigo.Album, error)
-		GetArtist(ctx context.Context, artistIDOrURL string) (*spotigo.Artist, error)
-		GetPlaylist(ctx context.Context, playlistIDOrURL string) (*spotigo.Playlist, error)
-		GetArtistAlbums(ctx context.Context, artistIDOrURL string) ([]spotigo.SimplifiedAlbum, error)
-		NextWithRateLimit(ctx context.Context, paging interface{ GetNext() *string }) (*spotigo.Paging[spotigo.SimplifiedAlbum], error)
-		NextAlbumTracks(ctx context.Context, paging interface{ GetNext() *string }) (*spotigo.Paging[spotigo.SimplifiedTrack], error)
-		NextPlaylistTracks(ctx context.Context, paging interface{ GetNext() *string }) (*spotigo.Paging[spotigo.PlaylistTrack], error)
-		Search(ctx context.Context, query, searchType string, opts *spotigo.SearchOptions) (*spotigo.SearchResponse, error)
-	}
-	// For playlist tracks, we need direct access to the spotigo client
-	playlistTracksFunc     func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error)
+	config                 *config.MusicDLConfig
+	spotifyClient          SpotifyClientInterface
 	audioProvider          YouTubeMetadataProvider
 	seenTrackIDs           map[string]bool
 	seenAlbumIDs           map[string]bool
@@ -93,25 +92,11 @@ type Generator struct {
 	rateLimitNotifier func(totalSec, remainingSec int)
 }
 
-// SpotifyClientInterface defines the interface for Spotify client operations.
-type SpotifyClientInterface interface {
-	GetTrack(ctx context.Context, trackIDOrURL string) (*spotigo.Track, error)
-	GetAlbum(ctx context.Context, albumIDOrURL string) (*spotigo.Album, error)
-	GetArtist(ctx context.Context, artistIDOrURL string) (*spotigo.Artist, error)
-	GetPlaylist(ctx context.Context, playlistIDOrURL string) (*spotigo.Playlist, error)
-	GetArtistAlbums(ctx context.Context, artistIDOrURL string) ([]spotigo.SimplifiedAlbum, error)
-	NextWithRateLimit(ctx context.Context, paging interface{ GetNext() *string }) (*spotigo.Paging[spotigo.SimplifiedAlbum], error)
-	NextAlbumTracks(ctx context.Context, paging interface{ GetNext() *string }) (*spotigo.Paging[spotigo.SimplifiedTrack], error)
-	NextPlaylistTracks(ctx context.Context, paging interface{ GetNext() *string }) (*spotigo.Paging[spotigo.PlaylistTrack], error)
-	Search(ctx context.Context, query, searchType string, opts *spotigo.SearchOptions) (*spotigo.SearchResponse, error)
-}
-
 // NewGenerator creates a new plan generator.
-func NewGenerator(cfg *config.MusicDLConfig, spotifyClient SpotifyClientInterface, playlistTracksFunc func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error), audioProvider YouTubeMetadataProvider) *Generator {
+func NewGenerator(cfg *config.MusicDLConfig, spotifyClient SpotifyClientInterface, audioProvider YouTubeMetadataProvider) *Generator {
 	return &Generator{
 		config:                 cfg,
 		spotifyClient:          spotifyClient,
-		playlistTracksFunc:     playlistTracksFunc,
 		audioProvider:          audioProvider,
 		seenTrackIDs:           make(map[string]bool),
 		seenAlbumIDs:           make(map[string]bool),
@@ -205,7 +190,7 @@ func (g *Generator) processSong(ctx context.Context, plan *DownloadPlan, song co
 	}
 
 	// Process as Spotify track
-	trackID := extractTrackID(song.URL)
+	trackID := spotigo.ExtractID(song.URL, "track")
 	if trackID == "" {
 		return fmt.Errorf("invalid or empty track ID extracted from URL: %s", song.URL)
 	}
@@ -525,46 +510,6 @@ func (g *Generator) performSpotifySearch(ctx context.Context, item *PlanItem, se
 	log.Printf("INFO: spotify_enhancement_applied youtube_id=%s spotify_id=%s track=%s", ExtractYouTubeVideoID(item.YouTubeURL), bestTrack.ID, bestTrack.Name)
 }
 
-// extractTrackID extracts track ID from URL or returns as-is if already an ID.
-func extractTrackID(urlOrID string) string {
-	re := regexp.MustCompile(`track/([a-zA-Z0-9]+)`)
-	matches := re.FindStringSubmatch(urlOrID)
-	if len(matches) > 1 {
-		return matches[1]
-	}
-	return urlOrID
-}
-
-// extractArtistID extracts artist ID from URL or returns as-is if already an ID.
-func extractArtistID(urlOrID string) string {
-	re := regexp.MustCompile(`artist/([a-zA-Z0-9]+)`)
-	matches := re.FindStringSubmatch(urlOrID)
-	if len(matches) > 1 {
-		return matches[1]
-	}
-	return urlOrID
-}
-
-// extractPlaylistID extracts playlist ID from URL or returns as-is if already an ID.
-func extractPlaylistID(urlOrID string) string {
-	re := regexp.MustCompile(`playlist/([a-zA-Z0-9]+)`)
-	matches := re.FindStringSubmatch(urlOrID)
-	if len(matches) > 1 {
-		return matches[1]
-	}
-	return urlOrID
-}
-
-// extractAlbumID extracts album ID from URL or returns as-is if already an ID.
-func extractAlbumID(urlOrID string) string {
-	re := regexp.MustCompile(`album/([a-zA-Z0-9]+)`)
-	matches := re.FindStringSubmatch(urlOrID)
-	if len(matches) > 1 {
-		return matches[1]
-	}
-	return urlOrID
-}
-
 // processArtist processes an artist and adds albums/tracks to plan.
 func (g *Generator) processArtist(ctx context.Context, plan *DownloadPlan, artist config.MusicSource) error {
 	// Explicitly reject YouTube URLs
@@ -586,7 +531,10 @@ func (g *Generator) processArtist(ctx context.Context, plan *DownloadPlan, artis
 		return fmt.Errorf("%s", errMsg)
 	}
 
-	artistID := extractArtistID(artist.URL)
+	artistID := spotigo.ExtractID(artist.URL, "artist")
+	if artistID == "" {
+		return fmt.Errorf("invalid or empty artist ID extracted from URL: %s", artist.URL)
+	}
 
 	// Check for duplicates
 	if g.seenArtistIDs[artistID] {
@@ -651,7 +599,7 @@ func (g *Generator) processArtist(ctx context.Context, plan *DownloadPlan, artis
 	var albums []spotigo.SimplifiedAlbum
 	err = g.runWithRateLimitRetry(ctx, func() error {
 		var err2 error
-		albums, err2 = g.spotifyClient.GetArtistAlbums(ctx, artistID)
+		albums, err2 = g.spotifyClient.AllArtistAlbums(ctx, artistID)
 		return err2
 	})
 	if err != nil {
@@ -678,7 +626,7 @@ func (g *Generator) processArtist(ctx context.Context, plan *DownloadPlan, artis
 		}
 
 		// Process album tracks
-		if err := g.processAlbumTracks(ctx, plan, artistItem, albumID, albumData); err != nil {
+		if err := g.processAlbumTracks(ctx, plan, artistItem, albumID); err != nil {
 			log.Printf("ERROR: process_album_tracks_failed album_id=%s album_name=%s error=%v", albumID, albumData.Name, err)
 			continue
 		}
@@ -688,8 +636,8 @@ func (g *Generator) processArtist(ctx context.Context, plan *DownloadPlan, artis
 }
 
 // processAlbumTracks processes tracks in an album and adds to plan.
-func (g *Generator) processAlbumTracks(ctx context.Context, plan *DownloadPlan, parentItem *PlanItem, albumID string, albumData spotigo.SimplifiedAlbum) error {
-	// Fetch full album data to get tracks (with rate limit retry)
+func (g *Generator) processAlbumTracks(ctx context.Context, plan *DownloadPlan, parentItem *PlanItem, albumID string) error {
+	// Fetch full album data (with rate limit retry)
 	var album *spotigo.Album
 	err := g.runWithRateLimitRetry(ctx, func() error {
 		var err2 error
@@ -724,16 +672,19 @@ func (g *Generator) processAlbumTracks(ctx context.Context, plan *DownloadPlan, 
 	parentItem.ChildIDs = append(parentItem.ChildIDs, albumItem.ItemID)
 	g.seenAlbumIDs[albumID] = true
 
-	// Process tracks
-	// Note: spotigo.Album.Tracks is a Paging object
-	// We need to paginate through all tracks
-	tracks := album.Tracks
-	if tracks == nil {
-		return nil
+	// Fetch all tracks via spotigo's auto-pagination (with rate limit retry)
+	var allTracks []spotigo.SimplifiedTrack
+	err = g.runWithRateLimitRetry(ctx, func() error {
+		var err2 error
+		allTracks, err2 = g.spotifyClient.AllAlbumTracks(ctx, albumID)
+		return err2
+	})
+	if err != nil {
+		log.Printf("ERROR: album_tracks_fetch_failed album_id=%s error=%v", albumID, err)
+		return fmt.Errorf("failed to fetch album tracks: %w", err)
 	}
 
-	// Process first page
-	for _, track := range tracks.Items {
+	for _, track := range allTracks {
 		trackID := track.ID
 		if trackID == "" {
 			continue
@@ -781,81 +732,6 @@ func (g *Generator) processAlbumTracks(ctx context.Context, plan *DownloadPlan, 
 		g.seenTrackIDs[trackID] = true
 	}
 
-	// Paginate through remaining tracks
-	for tracks.GetNext() != nil {
-		// Check context cancellation
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-
-		// Get next page with rate limiting (with rate limit retry)
-		var nextTracks *spotigo.Paging[spotigo.SimplifiedTrack]
-		err := g.runWithRateLimitRetry(ctx, func() error {
-			var err2 error
-			nextTracks, err2 = g.spotifyClient.NextAlbumTracks(ctx, tracks)
-			return err2
-		})
-		if err != nil {
-			log.Printf("ERROR: album_tracks_pagination_failed album_id=%s error=%v", albumID, err)
-			return fmt.Errorf("failed to paginate album tracks: %w", err)
-		}
-		if nextTracks == nil {
-			break
-		}
-
-		// Process tracks from next page
-		for _, track := range nextTracks.Items {
-			trackID := track.ID
-			if trackID == "" {
-				continue
-			}
-
-			// Check for duplicate tracks
-			if g.seenTrackIDs[trackID] {
-				log.Printf("INFO: duplicate_detected type=track spotify_id=%s track_name=%s context=album", trackID, track.Name)
-				existingTrackItemID := fmt.Sprintf("track:%s", trackID)
-				existingTrack := plan.GetItem(existingTrackItemID)
-				if existingTrack != nil {
-					albumItem.ChildIDs = append(albumItem.ChildIDs, existingTrackItemID)
-				}
-				continue
-			}
-
-			// Create track item
-			trackSpotifyURL := ""
-			if track.ExternalURLs != nil {
-				trackSpotifyURL = track.ExternalURLs.Spotify
-			}
-
-			metadata := map[string]interface{}{
-				"track_number": track.TrackNumber,
-				"disc_number":  track.DiscNumber,
-				"title":        track.Name,
-				"album":        album.Name,
-				"duration_ms":  track.DurationMs,
-			}
-			if len(track.Artists) > 0 {
-				metadata["artist"] = track.Artists[0].Name
-			}
-			trackItem := &PlanItem{
-				ItemID:     fmt.Sprintf("track:%s", trackID),
-				ItemType:   PlanItemTypeTrack,
-				SpotifyID:  trackID,
-				SpotifyURL: trackSpotifyURL,
-				ParentID:   albumItem.ItemID,
-				Name:       track.Name,
-				Status:     PlanItemStatusPending,
-				Metadata:   metadata,
-			}
-			plan.AddItem(trackItem)
-			albumItem.ChildIDs = append(albumItem.ChildIDs, trackItem.ItemID)
-			g.seenTrackIDs[trackID] = true
-		}
-
-		// Update tracks to next page for next iteration
-		tracks = nextTracks
-	}
-
 	return nil
 }
 
@@ -866,7 +742,10 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 		return g.processYouTubePlaylist(ctx, plan, playlist)
 	}
 
-	playlistID := extractPlaylistID(playlist.URL)
+	playlistID := spotigo.ExtractID(playlist.URL, "playlist")
+	if playlistID == "" {
+		return fmt.Errorf("invalid or empty playlist ID extracted from URL: %s", playlist.URL)
+	}
 
 	// Check for duplicates
 	if g.seenPlaylistIDs[playlistID] {
@@ -932,104 +811,26 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 	plan.AddItem(playlistItem)
 	g.seenPlaylistIDs[playlistID] = true
 
-	// Process playlist tracks using PlaylistTracks method (with rate limit retry)
-	if g.playlistTracksFunc == nil {
-		return fmt.Errorf("playlistTracksFunc not provided")
-	}
-
-	var tracks *spotigo.Paging[spotigo.PlaylistTrack]
+	// Fetch all playlist tracks via spotigo's auto-pagination (with rate limit retry)
+	var allTracks []spotigo.PlaylistTrack
 	err = g.runWithRateLimitRetry(ctx, func() error {
 		var err2 error
-		tracks, err2 = g.playlistTracksFunc(ctx, playlistID, nil)
+		allTracks, err2 = g.spotifyClient.AllPlaylistTracks(ctx, playlistID)
 		return err2
 	})
 	if err != nil {
 		return fmt.Errorf("failed to get playlist tracks: %w", err)
 	}
 
-	// Process first page
-	for _, trackItem := range tracks.Items {
-		// trackItem.Track can be a Track or SimplifiedTrack
-		var trackID, trackName, trackSpotifyURL, artist, album string
-		var trackNumber, discNumber, durationMs int
-		var isLocal bool
-
-		switch t := trackItem.Track.(type) {
-		case *spotigo.Track:
-			if t == nil {
-				continue
-			}
-			isLocal = t.IsLocal
-			trackID = t.ID
-			trackName = t.Name
-			if t.ExternalURLs != nil {
-				trackSpotifyURL = t.ExternalURLs.Spotify
-			}
-			if len(t.Artists) > 0 {
-				artist = t.Artists[0].Name
-			}
-			if t.Album != nil {
-				album = t.Album.Name
-			}
-			trackNumber = t.TrackNumber
-			discNumber = t.DiscNumber
-			durationMs = t.DurationMs
-		case spotigo.Track:
-			isLocal = t.IsLocal
-			trackID = t.ID
-			trackName = t.Name
-			if t.ExternalURLs != nil {
-				trackSpotifyURL = t.ExternalURLs.Spotify
-			}
-			if len(t.Artists) > 0 {
-				artist = t.Artists[0].Name
-			}
-			if t.Album != nil {
-				album = t.Album.Name
-			}
-			trackNumber = t.TrackNumber
-			discNumber = t.DiscNumber
-			durationMs = t.DurationMs
-		case *spotigo.SimplifiedTrack:
-			if t == nil {
-				continue
-			}
-			isLocal = t.IsLocal
-			trackID = t.ID
-			trackName = t.Name
-			if t.ExternalURLs != nil {
-				trackSpotifyURL = t.ExternalURLs.Spotify
-			}
-			if len(t.Artists) > 0 {
-				artist = t.Artists[0].Name
-			}
-			// SimplifiedTrack has no Album field; album remains empty
-			trackNumber = t.TrackNumber
-			discNumber = t.DiscNumber
-			durationMs = t.DurationMs
-		case spotigo.SimplifiedTrack:
-			isLocal = t.IsLocal
-			trackID = t.ID
-			trackName = t.Name
-			if t.ExternalURLs != nil {
-				trackSpotifyURL = t.ExternalURLs.Spotify
-			}
-			if len(t.Artists) > 0 {
-				artist = t.Artists[0].Name
-			}
-			trackNumber = t.TrackNumber
-			discNumber = t.DiscNumber
-			durationMs = t.DurationMs
-		default:
+	for _, trackItem := range allTracks {
+		t := trackItem.Track
+		if t == nil || trackItem.IsLocal || t.IsLocal || t.ID == "" {
 			continue
 		}
 
-		if isLocal || trackID == "" {
-			continue
-		}
-
+		trackID := t.ID
 		if g.seenTrackIDs[trackID] {
-			log.Printf("INFO: duplicate_detected type=track spotify_id=%s track_name=%s context=playlist", trackID, trackName)
+			log.Printf("INFO: duplicate_detected type=track spotify_id=%s track_name=%s context=playlist", trackID, t.Name)
 			existingTrackItemID := fmt.Sprintf("track:%s", trackID)
 			existingTrack := plan.GetItem(existingTrackItemID)
 			if existingTrack != nil {
@@ -1038,12 +839,33 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 			continue
 		}
 
-		metadata := map[string]interface{}{"added_at": trackItem.AddedAt, "title": trackName, "track_number": trackNumber, "disc_number": discNumber, "duration_ms": durationMs}
+		trackSpotifyURL := ""
+		if t.ExternalURLs != nil {
+			trackSpotifyURL = t.ExternalURLs.Spotify
+		}
+
+		artist := ""
+		if len(t.Artists) > 0 {
+			artist = t.Artists[0].Name
+		}
+
+		albumName := ""
+		if t.Album != nil {
+			albumName = t.Album.Name
+		}
+
+		metadata := map[string]interface{}{
+			"added_at":     trackItem.AddedAt,
+			"title":        t.Name,
+			"track_number": t.TrackNumber,
+			"disc_number":  t.DiscNumber,
+			"duration_ms":  t.DurationMs,
+		}
 		if artist != "" {
 			metadata["artist"] = artist
 		}
-		if album != "" {
-			metadata["album"] = album
+		if albumName != "" {
+			metadata["album"] = albumName
 		}
 		trackPlanItem := &PlanItem{
 			ItemID:     fmt.Sprintf("track:%s", trackID),
@@ -1051,149 +873,13 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 			SpotifyID:  trackID,
 			SpotifyURL: trackSpotifyURL,
 			ParentID:   playlistItem.ItemID,
-			Name:       trackName,
+			Name:       t.Name,
 			Status:     PlanItemStatusPending,
 			Metadata:   metadata,
 		}
 		plan.AddItem(trackPlanItem)
 		playlistItem.ChildIDs = append(playlistItem.ChildIDs, trackPlanItem.ItemID)
 		g.seenTrackIDs[trackID] = true
-	}
-
-	// Paginate through remaining tracks
-	for tracks.GetNext() != nil {
-		// Check context cancellation
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-
-		// Get next page with rate limiting (with rate limit retry)
-		var nextTracks *spotigo.Paging[spotigo.PlaylistTrack]
-		err := g.runWithRateLimitRetry(ctx, func() error {
-			var err2 error
-			nextTracks, err2 = g.spotifyClient.NextPlaylistTracks(ctx, tracks)
-			return err2
-		})
-		if err != nil {
-			log.Printf("ERROR: playlist_tracks_pagination_failed playlist_id=%s error=%v", playlistID, err)
-			return fmt.Errorf("failed to paginate playlist tracks: %w", err)
-		}
-		if nextTracks == nil {
-			break
-		}
-
-		// Process tracks from next page
-		for _, trackItem := range nextTracks.Items {
-			var trackID, trackName, trackSpotifyURL, artist, album string
-			var trackNumber, discNumber, durationMs int
-			var isLocal bool
-
-			switch t := trackItem.Track.(type) {
-			case *spotigo.Track:
-				if t == nil {
-					continue
-				}
-				isLocal = t.IsLocal
-				trackID = t.ID
-				trackName = t.Name
-				if t.ExternalURLs != nil {
-					trackSpotifyURL = t.ExternalURLs.Spotify
-				}
-				if len(t.Artists) > 0 {
-					artist = t.Artists[0].Name
-				}
-				if t.Album != nil {
-					album = t.Album.Name
-				}
-				trackNumber = t.TrackNumber
-				discNumber = t.DiscNumber
-				durationMs = t.DurationMs
-			case spotigo.Track:
-				isLocal = t.IsLocal
-				trackID = t.ID
-				trackName = t.Name
-				if t.ExternalURLs != nil {
-					trackSpotifyURL = t.ExternalURLs.Spotify
-				}
-				if len(t.Artists) > 0 {
-					artist = t.Artists[0].Name
-				}
-				if t.Album != nil {
-					album = t.Album.Name
-				}
-				trackNumber = t.TrackNumber
-				discNumber = t.DiscNumber
-				durationMs = t.DurationMs
-			case *spotigo.SimplifiedTrack:
-				if t == nil {
-					continue
-				}
-				isLocal = t.IsLocal
-				trackID = t.ID
-				trackName = t.Name
-				if t.ExternalURLs != nil {
-					trackSpotifyURL = t.ExternalURLs.Spotify
-				}
-				if len(t.Artists) > 0 {
-					artist = t.Artists[0].Name
-				}
-				trackNumber = t.TrackNumber
-				discNumber = t.DiscNumber
-				durationMs = t.DurationMs
-			case spotigo.SimplifiedTrack:
-				isLocal = t.IsLocal
-				trackID = t.ID
-				trackName = t.Name
-				if t.ExternalURLs != nil {
-					trackSpotifyURL = t.ExternalURLs.Spotify
-				}
-				if len(t.Artists) > 0 {
-					artist = t.Artists[0].Name
-				}
-				trackNumber = t.TrackNumber
-				discNumber = t.DiscNumber
-				durationMs = t.DurationMs
-			default:
-				continue
-			}
-
-			if isLocal || trackID == "" {
-				continue
-			}
-
-			if g.seenTrackIDs[trackID] {
-				log.Printf("INFO: duplicate_detected type=track spotify_id=%s track_name=%s context=playlist", trackID, trackName)
-				existingTrackItemID := fmt.Sprintf("track:%s", trackID)
-				existingTrack := plan.GetItem(existingTrackItemID)
-				if existingTrack != nil {
-					playlistItem.ChildIDs = append(playlistItem.ChildIDs, existingTrackItemID)
-				}
-				continue
-			}
-
-			metadata := map[string]interface{}{"added_at": trackItem.AddedAt, "title": trackName, "track_number": trackNumber, "disc_number": discNumber, "duration_ms": durationMs}
-			if artist != "" {
-				metadata["artist"] = artist
-			}
-			if album != "" {
-				metadata["album"] = album
-			}
-			trackPlanItem := &PlanItem{
-				ItemID:     fmt.Sprintf("track:%s", trackID),
-				ItemType:   PlanItemTypeTrack,
-				SpotifyID:  trackID,
-				SpotifyURL: trackSpotifyURL,
-				ParentID:   playlistItem.ItemID,
-				Name:       trackName,
-				Status:     PlanItemStatusPending,
-				Metadata:   metadata,
-			}
-			plan.AddItem(trackPlanItem)
-			playlistItem.ChildIDs = append(playlistItem.ChildIDs, trackPlanItem.ItemID)
-			g.seenTrackIDs[trackID] = true
-		}
-
-		tracks = nextTracks
 	}
 
 	if playlist.CreateM3U {
@@ -1370,7 +1056,10 @@ func (g *Generator) processAlbum(ctx context.Context, plan *DownloadPlan, album 
 		return fmt.Errorf("%s", errMsg)
 	}
 
-	albumID := extractAlbumID(album.URL)
+	albumID := spotigo.ExtractID(album.URL, "album")
+	if albumID == "" {
+		return fmt.Errorf("invalid or empty album ID extracted from URL: %s", album.URL)
+	}
 
 	// Check for duplicates
 	if g.seenAlbumIDs[albumID] {
@@ -1434,25 +1123,16 @@ func (g *Generator) processAlbum(ctx context.Context, plan *DownloadPlan, album 
 		albumName = album.Name
 	}
 
-	// Do not create the album item here. Let processAlbumTracks create the sole
-	// album item so its ChildIDs are the track IDs (not a duplicate album ref).
-	simplifiedAlbum := spotigo.SimplifiedAlbum{
-		ID:           albumID,
-		Name:         albumName,
-		AlbumType:    albumData.AlbumType,
-		ReleaseDate:  albumData.ReleaseDate,
-		ExternalURLs: albumData.ExternalURLs,
-	}
+	// Use processAlbumTracks with a dummy parent
 	dummyParent := &PlanItem{
 		ItemID:   fmt.Sprintf("album_parent:%s", albumID),
 		ItemType: PlanItemTypeAlbum,
 	}
-	if err := g.processAlbumTracks(ctx, plan, dummyParent, albumID, simplifiedAlbum); err != nil {
+	if err := g.processAlbumTracks(ctx, plan, dummyParent, albumID); err != nil {
 		return fmt.Errorf("failed to process album tracks: %w", err)
 	}
 
-	// Get the single album item created by processAlbumTracks and fix it up for
-	// direct-album-from-config: root-level (no parent) and spec metadata.
+	// Fix up the album item created by processAlbumTracks
 	albumItem := plan.GetItem(fmt.Sprintf("album:%s", albumID))
 	if albumItem == nil {
 		return fmt.Errorf("processAlbumTracks did not create album item for %s", albumID)

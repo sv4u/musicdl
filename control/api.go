@@ -20,7 +20,6 @@ import (
 	"github.com/sv4u/musicdl/download/metadata"
 	"github.com/sv4u/musicdl/download/plan"
 	"github.com/sv4u/musicdl/download/spotify"
-	"github.com/sv4u/spotigo"
 	"gopkg.in/yaml.v3"
 )
 
@@ -186,10 +185,7 @@ func (s *APIServer) executePlan(ctx context.Context, configPath string) error {
 	if err != nil {
 		return err
 	}
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return spotifyClient.GetPlaylistTracks(ctx, playlistID, opts)
-	}
-	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc, audioProvider)
+	generator := plan.NewGenerator(cfg, spotifyClient, audioProvider)
 	optimizer := plan.NewOptimizer(true, cfg.Download.Overwrite, cfg.Download.Output, cfg.Download.Format)
 	s.logBroadcaster.BroadcastString("info", "Generating download plan...", "plan")
 	generatedPlan, err := generator.GeneratePlan(ctx)
@@ -240,10 +236,7 @@ func (s *APIServer) executeDownload(ctx context.Context, configPath string, resu
 		return err
 	}
 	// Generate plan
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return spotifyClient.GetPlaylistTracks(ctx, playlistID, opts)
-	}
-	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc, audioProvider)
+	generator := plan.NewGenerator(cfg, spotifyClient, audioProvider)
 	optimizer := plan.NewOptimizer(true, cfg.Download.Overwrite, cfg.Download.Output, cfg.Download.Format)
 	s.logBroadcaster.BroadcastString("info", "Generating download plan...", "download")
 	generatedPlan, err := generator.GeneratePlan(ctx)
@@ -495,7 +488,7 @@ func (s *APIServer) versionHandler(w http.ResponseWriter, r *http.Request) {
 	spotigoVersion := "unknown"
 	if info, ok := debug.ReadBuildInfo(); ok {
 		for _, dep := range info.Deps {
-			if dep.Path == "github.com/sv4u/spotigo" {
+			if dep.Path == "github.com/sv4u/spotigo/v2" {
 				spotigoVersion = dep.Version
 				if dep.Replace != nil {
 					spotigoVersion = dep.Replace.Version

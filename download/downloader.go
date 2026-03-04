@@ -16,7 +16,7 @@ import (
 	"github.com/sv4u/musicdl/download/metadata"
 	"github.com/sv4u/musicdl/download/plan"
 	"github.com/sv4u/musicdl/download/spotify"
-	"github.com/sv4u/spotigo"
+	"github.com/sv4u/spotigo/v2"
 )
 
 // Downloader downloads tracks using Spotify, audio provider, and metadata embedder.

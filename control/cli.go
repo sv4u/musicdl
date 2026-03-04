@@ -14,7 +14,6 @@ import (
 	"github.com/sv4u/musicdl/download/metadata"
 	"github.com/sv4u/musicdl/download/plan"
 	"github.com/sv4u/musicdl/download/spotify"
-	"github.com/sv4u/spotigo"
 )
 
 // Exit codes for plan command (spec-aligned).
@@ -48,10 +47,7 @@ func getCacheDir() string {
 // runPlanPhase generates a plan, saves it to cache, and optionally runs the plan TUI.
 // It writes logs to planLogPath. Returns exit code, track count, and plan file path (for success).
 func runPlanPhase(ctx context.Context, cancel context.CancelFunc, configPath string, cfg *config.MusicDLConfig, hash string, cacheDir string, spotifyClient *spotify.SpotifyClient, audioProvider *audio.Provider, planLogPath string, noTUI bool) (exitCode int, trackCount int, planPath string) {
-	playlistTracksFunc := func(cctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return spotifyClient.GetPlaylistTracks(cctx, playlistID, opts)
-	}
-	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc, audioProvider)
+	generator := plan.NewGenerator(cfg, spotifyClient, audioProvider)
 	optimizer := plan.NewOptimizer(true, cfg.Download.Overwrite, cfg.Download.Output, cfg.Download.Format)
 
 	if !WantTUI(noTUI) {

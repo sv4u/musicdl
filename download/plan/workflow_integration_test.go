@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/sv4u/musicdl/download/config"
-	"github.com/sv4u/spotigo"
+	"github.com/sv4u/spotigo/v2"
 )
 
 func TestPlanWorkflow_GenerateOptimizeExecute_SingleSong(t *testing.T) {
@@ -25,11 +25,7 @@ func TestPlanWorkflow_GenerateOptimizeExecute_SingleSong(t *testing.T) {
 	mockClient := newMockSpotifyClient()
 	mockClient.tracks["track123"] = createMockTrack("track123", "Test Song", "Test Artist")
 
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
-
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	generator := NewGenerator(cfg, mockClient, nil)
 
 	// Step 1: Generate plan
 	plan, err := generator.GeneratePlan(context.Background())
@@ -105,11 +101,7 @@ func TestPlanWorkflow_GenerateOptimizeExecute_WithDuplicates(t *testing.T) {
 	mockClient := newMockSpotifyClient()
 	mockClient.tracks["track123"] = createMockTrack("track123", "Test Song", "Test Artist")
 
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
-
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	generator := NewGenerator(cfg, mockClient, nil)
 
 	// Step 1: Generate plan
 	plan, err := generator.GeneratePlan(context.Background())
@@ -182,11 +174,7 @@ func TestPlanWorkflow_GenerateOptimizeExecute_WithArtist(t *testing.T) {
 	}
 	mockClient.albums["album1"] = album
 
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
-
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	generator := NewGenerator(cfg, mockClient, nil)
 
 	// Step 1: Generate plan
 	plan, err := generator.GeneratePlan(context.Background())

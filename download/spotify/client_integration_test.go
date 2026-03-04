@@ -93,7 +93,7 @@ func TestSpotifyClient_Integration(t *testing.T) {
 	t.Logf("Cache stats: Hits=%d, Misses=%d, HitRate=%.2f%%", stats.Hits, stats.Misses, stats.HitRate*100)
 }
 
-func TestSpotifyClient_GetArtistAlbums_Integration(t *testing.T) {
+func TestSpotifyClient_AllArtistAlbums_Integration(t *testing.T) {
 	// Try to load .env file
 	_ = godotenv.Load()
 
@@ -128,11 +128,11 @@ func TestSpotifyClient_GetArtistAlbums_Integration(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Test GetArtistAlbums with a known artist
+	// Test AllArtistAlbums with a known artist
 	artistURL := "https://open.spotify.com/artist/2YZyLoL8N0Wb9xBt1NhZWg" // Kendrick Lamar
-	albums, err := client.GetArtistAlbums(ctx, artistURL)
+	albums, err := client.AllArtistAlbums(ctx, artistURL)
 	if err != nil {
-		t.Fatalf("GetArtistAlbums failed: %v", err)
+		t.Fatalf("AllArtistAlbums failed: %v", err)
 	}
 
 	if len(albums) == 0 {

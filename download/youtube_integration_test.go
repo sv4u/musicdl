@@ -15,7 +15,6 @@ import (
 	"github.com/sv4u/musicdl/download/metadata"
 	"github.com/sv4u/musicdl/download/plan"
 	"github.com/sv4u/musicdl/download/spotify"
-	"github.com/sv4u/spotigo"
 )
 
 // checkYtDlpAvailable checks if yt-dlp is available for integration tests.
@@ -245,10 +244,7 @@ func TestIntegration_YouTubePlaylistDownload(t *testing.T) {
 	downloader := NewDownloader(&cfg.Download, spotifyClient, audioProvider, metadataEmbedder)
 
 	// Create generator
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
-	generator := plan.NewGenerator(cfg, spotifyClient, playlistTracksFunc, audioProvider)
+	generator := plan.NewGenerator(cfg, spotifyClient, audioProvider)
 
 	// Generate plan
 	ctx := context.Background()

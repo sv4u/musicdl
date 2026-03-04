@@ -3,9 +3,10 @@ package spotify
 import (
 	"context"
 	"errors"
-	"net/http"
 	"testing"
 	"time"
+
+	"github.com/sv4u/spotigo/v2"
 )
 
 func TestNewSpotifyClient_InvalidCredentials(t *testing.T) {
@@ -135,10 +136,11 @@ func TestSpotifyClient_HandleError_RateLimit(t *testing.T) {
 	}
 	defer client.Close()
 
-	// Create a mock rate limit error
-	rateLimitErr := &mockHTTPError{
-		statusCode: http.StatusTooManyRequests,
-		message:    "429 Too Many Requests",
+	// Use a real spotigo.SpotifyError with StatusCode() method
+	rateLimitErr := &spotigo.SpotifyError{
+		HTTPStatus: 429,
+		Code:       429,
+		Message:    "Too Many Requests",
 	}
 
 	err2 := client.handleError(rateLimitErr)
@@ -173,7 +175,7 @@ func TestSpotifyClient_HandleError_RegularError(t *testing.T) {
 	}
 }
 
-func TestSpotifyClient_IsRateLimitError_HTTP429(t *testing.T) {
+func TestSpotifyClient_HandleError_SpotifyNon429(t *testing.T) {
 	config := &Config{
 		ClientID:     "test_id",
 		ClientSecret: "test_secret",
@@ -184,84 +186,19 @@ func TestSpotifyClient_IsRateLimitError_HTTP429(t *testing.T) {
 	}
 	defer client.Close()
 
-	rateLimitErr := &mockHTTPError{
-		statusCode: http.StatusTooManyRequests,
-		message:    "429 Too Many Requests",
+	notFoundErr := &spotigo.SpotifyError{
+		HTTPStatus: 404,
+		Code:       404,
+		Message:    "Not Found",
 	}
 
-	if !client.isRateLimitError(rateLimitErr) {
-		t.Error("Expected isRateLimitError to return true for HTTP 429")
-	}
-}
-
-func TestSpotifyClient_IsRateLimitError_Message(t *testing.T) {
-	config := &Config{
-		ClientID:     "test_id",
-		ClientSecret: "test_secret",
-	}
-	client, err := NewSpotifyClient(config)
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
-	defer client.Close()
-
-	// Test error message containing "429"
-	err1 := errors.New("HTTP 429 error")
-	if !client.isRateLimitError(err1) {
-		t.Error("Expected isRateLimitError to return true for error with '429'")
+	err2 := client.handleError(notFoundErr)
+	if err2 == nil {
+		t.Error("Expected error")
 	}
 
-	// Test error message containing "rate limit"
-	err2 := errors.New("rate limit exceeded")
-	if !client.isRateLimitError(err2) {
-		t.Error("Expected isRateLimitError to return true for error with 'rate limit'")
-	}
-
-	// Test error message containing "too many requests"
-	err3 := errors.New("too many requests")
-	if !client.isRateLimitError(err3) {
-		t.Error("Expected isRateLimitError to return true for error with 'too many requests'")
-	}
-}
-
-func TestSpotifyClient_ExtractRetryAfter_WithRetryAfter(t *testing.T) {
-	config := &Config{
-		ClientID:     "test_id",
-		ClientSecret: "test_secret",
-	}
-	client, err := NewSpotifyClient(config)
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
-	defer client.Close()
-
-	mockErr := &mockHTTPError{
-		statusCode: http.StatusTooManyRequests,
-		retryAfter: 5,
-		message:    "429 Too Many Requests",
-	}
-
-	retryAfter := client.extractRetryAfter(mockErr)
-	if retryAfter != 5 {
-		t.Errorf("Expected retryAfter 5, got %d", retryAfter)
-	}
-}
-
-func TestSpotifyClient_ExtractRetryAfter_Default(t *testing.T) {
-	config := &Config{
-		ClientID:     "test_id",
-		ClientSecret: "test_secret",
-	}
-	client, err := NewSpotifyClient(config)
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
-	defer client.Close()
-
-	regularErr := errors.New("some error")
-	retryAfter := client.extractRetryAfter(regularErr)
-	if retryAfter != 1 {
-		t.Errorf("Expected default retryAfter 1, got %d", retryAfter)
+	if _, ok := err2.(*SpotifyError); !ok {
+		t.Errorf("Expected SpotifyError (not RateLimitError), got %T", err2)
 	}
 }
 
@@ -333,27 +270,6 @@ func TestSpotifyClient_ApplyRateLimiting_GeneralRateLimiterError(t *testing.T) {
 }
 
 // Mock implementations for testing
-
-type mockHTTPError struct {
-	statusCode int
-	retryAfter int
-	message    string
-}
-
-func (e *mockHTTPError) StatusCode() int {
-	return e.statusCode
-}
-
-func (e *mockHTTPError) RetryAfter() (time.Duration, bool) {
-	if e.retryAfter <= 0 {
-		return 0, false
-	}
-	return time.Duration(e.retryAfter) * time.Second, true
-}
-
-func (e *mockHTTPError) Error() string {
-	return e.message
-}
 
 type mockRateLimiter struct {
 	shouldError bool

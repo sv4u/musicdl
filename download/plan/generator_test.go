@@ -8,7 +8,7 @@ import (
 
 	"github.com/sv4u/musicdl/download/audio"
 	"github.com/sv4u/musicdl/download/config"
-	"github.com/sv4u/spotigo"
+	"github.com/sv4u/spotigo/v2"
 )
 
 // mockSpotifyClient is a mock implementation of SpotifyClientInterface for testing.
@@ -51,7 +51,7 @@ func newMockSpotifyClient() *mockSpotifyClient {
 }
 
 func (m *mockSpotifyClient) GetTrack(ctx context.Context, trackIDOrURL string) (*spotigo.Track, error) {
-	trackID := extractTrackID(trackIDOrURL)
+	trackID := spotigo.ExtractID(trackIDOrURL, "track")
 	if err, ok := m.trackErrors[trackID]; ok {
 		return nil, err
 	}
@@ -62,7 +62,7 @@ func (m *mockSpotifyClient) GetTrack(ctx context.Context, trackIDOrURL string) (
 }
 
 func (m *mockSpotifyClient) GetAlbum(ctx context.Context, albumIDOrURL string) (*spotigo.Album, error) {
-	albumID := extractAlbumID(albumIDOrURL)
+	albumID := spotigo.ExtractID(albumIDOrURL, "album")
 	if err, ok := m.albumErrors[albumID]; ok {
 		return nil, err
 	}
@@ -73,7 +73,7 @@ func (m *mockSpotifyClient) GetAlbum(ctx context.Context, albumIDOrURL string) (
 }
 
 func (m *mockSpotifyClient) GetArtist(ctx context.Context, artistIDOrURL string) (*spotigo.Artist, error) {
-	artistID := extractArtistID(artistIDOrURL)
+	artistID := spotigo.ExtractID(artistIDOrURL, "artist")
 	if err, ok := m.artistErrors[artistID]; ok {
 		return nil, err
 	}
@@ -84,7 +84,7 @@ func (m *mockSpotifyClient) GetArtist(ctx context.Context, artistIDOrURL string)
 }
 
 func (m *mockSpotifyClient) GetPlaylist(ctx context.Context, playlistIDOrURL string) (*spotigo.Playlist, error) {
-	playlistID := extractPlaylistID(playlistIDOrURL)
+	playlistID := spotigo.ExtractID(playlistIDOrURL, "playlist")
 	if err, ok := m.playlistErrors[playlistID]; ok {
 		return nil, err
 	}
@@ -94,8 +94,8 @@ func (m *mockSpotifyClient) GetPlaylist(ctx context.Context, playlistIDOrURL str
 	return nil, fmt.Errorf("playlist not found: %s", playlistID)
 }
 
-func (m *mockSpotifyClient) GetArtistAlbums(ctx context.Context, artistIDOrURL string) ([]spotigo.SimplifiedAlbum, error) {
-	artistID := extractArtistID(artistIDOrURL)
+func (m *mockSpotifyClient) AllArtistAlbums(ctx context.Context, artistIDOrURL string) ([]spotigo.SimplifiedAlbum, error) {
+	artistID := spotigo.ExtractID(artistIDOrURL, "artist")
 	if err, ok := m.artistAlbumsErrors[artistID]; ok {
 		return nil, err
 	}
@@ -105,19 +105,23 @@ func (m *mockSpotifyClient) GetArtistAlbums(ctx context.Context, artistIDOrURL s
 	return []spotigo.SimplifiedAlbum{}, nil
 }
 
-func (m *mockSpotifyClient) NextWithRateLimit(ctx context.Context, paging interface{ GetNext() *string }) (*spotigo.Paging[spotigo.SimplifiedAlbum], error) {
-	// For now, return nil (no next page)
-	return nil, nil
+func (m *mockSpotifyClient) AllAlbumTracks(ctx context.Context, albumIDOrURL string) ([]spotigo.SimplifiedTrack, error) {
+	albumID := spotigo.ExtractID(albumIDOrURL, "album")
+	if paging, ok := m.albumTracks[albumID]; ok && paging != nil {
+		return paging.Items, nil
+	}
+	if album, ok := m.albums[albumID]; ok && album != nil && album.Tracks != nil {
+		return album.Tracks.Items, nil
+	}
+	return []spotigo.SimplifiedTrack{}, nil
 }
 
-func (m *mockSpotifyClient) NextAlbumTracks(ctx context.Context, paging interface{ GetNext() *string }) (*spotigo.Paging[spotigo.SimplifiedTrack], error) {
-	// For now, return nil (no next page)
-	return nil, nil
-}
-
-func (m *mockSpotifyClient) NextPlaylistTracks(ctx context.Context, paging interface{ GetNext() *string }) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-	// For now, return nil (no next page)
-	return nil, nil
+func (m *mockSpotifyClient) AllPlaylistTracks(ctx context.Context, playlistIDOrURL string) ([]spotigo.PlaylistTrack, error) {
+	playlistID := spotigo.ExtractID(playlistIDOrURL, "playlist")
+	if paging, ok := m.playlistTracks[playlistID]; ok && paging != nil {
+		return paging.Items, nil
+	}
+	return []spotigo.PlaylistTrack{}, nil
 }
 
 func (m *mockSpotifyClient) Search(ctx context.Context, query, searchType string, opts *spotigo.SearchOptions) (*spotigo.SearchResponse, error) {
@@ -236,7 +240,7 @@ func createMockSimplifiedTrack(id, name string, artistName string) spotigo.Simpl
 //nolint:unused // Reserved for playlist-focused tests.
 func createMockPlaylistTrack(trackID, name string, artistName string) spotigo.PlaylistTrack {
 	return spotigo.PlaylistTrack{
-		Track: createMockSimplifiedTrack(trackID, name, artistName),
+		Track: createMockTrack(trackID, name, artistName),
 	}
 }
 
@@ -250,11 +254,7 @@ func TestNewGenerator(t *testing.T) {
 	}
 
 	mockClient := newMockSpotifyClient()
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
-
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	generator := NewGenerator(cfg, mockClient, nil)
 	if generator == nil {
 		t.Fatal("NewGenerator() returned nil")
 	}
@@ -281,11 +281,7 @@ func TestGeneratePlan_WithSongs_Single(t *testing.T) {
 	mockClient := newMockSpotifyClient()
 	mockClient.tracks["track123"] = createMockTrack("track123", "Test Song", "Test Artist")
 
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
-
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	generator := NewGenerator(cfg, mockClient, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 
 	if err != nil {
@@ -334,11 +330,7 @@ func TestGeneratePlan_WithSongs_Multiple(t *testing.T) {
 	mockClient.tracks["track2"] = createMockTrack("track2", "Song 2", "Artist 2")
 	mockClient.tracks["track3"] = createMockTrack("track3", "Song 3", "Artist 3")
 
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
-
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	generator := NewGenerator(cfg, mockClient, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 
 	if err != nil {
@@ -377,11 +369,7 @@ func TestGeneratePlan_WithSongs_Duplicate(t *testing.T) {
 	mockClient := newMockSpotifyClient()
 	mockClient.tracks["track123"] = createMockTrack("track123", "Song 1", "Artist 1")
 
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
-
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	generator := NewGenerator(cfg, mockClient, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 
 	if err != nil {
@@ -408,17 +396,15 @@ func TestGeneratePlan_WithSongs_InvalidURL(t *testing.T) {
 			ClientSecret: "test_secret",
 		},
 		Songs: []config.MusicSource{
-			{Name: "Invalid Song", URL: "invalid-url"},
+			// Use a URL that passes ExtractID but track doesn't exist (API returns error)
+			{Name: "Invalid Song", URL: "https://open.spotify.com/track/nonexistent123"},
 		},
 	}
 
 	mockClient := newMockSpotifyClient()
+	// Don't add the track to mock - GetTrack will return "track not found"
 
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
-
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	generator := NewGenerator(cfg, mockClient, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 
 	// Should not error, but should create failed item
@@ -461,11 +447,7 @@ func TestGeneratePlan_WithSongs_APIError(t *testing.T) {
 	mockClient := newMockSpotifyClient()
 	mockClient.trackErrors["track123"] = fmt.Errorf("API error: rate limit exceeded")
 
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
-
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	generator := NewGenerator(cfg, mockClient, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 
 	// Should not error, but should create failed item
@@ -521,11 +503,7 @@ func TestGeneratePlan_WithArtists_SingleAlbum(t *testing.T) {
 	}
 	mockClient.albums["album1"] = album
 
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
-
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	generator := NewGenerator(cfg, mockClient, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 
 	if err != nil {
@@ -629,11 +607,7 @@ func TestGeneratePlan_WithArtists_MultipleAlbums(t *testing.T) {
 	}
 	mockClient.albums["album2"] = album2
 
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
-
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	generator := NewGenerator(cfg, mockClient, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 
 	if err != nil {
@@ -689,11 +663,7 @@ func TestGeneratePlan_WithArtists_DuplicateAlbums(t *testing.T) {
 	}
 	mockClient.albums["album1"] = album
 
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
-
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	generator := NewGenerator(cfg, mockClient, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 
 	if err != nil {
@@ -733,11 +703,7 @@ func TestGeneratePlan_WithArtists_NoAlbums(t *testing.T) {
 	mockClient.artists["artist1"] = createMockArtist("artist1", "Test Artist")
 	mockClient.artistAlbums["artist1"] = []spotigo.SimplifiedAlbum{} // No albums
 
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
-
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	generator := NewGenerator(cfg, mockClient, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 
 	if err != nil {
@@ -768,20 +734,14 @@ func TestGeneratePlan_WithPlaylists_WithTracks(t *testing.T) {
 
 	mockClient := newMockSpotifyClient()
 	mockClient.playlists["playlist1"] = createMockPlaylist("playlist1", "Test Playlist")
-
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		if playlistID == "playlist1" {
-			return &spotigo.Paging[spotigo.PlaylistTrack]{
-				Items: []spotigo.PlaylistTrack{
-					{Track: createMockSimplifiedTrack("track1", "Track 1", "Artist 1")},
-					{Track: createMockSimplifiedTrack("track2", "Track 2", "Artist 2")},
-				},
-			}, nil
-		}
-		return nil, nil
+	mockClient.playlistTracks["playlist1"] = &spotigo.Paging[spotigo.PlaylistTrack]{
+		Items: []spotigo.PlaylistTrack{
+			{Track: createMockTrack("track1", "Track 1", "Artist 1")},
+			{Track: createMockTrack("track2", "Track 2", "Artist 2")},
+		},
 	}
 
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	generator := NewGenerator(cfg, mockClient, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 
 	if err != nil {
@@ -839,15 +799,11 @@ func TestGeneratePlan_WithPlaylists_NoTracks(t *testing.T) {
 
 	mockClient := newMockSpotifyClient()
 	mockClient.playlists["playlist1"] = createMockPlaylist("playlist1", "Empty Playlist")
-
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		// Return empty playlist
-		return &spotigo.Paging[spotigo.PlaylistTrack]{
-			Items: []spotigo.PlaylistTrack{},
-		}, nil
+	mockClient.playlistTracks["playlist1"] = &spotigo.Paging[spotigo.PlaylistTrack]{
+		Items: []spotigo.PlaylistTrack{},
 	}
 
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	generator := NewGenerator(cfg, mockClient, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 
 	if err != nil {
@@ -896,11 +852,7 @@ func TestGeneratePlan_WithAlbums_WithTracks(t *testing.T) {
 	}
 	mockClient.albums["album1"] = album
 
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
-
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	generator := NewGenerator(cfg, mockClient, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 
 	if err != nil {
@@ -974,11 +926,7 @@ func TestGeneratePlan_WithAlbums_WithM3U(t *testing.T) {
 	}
 	mockClient.albums["album1"] = album
 
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
-
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	generator := NewGenerator(cfg, mockClient, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 
 	if err != nil {
@@ -1059,11 +1007,7 @@ func TestGeneratePlan_DuplicateRemoval(t *testing.T) {
 	}
 	mockClient.albums["album1"] = album
 
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
-
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	generator := NewGenerator(cfg, mockClient, nil)
 	plan, err := generator.GeneratePlan(context.Background())
 
 	if err != nil {
@@ -1153,11 +1097,7 @@ func TestGeneratePlan_RejectYouTubeURL_InAlbum(t *testing.T) {
 	}
 
 	mockClient := newMockSpotifyClient()
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
-
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	generator := NewGenerator(cfg, mockClient, nil)
 	ctx := context.Background()
 
 	plan, err := generator.GeneratePlan(ctx)
@@ -1192,11 +1132,7 @@ func TestGeneratePlan_RejectYouTubeURL_InArtist(t *testing.T) {
 	}
 
 	mockClient := newMockSpotifyClient()
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
-
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, nil)
+	generator := NewGenerator(cfg, mockClient, nil)
 	ctx := context.Background()
 
 	plan, err := generator.GeneratePlan(ctx)
@@ -1231,9 +1167,6 @@ func TestGeneratePlan_WithYouTubeVideo_Unit(t *testing.T) {
 	}
 
 	mockClient := newMockSpotifyClient()
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
 
 	mockAudioProvider := newMockAudioProvider()
 	mockAudioProvider.videoMetadata["https://www.youtube.com/watch?v=dQw4w9WgXcQ"] = &audio.YouTubeVideoMetadata{
@@ -1244,7 +1177,7 @@ func TestGeneratePlan_WithYouTubeVideo_Unit(t *testing.T) {
 		UploadDate: "2024-01-15",
 	}
 
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, mockAudioProvider)
+	generator := NewGenerator(cfg, mockClient, mockAudioProvider)
 	ctx := context.Background()
 
 	plan, err := generator.GeneratePlan(ctx)
@@ -1293,9 +1226,6 @@ func TestGeneratePlan_WithYouTubeVideo_Duplicate(t *testing.T) {
 	}
 
 	mockClient := newMockSpotifyClient()
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
 
 	mockAudioProvider := newMockAudioProvider()
 	mockAudioProvider.videoMetadata["https://www.youtube.com/watch?v=dQw4w9WgXcQ"] = &audio.YouTubeVideoMetadata{
@@ -1305,7 +1235,7 @@ func TestGeneratePlan_WithYouTubeVideo_Duplicate(t *testing.T) {
 		Duration: 200,
 	}
 
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, mockAudioProvider)
+	generator := NewGenerator(cfg, mockClient, mockAudioProvider)
 	ctx := context.Background()
 
 	plan, err := generator.GeneratePlan(ctx)
@@ -1332,14 +1262,11 @@ func TestGeneratePlan_WithYouTubeVideo_MetadataExtractionError(t *testing.T) {
 	}
 
 	mockClient := newMockSpotifyClient()
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
 
 	mockAudioProvider := newMockAudioProvider()
 	mockAudioProvider.videoErrors["https://www.youtube.com/watch?v=dQw4w9WgXcQ"] = fmt.Errorf("metadata extraction failed")
 
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, mockAudioProvider)
+	generator := NewGenerator(cfg, mockClient, mockAudioProvider)
 	ctx := context.Background()
 
 	plan, err := generator.GeneratePlan(ctx)
@@ -1374,9 +1301,6 @@ func TestGeneratePlan_WithYouTubePlaylist_Unit(t *testing.T) {
 	}
 
 	mockClient := newMockSpotifyClient()
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
 
 	mockAudioProvider := newMockAudioProvider()
 	mockAudioProvider.playlistInfo["https://www.youtube.com/playlist?list=PLtest123"] = &audio.YouTubePlaylistInfo{
@@ -1396,7 +1320,7 @@ func TestGeneratePlan_WithYouTubePlaylist_Unit(t *testing.T) {
 		},
 	}
 
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, mockAudioProvider)
+	generator := NewGenerator(cfg, mockClient, mockAudioProvider)
 	ctx := context.Background()
 
 	plan, err := generator.GeneratePlan(ctx)
@@ -1455,9 +1379,6 @@ func TestGeneratePlan_WithYouTubeVideo_SpotifyEnhancement(t *testing.T) {
 	}
 
 	mockClient := newMockSpotifyClient()
-	playlistTracksFunc := func(ctx context.Context, playlistID string, opts *spotigo.PlaylistTracksOptions) (*spotigo.Paging[spotigo.PlaylistTrack], error) {
-		return nil, nil
-	}
 
 	// Setup mock audio provider
 	mockAudioProvider := newMockAudioProvider()
@@ -1498,7 +1419,7 @@ func TestGeneratePlan_WithYouTubeVideo_SpotifyEnhancement(t *testing.T) {
 		},
 	}
 
-	generator := NewGenerator(cfg, mockClient, playlistTracksFunc, mockAudioProvider)
+	generator := NewGenerator(cfg, mockClient, mockAudioProvider)
 	ctx := context.Background()
 
 	plan, err := generator.GeneratePlan(ctx)
