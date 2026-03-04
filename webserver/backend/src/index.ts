@@ -1,7 +1,5 @@
 import express, { Express, Request, Response } from 'express';
-import cors from 'cors';
-import helmet from "helmet";
-import rateLimit from "express-rate-limit";
+import cors from "cors";
 import axios from 'axios';
 import dotenv from 'dotenv';
 import { createProxyMiddleware } from 'http-proxy-middleware';
@@ -11,52 +9,12 @@ dotenv.config();
 const app: Express = express();
 const port = process.env.PORT || 3000;
 const goAPIPort = process.env.GO_API_PORT || 5000;
-const goAPIHost = process.env.GO_API_HOST || 'localhost';
-
-const allowedHosts = new Set(["localhost", "127.0.0.1", "::1"]);
-if (goAPIHost && !allowedHosts.has(goAPIHost)) {
-  if (!/^[\w.-]+$/.test(goAPIHost)) {
-    throw new Error(`Invalid GO_API_HOST: ${goAPIHost}`);
-  }
-}
-if (goAPIPort && !/^\d+$/.test(String(goAPIPort))) {
-  throw new Error(`Invalid GO_API_PORT: ${goAPIPort}`);
-}
-
+const goAPIHost = process.env.GO_API_HOST || "localhost";
 const goAPIBaseURL = `http://${goAPIHost}:${goAPIPort}`;
 
-// Security headers (tuned for HTTP-only local network deployment)
-app.use(
-  helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", "data:", "blob:"],
-        connectSrc: ["'self'", "ws:", "wss:"],
-        upgradeInsecureRequests: null,
-      },
-    },
-    hsts: false,
-    crossOriginOpenerPolicy: false,
-    originAgentCluster: false,
-  }),
-);
-
-app.use(cors({ methods: ["GET", "POST"] }));
-
-// Rate limiter: 100 requests per minute per IP
-const apiLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests, please try again later' },
-});
-app.use('/api/', apiLimiter);
-
-app.use(express.json({ limit: '1mb' }));
+// Middleware
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
 app.use(express.static('public'));
 
 // WebSocket proxy for real-time logs.
