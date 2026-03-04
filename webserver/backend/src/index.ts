@@ -26,17 +26,20 @@ if (goAPIPort && !/^\d+$/.test(String(goAPIPort))) {
 const goAPIBaseURL = `http://${goAPIHost}:${goAPIPort}`;
 
 // Security headers
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", "data:", "blob:"],
-      connectSrc: ["'self'", `ws://localhost:${port}`, `ws://127.0.0.1:${port}`],
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "blob:"],
+        connectSrc: ["'self'", "ws:", "wss:"],
+        upgradeInsecureRequests: null,
+      },
     },
-  },
-}));
+  }),
+);
 
 // CORS restricted to local network
 const allowedOrigins = [
