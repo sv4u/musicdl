@@ -111,6 +111,7 @@ proxyPost('/api/download/plan', 'Failed to start plan generation');
 proxyPost('/api/download/run', 'Failed to start download');
 proxyPost('/api/download/stop', 'Failed to stop operation');
 proxyGet('/api/download/status', 'Failed to fetch status');
+proxyGet("/api/plan", "Failed to fetch plan snapshot");
 proxyGet('/api/rate-limit-status', 'Failed to fetch rate limit status');
 
 // Logs
@@ -150,7 +151,9 @@ app.get('*', (req: Request, res: Response) => {
 const server = app.listen(port, () => {
   console.log(`Express server running on http://localhost:${port}`);
   console.log(`Go API server: ${goAPIBaseURL}`);
-  console.log(`WebSocket proxy: ws://localhost:${port}/api/ws/logs -> ws://${goAPIHost}:${goAPIPort}/api/ws/logs`);
+  console.log(
+    `WebSocket proxy: ws://localhost:${port}/api/ws/* -> ws://${goAPIHost}:${goAPIPort}/api/ws/*`,
+  );
 });
 
 // http-proxy-middleware v3.x requires explicit WebSocket upgrade binding.

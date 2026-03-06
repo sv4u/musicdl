@@ -12,8 +12,8 @@
           Rate limit detected. Downloads are paused.
         </p>
         <div class="mt-4">
-          <p class="text-2xl font-bold text-red-400 font-mono">{{ remainingTime }}</p>
-          <p class="text-sm text-red-300">seconds remaining</p>
+          <p class="text-2xl font-bold text-red-400 font-mono">{{ remainingTime }}s</p>
+          <p class="text-sm text-red-300" v-if="humanReadableTime">{{ humanReadableTime }}</p>
         </div>
       </div>
     </div>
@@ -21,7 +21,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, onBeforeUnmount } from 'vue';
 
 interface RateLimitInfo {
   active: boolean;
@@ -37,6 +37,18 @@ const props = defineProps<{
 
 const remainingTime = ref(0);
 let countdownTimer: ReturnType<typeof setTimeout> | null = null;
+
+const humanReadableTime = computed((): string => {
+  const s = remainingTime.value;
+  if (s < 60) return '';
+  const hours = Math.floor(s / 3600);
+  const minutes = Math.floor((s % 3600) / 60);
+  const secs = s % 60;
+  if (hours > 0) {
+    return `${hours}h ${minutes}m remaining`;
+  }
+  return `${minutes}m ${secs}s remaining`;
+});
 
 watch(
   () => props.info,

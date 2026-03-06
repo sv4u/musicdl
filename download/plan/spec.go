@@ -19,12 +19,15 @@ var ErrPlanNotFound = errors.New("plan file not found")
 // SpecDownloadItem is the spec JSON shape for a single download item.
 type SpecDownloadItem struct {
 	ID              string                 `json:"id"`
+	Name            string                 `json:"name,omitempty"`
 	YouTubeURL      string                 `json:"youtube_url"`
 	SpotifyURI      string                 `json:"spotify_uri,omitempty"`
 	SpotifyMetadata map[string]interface{} `json:"spotify_metadata,omitempty"`
 	YouTubeMetadata map[string]interface{} `json:"youtube_metadata,omitempty"`
 	OutputPath      string                 `json:"output_path"`
 	Status          string                 `json:"status"`
+	Error           string                 `json:"error,omitempty"`
+	RawOutput       string                 `json:"raw_output,omitempty"`
 	SourceContext   map[string]interface{} `json:"source_context,omitempty"`
 }
 
@@ -76,9 +79,12 @@ func PlanToSpec(plan *DownloadPlan, configHash, configFile string, generatedAt t
 			trackCount++
 			di := SpecDownloadItem{
 				ID:         item.ItemID,
+				Name:       item.Name,
 				YouTubeURL: item.YouTubeURL,
 				OutputPath: item.FilePath,
 				Status:     string(item.Status),
+				Error:      item.Error,
+				RawOutput:  item.RawOutput,
 			}
 			if item.SpotifyURL != "" {
 				di.SpotifyURI = item.SpotifyURL
@@ -185,9 +191,12 @@ func SpecToPlan(spec *SpecPlan) (*DownloadPlan, error) {
 		item := &PlanItem{
 			ItemID:     d.ID,
 			ItemType:   PlanItemTypeTrack,
+			Name:       d.Name,
 			YouTubeURL: d.YouTubeURL,
 			FilePath:   d.OutputPath,
 			Status:     status,
+			Error:      d.Error,
+			RawOutput:  d.RawOutput,
 			Metadata:   metadata,
 			CreatedAt:  time.Now(),
 			Progress:   0,

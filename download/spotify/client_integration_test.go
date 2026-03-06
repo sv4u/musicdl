@@ -130,7 +130,7 @@ func TestSpotifyClient_AllArtistAlbums_Integration(t *testing.T) {
 
 	// Test AllArtistAlbums with a known artist
 	artistURL := "https://open.spotify.com/artist/2YZyLoL8N0Wb9xBt1NhZWg" // Kendrick Lamar
-	albums, err := client.AllArtistAlbums(ctx, artistURL)
+	albums, err := client.AllArtistAlbums(ctx, artistURL, nil)
 	if err != nil {
 		t.Fatalf("AllArtistAlbums failed: %v", err)
 	}

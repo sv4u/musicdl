@@ -44,10 +44,16 @@ func (o *Optimizer) Optimize(plan *DownloadPlan) {
 	}
 }
 
-// resolveOutputPaths sets FilePath on track items that have sufficient metadata.
+// resolveOutputPaths sets FilePath on pending track items that don't already
+// have one. Items loaded from a cached spec already carry the correct FilePath
+// from OutputPath, so overwriting them would corrupt paths when the top-level
+// metadata keys (artist, album, title) are not preserved through serialization.
 func (o *Optimizer) resolveOutputPaths(plan *DownloadPlan) {
 	for _, item := range plan.Items {
 		if item.ItemType != PlanItemTypeTrack || item.Status != PlanItemStatusPending {
+			continue
+		}
+		if item.FilePath != "" {
 			continue
 		}
 		if item.Metadata == nil {
@@ -205,7 +211,10 @@ func (o *Optimizer) removeDuplicates(plan *DownloadPlan) {
 	plan.Items = newItems
 }
 
-// checkFiles checks if files already exist and marks items as skipped only when overwrite mode is skip.
+// checkFiles reconciles skip status with the current filesystem.
+// Pending items whose files exist are marked skipped; previously skipped
+// items whose files no longer exist are reset to pending so they can be
+// re-downloaded. Only applies when overwrite mode is skip.
 func (o *Optimizer) checkFiles(plan *DownloadPlan) {
 	if o.overwriteMode != config.OverwriteSkip {
 		return
@@ -214,12 +223,18 @@ func (o *Optimizer) checkFiles(plan *DownloadPlan) {
 		if item.ItemType != PlanItemTypeTrack {
 			continue
 		}
-		if item.Status != PlanItemStatusPending {
-			continue
-		}
-		if item.FilePath != "" {
-			if _, err := os.Stat(item.FilePath); err == nil {
-				item.MarkSkipped(item.FilePath)
+		switch item.Status {
+		case PlanItemStatusPending:
+			if item.FilePath != "" {
+				if _, err := os.Stat(item.FilePath); err == nil {
+					item.MarkSkipped(item.FilePath)
+				}
+			}
+		case PlanItemStatusSkipped:
+			if item.FilePath == "" {
+				item.ResetToPending()
+			} else if _, err := os.Stat(item.FilePath); err != nil {
+				item.ResetToPending()
 			}
 		}
 	}

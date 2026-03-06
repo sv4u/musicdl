@@ -189,11 +189,12 @@ func (p *Provider) searchProvider(ctx context.Context, provider, query string) (
 }
 
 // Download downloads audio to output path.
-func (p *Provider) Download(ctx context.Context, url, outputPath string) (string, error) {
+// Returns (downloadedFilePath, rawYtDlpOutput, error).
+func (p *Provider) Download(ctx context.Context, url, outputPath string) (string, string, error) {
 	// Apply general rate limiting if enabled
 	if p.generalRateLimiter != nil {
 		if err := p.generalRateLimiter.WaitForRequest(ctx); err != nil {
-			return "", fmt.Errorf("general rate limit: %w", err)
+			return "", "", fmt.Errorf("general rate limit: %w", err)
 		}
 	}
 
@@ -201,7 +202,7 @@ func (p *Provider) Download(ctx context.Context, url, outputPath string) (string
 	provider := p.detectProvider(url)
 	if limiter, ok := p.rateLimiters[provider]; ok {
 		if err := limiter.WaitIfNeeded(ctx); err != nil {
-			return "", fmt.Errorf("rate limit for %s: %w", provider, err)
+			return "", "", fmt.Errorf("rate limit for %s: %w", provider, err)
 		}
 	}
 

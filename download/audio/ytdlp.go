@@ -1,6 +1,7 @@
 package audio
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -129,11 +130,12 @@ func (p *Provider) runYtDlpSearch(ctx context.Context, searchQuery string) (stri
 }
 
 // runYtDlpDownload runs yt-dlp to download audio.
-func (p *Provider) runYtDlpDownload(ctx context.Context, url, outputPath string) (string, error) {
+// Returns (downloadedFilePath, rawOutput, error).
+func (p *Provider) runYtDlpDownload(ctx context.Context, url, outputPath string) (string, string, error) {
 	// Ensure output directory exists
 	outputDir := filepath.Dir(outputPath)
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		return "", &DownloadError{
+		return "", "", &DownloadError{
 			Message:  fmt.Sprintf("Failed to create output directory: %s", outputDir),
 			Original: err,
 		}
@@ -188,20 +190,23 @@ func (p *Provider) runYtDlpDownload(ctx context.Context, url, outputPath string)
 	}
 
 	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
-	if err := cmd.Run(); err != nil {
-		// Check if it's a rate limit error
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			stderr := string(exitErr.Stderr)
-			if strings.Contains(stderr, "429") ||
-				strings.Contains(stderr, "rate limit") ||
-				strings.Contains(stderr, "HTTP Error 429") {
-				return "", &DownloadError{
-					Message:  "Rate limited by provider",
-					Original: err,
-				}
+	var combinedBuf bytes.Buffer
+	cmd.Stdout = &combinedBuf
+	cmd.Stderr = &combinedBuf
+
+	err := cmd.Run()
+	rawOutput := combinedBuf.String()
+
+	if err != nil {
+		if strings.Contains(rawOutput, "429") ||
+			strings.Contains(rawOutput, "rate limit") ||
+			strings.Contains(rawOutput, "HTTP Error 429") {
+			return "", rawOutput, &DownloadError{
+				Message:  "Rate limited by provider",
+				Original: err,
 			}
 		}
-		return "", &DownloadError{
+		return "", rawOutput, &DownloadError{
 			Message:  fmt.Sprintf("yt-dlp download failed: %v", err),
 			Original: err,
 		}
@@ -210,12 +215,12 @@ func (p *Provider) runYtDlpDownload(ctx context.Context, url, outputPath string)
 	// Find the actual downloaded file (yt-dlp may change extension)
 	downloadedPath := p.findDownloadedFile(outputPath)
 	if downloadedPath == "" {
-		return "", &DownloadError{
+		return "", rawOutput, &DownloadError{
 			Message: fmt.Sprintf("Downloaded file not found at %s", outputPath),
 		}
 	}
 
-	return downloadedPath, nil
+	return downloadedPath, rawOutput, nil
 }
 
 // findDownloadedFile finds the actual downloaded file.

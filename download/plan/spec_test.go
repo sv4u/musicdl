@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -282,5 +283,202 @@ func TestSpecToPlan_MetadataOnlyStatus(t *testing.T) {
 	}
 	if plan.Items[0].Status != PlanItemStatusSkipped {
 		t.Errorf("metadata_only should map to skipped, got %q", plan.Items[0].Status)
+	}
+}
+
+func TestPlanToSpec_ErrorAndRawOutput(t *testing.T) {
+	plan := NewDownloadPlan(map[string]interface{}{"config_version": "1.2"})
+	plan.AddItem(&PlanItem{
+		ItemID:     "track-1",
+		ItemType:   PlanItemTypeTrack,
+		YouTubeURL: "https://www.youtube.com/watch?v=abc123",
+		SpotifyID:  "xyz",
+		FilePath:   "Artist/Album/01 - Title.mp3",
+		Status:     PlanItemStatusFailed,
+		Error:      "download failed: 429 rate limited",
+		RawOutput:  "ERROR: [youtube] abc123: HTTP Error 429: Too Many Requests",
+		Metadata:   nil,
+		CreatedAt:  time.Now(),
+		Progress:   0,
+	})
+
+	spec := PlanToSpec(plan, "hash1", "config.yml", time.Now().UTC())
+	if len(spec.Downloads) != 1 {
+		t.Fatalf("spec.Downloads len = %d, want 1", len(spec.Downloads))
+	}
+	di := spec.Downloads[0]
+	if di.Error != "download failed: 429 rate limited" {
+		t.Errorf("spec.Downloads[0].Error = %q, want %q", di.Error, "download failed: 429 rate limited")
+	}
+	if !strings.Contains(di.RawOutput, "HTTP Error 429") {
+		t.Errorf("spec.Downloads[0].RawOutput = %q, want to contain %q", di.RawOutput, "HTTP Error 429")
+	}
+}
+
+func TestSpecToPlan_ErrorAndRawOutput(t *testing.T) {
+	spec := &SpecPlan{
+		ConfigHash:  "abc",
+		ConfigFile:  "config.yml",
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		TotalTracks: 1,
+		Downloads: []SpecDownloadItem{
+			{
+				ID:         "id1",
+				YouTubeURL: "https://youtube.com/watch?v=a",
+				OutputPath: "x.mp3",
+				Status:     "failed",
+				Error:      "download failed: 429 rate limited",
+				RawOutput:  "ERROR: [youtube] a: HTTP Error 429: Too Many Requests",
+			},
+		},
+		Playlists: nil,
+	}
+	plan, err := SpecToPlan(spec)
+	if err != nil {
+		t.Fatalf("SpecToPlan: %v", err)
+	}
+	if len(plan.Items) != 1 {
+		t.Fatalf("Items len = %d, want 1", len(plan.Items))
+	}
+	item := plan.Items[0]
+	if item.Error != "download failed: 429 rate limited" {
+		t.Errorf("plan.Items[0].Error = %q, want %q", item.Error, "download failed: 429 rate limited")
+	}
+	if item.RawOutput != "ERROR: [youtube] a: HTTP Error 429: Too Many Requests" {
+		t.Errorf("plan.Items[0].RawOutput = %q, want %q", item.RawOutput, "ERROR: [youtube] a: HTTP Error 429: Too Many Requests")
+	}
+}
+
+func TestPlanToSpecAndSpecToPlan_RoundTrip_WithErrorAndRawOutput(t *testing.T) {
+	plan := NewDownloadPlan(map[string]interface{}{"config_version": "1.2"})
+	plan.AddItem(&PlanItem{
+		ItemID:     "track-1",
+		ItemType:   PlanItemTypeTrack,
+		YouTubeURL: "https://www.youtube.com/watch?v=abc",
+		FilePath:   "Artist/Album/01 - Title.mp3",
+		Status:     PlanItemStatusFailed,
+		Error:      "download failed: 429 rate limited",
+		RawOutput:  "ERROR: [youtube] abc: HTTP Error 429: Too Many Requests",
+		CreatedAt:  time.Now(),
+		Progress:   0,
+	})
+
+	configHash := "roundtrip123"
+	configFile := "config.yml"
+	generatedAt := time.Now().UTC()
+
+	spec := PlanToSpec(plan, configHash, configFile, generatedAt)
+	back, err := SpecToPlan(spec)
+	if err != nil {
+		t.Fatalf("SpecToPlan: %v", err)
+	}
+	if len(back.Items) != 1 {
+		t.Fatalf("after round-trip Items len = %d, want 1", len(back.Items))
+	}
+	item := back.Items[0]
+	if item.Error != "download failed: 429 rate limited" {
+		t.Errorf("after round-trip Error = %q, want %q", item.Error, "download failed: 429 rate limited")
+	}
+	if item.RawOutput != "ERROR: [youtube] abc: HTTP Error 429: Too Many Requests" {
+		t.Errorf("after round-trip RawOutput = %q, want %q", item.RawOutput, "ERROR: [youtube] abc: HTTP Error 429: Too Many Requests")
+	}
+
+	dir := t.TempDir()
+	if err := SavePlanByHash(plan, dir, configHash, configFile); err != nil {
+		t.Fatalf("SavePlanByHash: %v", err)
+	}
+	loaded, err := LoadPlanByHash(dir, configHash)
+	if err != nil {
+		t.Fatalf("LoadPlanByHash: %v", err)
+	}
+	trackItems := loaded.GetItemsByType(PlanItemTypeTrack)
+	if len(trackItems) != 1 {
+		t.Fatalf("loaded plan track items len = %d, want 1", len(trackItems))
+	}
+	loadedItem := trackItems[0]
+	if loadedItem.Error != "download failed: 429 rate limited" {
+		t.Errorf("after disk load Error = %q, want %q", loadedItem.Error, "download failed: 429 rate limited")
+	}
+	if loadedItem.RawOutput != "ERROR: [youtube] abc: HTTP Error 429: Too Many Requests" {
+		t.Errorf("after disk load RawOutput = %q, want %q", loadedItem.RawOutput, "ERROR: [youtube] abc: HTTP Error 429: Too Many Requests")
+	}
+}
+
+func TestPlanCacheFile_FreshnessCheck(t *testing.T) {
+	tmpDir := t.TempDir()
+	configHash := "cache_test_hash"
+	cacheTTL := 24 * time.Hour
+
+	// Create and save a plan
+	dp := NewDownloadPlan(nil)
+	dp.AddItem(&PlanItem{
+		ItemID:   "track:cache1",
+		ItemType: PlanItemTypeTrack,
+		Name:     "Cached Track",
+		Status:   PlanItemStatusPending,
+	})
+	if err := SavePlanByHash(dp, tmpDir, configHash, "test.yml"); err != nil {
+		t.Fatalf("SavePlanByHash failed: %v", err)
+	}
+
+	// Check freshness: file just created should be fresh
+	planPath := GetPlanFilePath(tmpDir, configHash)
+	info, err := os.Stat(planPath)
+	if err != nil {
+		t.Fatalf("os.Stat failed: %v", err)
+	}
+	if time.Since(info.ModTime()) >= cacheTTL {
+		t.Error("Freshly created plan file should be within TTL")
+	}
+
+	// Load the cached plan
+	loaded, err := LoadPlanByHash(tmpDir, configHash)
+	if err != nil {
+		t.Fatalf("LoadPlanByHash failed: %v", err)
+	}
+
+	// Verify the loaded plan matches
+	trackCount := 0
+	for _, item := range loaded.Items {
+		if item.ItemType == PlanItemTypeTrack {
+			trackCount++
+		}
+	}
+	if trackCount != 1 {
+		t.Errorf("Expected 1 track in loaded plan, got %d", trackCount)
+	}
+}
+
+func TestPlanCacheFile_StaleCheck(t *testing.T) {
+	tmpDir := t.TempDir()
+	configHash := "stale_test_hash"
+
+	// Create and save a plan
+	dp := NewDownloadPlan(nil)
+	dp.AddItem(&PlanItem{
+		ItemID:   "track:stale1",
+		ItemType: PlanItemTypeTrack,
+		Name:     "Stale Track",
+		Status:   PlanItemStatusPending,
+	})
+	if err := SavePlanByHash(dp, tmpDir, configHash, "test.yml"); err != nil {
+		t.Fatalf("SavePlanByHash failed: %v", err)
+	}
+
+	// Backdate the file's modification time to simulate staleness
+	planPath := GetPlanFilePath(tmpDir, configHash)
+	oldTime := time.Now().Add(-25 * time.Hour) // 25 hours ago
+	if err := os.Chtimes(planPath, oldTime, oldTime); err != nil {
+		t.Fatalf("os.Chtimes failed: %v", err)
+	}
+
+	// Check freshness: file should now be stale
+	info, err := os.Stat(planPath)
+	if err != nil {
+		t.Fatalf("os.Stat failed: %v", err)
+	}
+	cacheTTL := 24 * time.Hour
+	if time.Since(info.ModTime()) < cacheTTL {
+		t.Error("Backdated plan file should be outside TTL")
 	}
 }

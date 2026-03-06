@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestNewProvider(t *testing.T) {
@@ -265,4 +266,33 @@ func TestProvider_FindDownloadedFile(t *testing.T) {
 	if result != similarPath {
 		t.Errorf("Expected %s, got %s", similarPath, result)
 	}
+}
+
+func TestDownload_ReturnsThreeValues(t *testing.T) {
+	// This test verifies that Download returns (path, rawOutput, error)
+	// by calling it with an invalid URL that will fail
+	config := &Config{
+		OutputFormat:   "mp3",
+		Bitrate:        "128k",
+		AudioProviders: []string{"youtube"},
+	}
+	provider, err := NewProvider(config)
+	if err != nil {
+		t.Fatalf("NewProvider() failed: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Use a clearly invalid URL that yt-dlp will reject quickly
+	_, rawOutput, err := provider.Download(ctx, "not-a-valid-url", t.TempDir()+"/test.mp3")
+
+	// We expect an error since the URL is invalid
+	if err == nil {
+		t.Fatal("Download() should fail with invalid URL")
+	}
+
+	// rawOutput may be empty or contain yt-dlp's error output
+	// The key assertion is that three values are returned (compile-time check)
+	_ = rawOutput
 }

@@ -7,7 +7,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/gorilla/websocket v1.5.3
 	github.com/joho/godotenv v1.5.1
-	github.com/sv4u/spotigo/v2 v2.1.0
+	github.com/sv4u/spotigo/v2 v2.2.0
 	golang.org/x/term v0.39.0
 	gopkg.in/yaml.v3 v3.0.1
 )

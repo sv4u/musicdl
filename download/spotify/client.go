@@ -34,6 +34,9 @@ type Config struct {
 	MaxRetries     int
 	RetryBaseDelay float64
 	RetryMaxDelay  float64
+
+	// Logger bridges spotigo API call logs to the host application.
+	Logger spotigo.Logger
 }
 
 // SpotifyClient is a wrapper around spotigo.Client that adds:
@@ -71,13 +74,17 @@ func NewSpotifyClient(config *Config) (*SpotifyClient, error) {
 
 	tracker := NewRateLimitTracker()
 
-	spotigoClient, err := spotigo.NewClient(auth,
+	opts := []spotigo.ClientOption{
 		spotigo.WithRateLimitCallback(func(retryAfter time.Duration) {
 			if sec := int(retryAfter.Seconds()); sec > 0 {
 				tracker.Update(sec)
 			}
 		}),
-	)
+	}
+	if config.Logger != nil {
+		opts = append(opts, spotigo.WithLogger(config.Logger))
+	}
+	spotigoClient, err := spotigo.NewClient(auth, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create spotigo client: %w", err)
 	}
@@ -278,7 +285,7 @@ func (c *SpotifyClient) GetArtist(ctx context.Context, artistIDOrURL string) (*s
 
 // AllArtistAlbums retrieves all albums and singles for an artist (cached).
 // Delegates pagination to spotigo's AllArtistAlbums. Excludes compilations and "Appears On" albums.
-func (c *SpotifyClient) AllArtistAlbums(ctx context.Context, artistIDOrURL string) ([]spotigo.SimplifiedAlbum, error) {
+func (c *SpotifyClient) AllArtistAlbums(ctx context.Context, artistIDOrURL string, progressFn func(spotigo.PaginationProgress)) ([]spotigo.SimplifiedAlbum, error) {
 	artistID, err := spotigo.GetID(artistIDOrURL, "artist")
 	if err != nil {
 		return nil, fmt.Errorf("invalid artist ID/URL: %w", err)
@@ -298,7 +305,7 @@ func (c *SpotifyClient) AllArtistAlbums(ctx context.Context, artistIDOrURL strin
 	allAlbums, err := c.client.AllArtistAlbums(ctx, artistID, &spotigo.ArtistAlbumsOptions{
 		IncludeGroups: []string{"album", "single"},
 		Limit:         50,
-	})
+	}, progressFn)
 	if err != nil {
 		return nil, c.handleError(err)
 	}
@@ -311,7 +318,7 @@ func (c *SpotifyClient) AllArtistAlbums(ctx context.Context, artistIDOrURL strin
 
 // AllAlbumTracks retrieves all tracks from an album (cached).
 // Delegates pagination to spotigo's AllAlbumTracks.
-func (c *SpotifyClient) AllAlbumTracks(ctx context.Context, albumIDOrURL string) ([]spotigo.SimplifiedTrack, error) {
+func (c *SpotifyClient) AllAlbumTracks(ctx context.Context, albumIDOrURL string, progressFn func(spotigo.PaginationProgress)) ([]spotigo.SimplifiedTrack, error) {
 	albumID, err := spotigo.GetID(albumIDOrURL, "album")
 	if err != nil {
 		return nil, fmt.Errorf("invalid album ID/URL: %w", err)
@@ -328,7 +335,7 @@ func (c *SpotifyClient) AllAlbumTracks(ctx context.Context, albumIDOrURL string)
 		return nil, err
 	}
 
-	allTracks, err := c.client.AllAlbumTracks(ctx, albumID, nil)
+	allTracks, err := c.client.AllAlbumTracks(ctx, albumID, nil, progressFn)
 	if err != nil {
 		return nil, c.handleError(err)
 	}
@@ -341,7 +348,7 @@ func (c *SpotifyClient) AllAlbumTracks(ctx context.Context, albumIDOrURL string)
 
 // AllPlaylistTracks retrieves all tracks from a playlist (cached).
 // Delegates pagination to spotigo's AllPlaylistTracks.
-func (c *SpotifyClient) AllPlaylistTracks(ctx context.Context, playlistIDOrURL string) ([]spotigo.PlaylistTrack, error) {
+func (c *SpotifyClient) AllPlaylistTracks(ctx context.Context, playlistIDOrURL string, progressFn func(spotigo.PaginationProgress)) ([]spotigo.PlaylistTrack, error) {
 	playlistID, err := spotigo.GetID(playlistIDOrURL, "playlist")
 	if err != nil {
 		return nil, fmt.Errorf("invalid playlist ID/URL: %w", err)
@@ -358,7 +365,7 @@ func (c *SpotifyClient) AllPlaylistTracks(ctx context.Context, playlistIDOrURL s
 		return nil, err
 	}
 
-	allTracks, err := c.client.AllPlaylistTracks(ctx, playlistID, nil)
+	allTracks, err := c.client.AllPlaylistTracks(ctx, playlistID, nil, progressFn)
 	if err != nil {
 		return nil, c.handleError(err)
 	}

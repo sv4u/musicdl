@@ -59,6 +59,9 @@ type PlanItem struct {
 	// Progress tracking
 	Progress float64 `json:"progress"` // 0.0 to 1.0
 
+	// Raw yt-dlp stdout+stderr captured during download (success or failure)
+	RawOutput string `json:"raw_output,omitempty"`
+
 	// Thread safety (not serialized)
 	mu sync.RWMutex `json:"-"`
 }
@@ -107,6 +110,15 @@ func (p *PlanItem) MarkSkipped(filePath string) {
 	}
 }
 
+// ResetToPending resets a skipped item back to pending so it can be re-evaluated.
+func (p *PlanItem) ResetToPending() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.Status = PlanItemStatusPending
+	p.Progress = 0.0
+	p.CompletedAt = nil
+}
+
 // GetStatus returns the current status (thread-safe).
 func (p *PlanItem) GetStatus() PlanItemStatus {
 	p.mu.RLock()
@@ -133,6 +145,20 @@ func (p *PlanItem) GetFilePath() string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.FilePath
+}
+
+// SetRawOutput stores the raw yt-dlp output (thread-safe).
+func (p *PlanItem) SetRawOutput(output string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.RawOutput = output
+}
+
+// GetRawOutput returns the raw yt-dlp output (thread-safe).
+func (p *PlanItem) GetRawOutput() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.RawOutput
 }
 
 // GetTimestamps returns timestamps (thread-safe).

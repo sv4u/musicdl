@@ -20,6 +20,7 @@ import (
 	"github.com/sv4u/musicdl/download/metadata"
 	"github.com/sv4u/musicdl/download/plan"
 	"github.com/sv4u/musicdl/download/spotify"
+	spotigo "github.com/sv4u/spotigo/v2"
 	"gopkg.in/yaml.v3"
 )
 
@@ -60,6 +61,7 @@ type APIServer struct {
 	runnerLock        sync.Mutex
 	currentRunTracker *RunTracker
 	logBroadcaster    *LogBroadcaster
+	planBroadcaster   *PlanBroadcaster
 	statsTracker      *StatsTracker
 	circuitBreaker    *CircuitBreaker
 	resumeState       *ResumeState
@@ -87,6 +89,7 @@ func NewAPIServer(port int) *APIServer {
 		port:              port,
 		currentRunTracker: &RunTracker{},
 		logBroadcaster:    NewLogBroadcaster(),
+		planBroadcaster:   NewPlanBroadcaster(),
 		statsTracker:      NewStatsTracker(cacheDir),
 		circuitBreaker:    NewCircuitBreaker(5, 3, 60*time.Second),
 		resumeState:       NewResumeState(cacheDir),
@@ -109,6 +112,7 @@ func (s *APIServer) completeRun(runID string, err error) {
 
 	if err != nil {
 		s.circuitBreaker.RecordFailure()
+		s.planBroadcaster.BroadcastPhaseChange("idle")
 		s.logBroadcaster.BroadcastString("error", fmt.Sprintf("Operation failed: %v", err), "runner")
 	} else {
 		s.circuitBreaker.RecordSuccess()
@@ -131,6 +135,7 @@ func (s *APIServer) initClientsFromConfig(cfg *config.MusicDLConfig) (*spotify.S
 		MaxRetries:        cfg.Download.SpotifyMaxRetries,
 		RetryBaseDelay:    cfg.Download.SpotifyRetryBaseDelay,
 		RetryMaxDelay:     cfg.Download.SpotifyRetryMaxDelay,
+		Logger:            &spotigoLogBridge{broadcaster: s.logBroadcaster},
 	}
 	spotifyClient, err := spotify.NewSpotifyClient(spotifyConfig)
 	if err != nil {
@@ -165,6 +170,9 @@ func (s *APIServer) cancelRunForGen(targetGen uint64) {
 	}
 }
 
+// planCacheTTL controls how long a cached plan is considered fresh.
+const planCacheTTL = 24 * time.Hour
+
 // executePlan loads config, generates a download plan, optimizes it, and saves
 // it to the cache directory. Progress and log messages are broadcast through the
 // logBroadcaster and currentRunTracker so the web UI can display real-time status.
@@ -185,7 +193,12 @@ func (s *APIServer) executePlan(ctx context.Context, configPath string) error {
 	if err != nil {
 		return err
 	}
+	s.planBroadcaster.BroadcastPhaseChange("generating")
 	generator := plan.NewGenerator(cfg, spotifyClient, audioProvider)
+	generator.SetPlanProgressCallback(func(message string, itemsFound int) {
+		s.planBroadcaster.BroadcastPlanProgress(message, itemsFound)
+		s.logBroadcaster.BroadcastString("info", message, "plan")
+	})
 	optimizer := plan.NewOptimizer(true, cfg.Download.Overwrite, cfg.Download.Output, cfg.Download.Format)
 	s.logBroadcaster.BroadcastString("info", "Generating download plan...", "plan")
 	generatedPlan, err := generator.GeneratePlan(ctx)
@@ -203,18 +216,16 @@ func (s *APIServer) executePlan(ctx context.Context, configPath string) error {
 			trackCount++
 		}
 	}
-	// TODO: Plan generation currently has no per-item progress callback, so the
-	// progress jumps from 0/0 to N/N once complete. To support a real progress bar
-	// during plan generation, GeneratePlan would need an incremental callback.
 	s.currentRunTracker.mu.Lock()
 	s.currentRunTracker.total = trackCount
 	s.currentRunTracker.progress = trackCount
 	s.currentRunTracker.mu.Unlock()
+	s.planBroadcaster.SetPlan(generatedPlan, hash)
 	s.logBroadcaster.BroadcastString("info", fmt.Sprintf("Plan generated: %d tracks found", trackCount), "plan")
 	return nil
 }
 
-// executeDownload loads config, generates a plan, then downloads all tracks.
+// executeDownload loads config, generates a plan (or reuses cached), then downloads all tracks.
 // It updates currentRunTracker with per-item progress and records statistics for
 // each completed, failed, or skipped track. The resume parameter controls whether
 // previously completed items (tracked via ResumeState) should be skipped.
@@ -235,24 +246,42 @@ func (s *APIServer) executeDownload(ctx context.Context, configPath string, resu
 	if err != nil {
 		return err
 	}
-	// Generate plan
-	generator := plan.NewGenerator(cfg, spotifyClient, audioProvider)
+	// Try to reuse cached plan if fresh (within planCacheTTL)
+	var loadedPlan *plan.DownloadPlan
 	optimizer := plan.NewOptimizer(true, cfg.Download.Overwrite, cfg.Download.Output, cfg.Download.Format)
-	s.logBroadcaster.BroadcastString("info", "Generating download plan...", "download")
-	generatedPlan, err := generator.GeneratePlan(ctx)
-	if err != nil {
-		return fmt.Errorf("plan generation failed: %w", err)
+	planPath := plan.GetPlanFilePath(cacheDir, hash)
+	if info, statErr := os.Stat(planPath); statErr == nil && time.Since(info.ModTime()) < planCacheTTL {
+		cached, loadErr := plan.LoadPlanByHash(cacheDir, hash)
+		if loadErr == nil {
+			loadedPlan = cached
+			optimizer.Optimize(loadedPlan)
+			s.logBroadcaster.BroadcastString("info", "Using cached plan (less than 24h old)", "download")
+		}
 	}
-	optimizer.Optimize(generatedPlan)
-	configFile := filepath.Base(configPath)
-	if err := plan.SavePlanByHash(generatedPlan, cacheDir, hash, configFile); err != nil {
-		return fmt.Errorf("error saving plan file: %w", err)
-	}
-	s.logBroadcaster.BroadcastString("info", "Plan generated, loading for execution...", "download")
-	// Load plan for execution
-	loadedPlan, err := plan.LoadPlanByHash(cacheDir, hash)
-	if err != nil {
-		return fmt.Errorf("error loading plan: %w", err)
+	if loadedPlan == nil {
+		// Generate fresh plan
+		s.planBroadcaster.BroadcastPhaseChange("generating")
+		generator := plan.NewGenerator(cfg, spotifyClient, audioProvider)
+		generator.SetPlanProgressCallback(func(message string, itemsFound int) {
+			s.planBroadcaster.BroadcastPlanProgress(message, itemsFound)
+			s.logBroadcaster.BroadcastString("info", message, "plan")
+		})
+		s.logBroadcaster.BroadcastString("info", "Generating download plan...", "download")
+		generatedPlan, genErr := generator.GeneratePlan(ctx)
+		if genErr != nil {
+			return fmt.Errorf("plan generation failed: %w", genErr)
+		}
+		optimizer.Optimize(generatedPlan)
+		configFile := filepath.Base(configPath)
+		if saveErr := plan.SavePlanByHash(generatedPlan, cacheDir, hash, configFile); saveErr != nil {
+			return fmt.Errorf("error saving plan file: %w", saveErr)
+		}
+		s.logBroadcaster.BroadcastString("info", "Plan generated, loading for execution...", "download")
+		loaded, loadErr := plan.LoadPlanByHash(cacheDir, hash)
+		if loadErr != nil {
+			return fmt.Errorf("error loading plan: %w", loadErr)
+		}
+		loadedPlan = loaded
 	}
 	// If resuming, mark previously completed items as skipped so the executor
 	// does not re-download them.
@@ -269,6 +298,8 @@ func (s *APIServer) executeDownload(ctx context.Context, configPath string, resu
 			s.logBroadcaster.BroadcastString("info", fmt.Sprintf("Resuming: skipping %d previously completed items", skipped), "download")
 		}
 	}
+	s.planBroadcaster.SetPlan(loadedPlan, hash)
+	s.planBroadcaster.BroadcastPhaseChange("downloading")
 	totalTracks := countPendingTracks(loadedPlan)
 	s.currentRunTracker.mu.Lock()
 	s.currentRunTracker.total = totalTracks
@@ -285,6 +316,7 @@ func (s *APIServer) executeDownload(ctx context.Context, configPath string, resu
 	var flushMu sync.Mutex
 	var itemsSinceFlush int
 	progressCallback := func(item *plan.PlanItem) {
+		s.planBroadcaster.BroadcastItemUpdate(item)
 		switch item.Status {
 		case plan.PlanItemStatusCompleted, plan.PlanItemStatusFailed, plan.PlanItemStatusSkipped:
 			s.currentRunTracker.mu.Lock()
@@ -340,10 +372,12 @@ func (s *APIServer) executeDownload(ctx context.Context, configPath string, resu
 	completed := stats["completed"]
 	failed := stats["failed"]
 	total := stats["total"]
-	s.logBroadcaster.BroadcastString("info", fmt.Sprintf("Download complete: %d/%d succeeded, %d failed", completed, total, failed), "download")
 	if failed > 0 {
+		s.logBroadcaster.BroadcastString("error", fmt.Sprintf("Download finished with errors: %d/%d succeeded, %d failed", completed, total, failed), "download")
 		return fmt.Errorf("partial failure: %d of %d tracks failed", failed, total)
 	}
+	s.planBroadcaster.BroadcastPhaseChange("complete")
+	s.logBroadcaster.BroadcastString("info", fmt.Sprintf("Download complete: %d/%d succeeded", completed, total), "download")
 	return nil
 }
 
@@ -376,6 +410,10 @@ func (s *APIServer) Run() int {
 	// Status endpoints
 	mux.HandleFunc("GET /api/download/status", s.statusHandler)
 	mux.HandleFunc("GET /api/rate-limit-status", s.rateLimitStatusHandler)
+
+	// Plan endpoints
+	mux.HandleFunc("GET /api/plan", s.planSnapshotHandler)
+	mux.HandleFunc("GET /api/ws/plan", s.wsPlanHandler)
 
 	// Logs endpoint (HTTP + WebSocket)
 	mux.HandleFunc("GET /api/logs", s.logsHandler)
@@ -966,6 +1004,18 @@ func (s *APIServer) wsLogsHandler(w http.ResponseWriter, r *http.Request) {
 	s.logBroadcaster.HandleWebSocket(w, r)
 }
 
+// planSnapshotHandler returns the current plan state as JSON.
+func (s *APIServer) planSnapshotHandler(w http.ResponseWriter, r *http.Request) {
+	snapshot := s.planBroadcaster.GetSnapshot()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(snapshot)
+}
+
+// wsPlanHandler upgrades the connection to WebSocket for real-time plan updates.
+func (s *APIServer) wsPlanHandler(w http.ResponseWriter, r *http.Request) {
+	s.planBroadcaster.HandleWebSocket(w, r)
+}
+
 // statsHandler returns download statistics.
 // @Summary Get statistics
 // @Description Get per-run and cumulative download statistics
@@ -1059,6 +1109,29 @@ func (s *APIServer) resumeRetryFailedHandler(w http.ResponseWriter, r *http.Requ
 		"message":        fmt.Sprintf("Found %d retryable items", len(retryable)),
 		"retryableItems": retryable,
 	})
+}
+
+// spotigoLogBridge bridges spotigo's Logger interface to the musicdl LogBroadcaster.
+type spotigoLogBridge struct {
+	broadcaster *LogBroadcaster
+}
+
+func (l *spotigoLogBridge) Debug(format string, v ...interface{}) {}
+func (l *spotigoLogBridge) Info(format string, v ...interface{}) {
+	l.broadcaster.BroadcastString("info", fmt.Sprintf(format, v...), "spotify")
+}
+func (l *spotigoLogBridge) Warn(format string, v ...interface{}) {
+	l.broadcaster.BroadcastString("warn", fmt.Sprintf(format, v...), "spotify")
+}
+func (l *spotigoLogBridge) Error(format string, v ...interface{}) {
+	l.broadcaster.BroadcastString("error", fmt.Sprintf(format, v...), "spotify")
+}
+func (l *spotigoLogBridge) LogAPICall(info spotigo.APICallInfo) {
+	if info.Error != nil {
+		l.broadcaster.BroadcastString("debug", fmt.Sprintf("Spotify API: %s %s → error (%dms)", info.Method, info.URL, info.Duration.Milliseconds()), "spotify")
+	} else {
+		l.broadcaster.BroadcastString("debug", fmt.Sprintf("Spotify API: %s %s → %d (%dms)", info.Method, info.URL, info.StatusCode, info.Duration.Milliseconds()), "spotify")
+	}
 }
 
 // swaggerUIHandler serves the Swagger UI page.

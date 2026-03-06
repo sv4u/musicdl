@@ -71,11 +71,14 @@ type SpotifyClientInterface interface {
 	GetAlbum(ctx context.Context, albumIDOrURL string) (*spotigo.Album, error)
 	GetArtist(ctx context.Context, artistIDOrURL string) (*spotigo.Artist, error)
 	GetPlaylist(ctx context.Context, playlistIDOrURL string) (*spotigo.Playlist, error)
-	AllArtistAlbums(ctx context.Context, artistIDOrURL string) ([]spotigo.SimplifiedAlbum, error)
-	AllAlbumTracks(ctx context.Context, albumIDOrURL string) ([]spotigo.SimplifiedTrack, error)
-	AllPlaylistTracks(ctx context.Context, playlistIDOrURL string) ([]spotigo.PlaylistTrack, error)
+	AllArtistAlbums(ctx context.Context, artistIDOrURL string, progressFn func(spotigo.PaginationProgress)) ([]spotigo.SimplifiedAlbum, error)
+	AllAlbumTracks(ctx context.Context, albumIDOrURL string, progressFn func(spotigo.PaginationProgress)) ([]spotigo.SimplifiedTrack, error)
+	AllPlaylistTracks(ctx context.Context, playlistIDOrURL string, progressFn func(spotigo.PaginationProgress)) ([]spotigo.PlaylistTrack, error)
 	Search(ctx context.Context, query, searchType string, opts *spotigo.SearchOptions) (*spotigo.SearchResponse, error)
 }
+
+// PlanProgressCallback is called during plan generation to report progress.
+type PlanProgressCallback func(message string, itemsFound int)
 
 // Generator generates download plans from configuration.
 type Generator struct {
@@ -90,6 +93,8 @@ type Generator struct {
 	seenYouTubePlaylistIDs map[string]bool
 	// rateLimitNotifier is optional; when set, called during Spotify rate limit wait with (totalSec, remainingSec).
 	rateLimitNotifier func(totalSec, remainingSec int)
+	// planProgressCallback is optional; when set, called during plan generation to report progress.
+	planProgressCallback PlanProgressCallback
 }
 
 // NewGenerator creates a new plan generator.
@@ -104,6 +109,18 @@ func NewGenerator(cfg *config.MusicDLConfig, spotifyClient SpotifyClientInterfac
 		seenArtistIDs:          make(map[string]bool),
 		seenYouTubeVideoIDs:    make(map[string]bool),
 		seenYouTubePlaylistIDs: make(map[string]bool),
+	}
+}
+
+// SetPlanProgressCallback sets the callback for plan generation progress.
+func (g *Generator) SetPlanProgressCallback(cb PlanProgressCallback) {
+	g.planProgressCallback = cb
+}
+
+// notifyPlanProgress calls the progress callback if set.
+func (g *Generator) notifyPlanProgress(message string, itemsFound int) {
+	if g.planProgressCallback != nil {
+		g.planProgressCallback(message, itemsFound)
 	}
 }
 
@@ -599,7 +616,9 @@ func (g *Generator) processArtist(ctx context.Context, plan *DownloadPlan, artis
 	var albums []spotigo.SimplifiedAlbum
 	err = g.runWithRateLimitRetry(ctx, func() error {
 		var err2 error
-		albums, err2 = g.spotifyClient.AllArtistAlbums(ctx, artistID)
+		albums, err2 = g.spotifyClient.AllArtistAlbums(ctx, artistID, func(p spotigo.PaginationProgress) {
+			g.notifyPlanProgress(fmt.Sprintf("Fetching albums for artist '%s': %d/%d", artistName, p.FetchedItems, p.TotalItems), p.FetchedItems)
+		})
 		return err2
 	})
 	if err != nil {
@@ -676,7 +695,9 @@ func (g *Generator) processAlbumTracks(ctx context.Context, plan *DownloadPlan, 
 	var allTracks []spotigo.SimplifiedTrack
 	err = g.runWithRateLimitRetry(ctx, func() error {
 		var err2 error
-		allTracks, err2 = g.spotifyClient.AllAlbumTracks(ctx, albumID)
+		allTracks, err2 = g.spotifyClient.AllAlbumTracks(ctx, albumID, func(p spotigo.PaginationProgress) {
+			g.notifyPlanProgress(fmt.Sprintf("Fetching tracks for album '%s': %d/%d", album.Name, p.FetchedItems, p.TotalItems), p.FetchedItems)
+		})
 		return err2
 	})
 	if err != nil {
@@ -815,7 +836,9 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 	var allTracks []spotigo.PlaylistTrack
 	err = g.runWithRateLimitRetry(ctx, func() error {
 		var err2 error
-		allTracks, err2 = g.spotifyClient.AllPlaylistTracks(ctx, playlistID)
+		allTracks, err2 = g.spotifyClient.AllPlaylistTracks(ctx, playlistID, func(p spotigo.PaginationProgress) {
+			g.notifyPlanProgress(fmt.Sprintf("Fetching playlist '%s': %d/%d tracks", playlistName, p.FetchedItems, p.TotalItems), p.FetchedItems)
+		})
 		return err2
 	})
 	if err != nil {

@@ -222,7 +222,8 @@ func (d *Downloader) downloadSpotifyTrack(ctx context.Context, item *plan.PlanIt
 	}
 
 	// 4. Download audio file
-	downloadedPath, err := d.audioProvider.Download(ctx, audioURL, outputPath)
+	downloadedPath, rawOutput, err := d.audioProvider.Download(ctx, audioURL, outputPath)
+	item.SetRawOutput(rawOutput)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to download audio: %w", err)
 	}
@@ -296,7 +297,8 @@ func (d *Downloader) downloadYouTubeTrack(ctx context.Context, item *plan.PlanIt
 	if d.audioProvider == nil {
 		return false, "", fmt.Errorf("audioProvider is required for YouTube downloads")
 	}
-	downloadedPath, err := d.audioProvider.Download(ctx, item.YouTubeURL, outputPath)
+	downloadedPath, rawOutput, err := d.audioProvider.Download(ctx, item.YouTubeURL, outputPath)
+	item.SetRawOutput(rawOutput)
 	if err != nil {
 		return false, "", fmt.Errorf("failed to download from YouTube: %w", err)
 	}

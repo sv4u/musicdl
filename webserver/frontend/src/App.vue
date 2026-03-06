@@ -67,7 +67,7 @@
         <div class="p-8">
           <!-- Download Tab -->
           <div v-show="activeTab === 'Download'" class="space-y-6">
-            <DownloadRunner />
+            <DownloadDashboard />
           </div>
 
           <!-- Configuration Tab -->
@@ -96,7 +96,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
 import axios from 'axios';
-import DownloadRunner from './components/DownloadRunner.vue';
+import DownloadDashboard from './components/DownloadDashboard.vue';
 import ConfigEditor from './components/ConfigEditor.vue';
 import LogViewer from './components/LogViewer.vue';
 import RateLimitAlert from './components/RateLimitAlert.vue';

@@ -94,7 +94,7 @@ func (m *mockSpotifyClient) GetPlaylist(ctx context.Context, playlistIDOrURL str
 	return nil, fmt.Errorf("playlist not found: %s", playlistID)
 }
 
-func (m *mockSpotifyClient) AllArtistAlbums(ctx context.Context, artistIDOrURL string) ([]spotigo.SimplifiedAlbum, error) {
+func (m *mockSpotifyClient) AllArtistAlbums(ctx context.Context, artistIDOrURL string, progressFn func(spotigo.PaginationProgress)) ([]spotigo.SimplifiedAlbum, error) {
 	artistID := spotigo.ExtractID(artistIDOrURL, "artist")
 	if err, ok := m.artistAlbumsErrors[artistID]; ok {
 		return nil, err
@@ -105,7 +105,7 @@ func (m *mockSpotifyClient) AllArtistAlbums(ctx context.Context, artistIDOrURL s
 	return []spotigo.SimplifiedAlbum{}, nil
 }
 
-func (m *mockSpotifyClient) AllAlbumTracks(ctx context.Context, albumIDOrURL string) ([]spotigo.SimplifiedTrack, error) {
+func (m *mockSpotifyClient) AllAlbumTracks(ctx context.Context, albumIDOrURL string, progressFn func(spotigo.PaginationProgress)) ([]spotigo.SimplifiedTrack, error) {
 	albumID := spotigo.ExtractID(albumIDOrURL, "album")
 	if paging, ok := m.albumTracks[albumID]; ok && paging != nil {
 		return paging.Items, nil
@@ -116,7 +116,7 @@ func (m *mockSpotifyClient) AllAlbumTracks(ctx context.Context, albumIDOrURL str
 	return []spotigo.SimplifiedTrack{}, nil
 }
 
-func (m *mockSpotifyClient) AllPlaylistTracks(ctx context.Context, playlistIDOrURL string) ([]spotigo.PlaylistTrack, error) {
+func (m *mockSpotifyClient) AllPlaylistTracks(ctx context.Context, playlistIDOrURL string, progressFn func(spotigo.PaginationProgress)) ([]spotigo.PlaylistTrack, error) {
 	playlistID := spotigo.ExtractID(playlistIDOrURL, "playlist")
 	if paging, ok := m.playlistTracks[playlistID]; ok && paging != nil {
 		return paging.Items, nil
