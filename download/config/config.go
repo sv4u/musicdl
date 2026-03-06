@@ -283,7 +283,33 @@ func (c *MusicDLConfig) Validate() error {
 		return err
 	}
 
+	// Ensure all music sources have non-empty URL so plan generation fails fast with a clear error
+	if err := validateSourceURLs("songs", c.Songs); err != nil {
+		return err
+	}
+	if err := validateSourceURLs("artists", c.Artists); err != nil {
+		return err
+	}
+	if err := validateSourceURLs("playlists", c.Playlists); err != nil {
+		return err
+	}
+	if err := validateSourceURLs("albums", c.Albums); err != nil {
+		return err
+	}
+
 	// UI settings defaults are set by the caller (needs planPath)
 
+	return nil
+}
+
+// validateSourceURLs returns an error if any entry has an empty or whitespace-only URL.
+func validateSourceURLs(section string, sources []MusicSource) error {
+	for i, s := range sources {
+		if strings.TrimSpace(s.URL) == "" {
+			return &ConfigError{
+				Message: fmt.Sprintf("Empty URL in %s[%d] (name: %q). Each entry must have a non-empty url.", section, i, s.Name),
+			}
+		}
+	}
 	return nil
 }

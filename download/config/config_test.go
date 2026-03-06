@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -412,5 +413,125 @@ albums: []
 	_, err := LoadConfig(configPath)
 	if err == nil {
 		t.Error("LoadConfig() should fail when output does not contain {title}")
+	}
+}
+
+func TestLoadConfig_EmptySourceURLRejected(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configYAML := `version: "1.2"
+download:
+  client_id: "id"
+  client_secret: "sec"
+  output: "{artist}/{title}.{output-ext}"
+songs: []
+artists:
+  - name: Some Artist
+    url: ""
+playlists: []
+albums: []
+`
+
+	if err := os.WriteFile(configPath, []byte(configYAML), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	_, err := LoadConfig(configPath)
+	if err == nil {
+		t.Error("LoadConfig() should fail when any source has empty URL")
+	}
+	if _, ok := err.(*ConfigError); !ok {
+		t.Errorf("Expected ConfigError, got %T", err)
+	}
+}
+
+// TestLoadConfig_UserConfigStructure verifies that a config matching the user's
+// structure (spec layout: spotify, download with threads/format/output/overwrite,
+// rate_limits, artists, playlists including YouTube URL) loads without error.
+func TestLoadConfig_UserConfigStructure(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	configYAML := `version: "1.2"
+
+spotify:
+  client_id: test_client_id
+  client_secret: test_client_secret
+
+download:
+  threads: 1
+  max_retries: 2
+  format: mp3
+  bitrate: 128k
+  output: "{artist}/{album}/{disc-number}{track-number} - {title}.{output-ext}"
+  audio_providers:
+    - youtube-music
+    - youtube
+  overwrite: metadata
+
+rate_limits:
+  spotify_retries: 2
+  youtube_retries: 2
+  youtube_bandwidth: 1048576
+
+songs: []
+
+artists:
+  - name: ArtistOne
+    url: https://open.spotify.com/artist/4kqFrZkeqDfOIEqTWqbOOV
+  - name: "8485"
+    url: https://open.spotify.com/artist/3LwiPwIJNshV4ItekGcIMo
+
+playlists:
+  - name: "dog relaxation"
+    url: https://open.spotify.com/playlist/3300BQPneawOkHUGOOUhMK
+    create_m3u: true
+  - name: "upbeat study music"
+    url: https://www.youtube.com/playlist?list=PLveg0IEcZWN7eQvidQOrkxiBvH0Skewwv
+    create_m3u: true
+
+albums: []
+`
+
+	if err := os.WriteFile(configPath, []byte(configYAML), 0644); err != nil {
+		t.Fatalf("Failed to write config file: %v", err)
+	}
+
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig() failed: %v", err)
+	}
+
+	if cfg.Download.ClientID != "test_client_id" || cfg.Download.ClientSecret != "test_client_secret" {
+		t.Errorf("Expected spotify credentials in download, got client_id=%q", cfg.Download.ClientID)
+	}
+	if cfg.Download.Threads != 1 {
+		t.Errorf("Expected threads 1, got %d", cfg.Download.Threads)
+	}
+	if cfg.Download.MaxRetries != 2 {
+		t.Errorf("Expected max_retries 2, got %d", cfg.Download.MaxRetries)
+	}
+	if cfg.Download.SpotifyMaxRetries != 2 {
+		t.Errorf("Expected spotify_max_retries 2, got %d", cfg.Download.SpotifyMaxRetries)
+	}
+	if cfg.Download.DownloadBandwidthLimit == nil || *cfg.Download.DownloadBandwidthLimit != 1048576 {
+		t.Errorf("Expected download_bandwidth_limit 1048576, got %v", cfg.Download.DownloadBandwidthLimit)
+	}
+	if cfg.Download.Overwrite != OverwriteMetadata {
+		t.Errorf("Expected overwrite metadata, got %q", cfg.Download.Overwrite)
+	}
+	if len(cfg.Artists) != 2 {
+		t.Errorf("Expected 2 artists, got %d", len(cfg.Artists))
+	}
+	if len(cfg.Playlists) != 2 {
+		t.Errorf("Expected 2 playlists, got %d", len(cfg.Playlists))
+	}
+	// First playlist Spotify, second YouTube
+	if !strings.Contains(cfg.Playlists[0].URL, "spotify.com") {
+		t.Errorf("Expected first playlist to be Spotify, got %q", cfg.Playlists[0].URL)
+	}
+	if !strings.Contains(cfg.Playlists[1].URL, "youtube.com") {
+		t.Errorf("Expected second playlist to be YouTube, got %q", cfg.Playlists[1].URL)
 	}
 }

@@ -59,12 +59,12 @@
         <div
           v-for="(log, index) in filteredLogs"
           :key="index"
-          :class="['py-0.5 px-1 rounded', logLineClass(log.level)]"
+          :class="['py-1 px-2 rounded flex flex-wrap items-baseline gap-x-2 gap-y-0.5', logLineClass(log.level)]"
         >
-          <span class="text-slate-600 mr-2">{{ formatTime(log.timestamp) }}</span>
-          <span :class="levelBadgeClass(log.level)" class="text-xs font-bold mr-2 uppercase">{{ log.level }}</span>
-          <span v-if="log.source" class="text-slate-500 mr-2">[{{ log.source }}]</span>
-          <span class="text-slate-300">{{ log.message }}</span>
+          <span class="text-slate-500 text-xs shrink-0">{{ formatTime(log.timestamp) }}</span>
+          <span :class="levelBadgeClass(log.level)" class="text-xs font-medium uppercase shrink-0">{{ log.level }}</span>
+          <span v-if="log.source" class="text-slate-500 text-xs shrink-0">[{{ log.source }}]</span>
+          <span class="log-message text-slate-100 font-medium min-w-0 break-words">{{ log.message }}</span>
         </div>
       </div>
     </div>
@@ -277,3 +277,11 @@ function levelBadgeClass(level: string): string {
   return 'text-slate-400';
 }
 </script>
+
+<style scoped>
+/* Emphasize the log message so it isn't overshadowed by timestamp/level/source */
+.log-message {
+  flex: 1 1 auto;
+  word-break: break-word;
+}
+</style>
