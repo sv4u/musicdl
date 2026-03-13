@@ -96,7 +96,7 @@ func TestProvider_Download_Integration(t *testing.T) {
 	testURL := "https://www.youtube.com/watch?v=dQw4w9WgXcQ" // Short test video
 
 	// Download (this will take a while, so we'll skip if it takes too long)
-	downloadedPath, err := provider.Download(ctx, testURL, outputPath)
+	downloadedPath, _, err := provider.Download(ctx, testURL, outputPath)
 	if err != nil {
 		t.Fatalf("Download failed: %v", err)
 	}
