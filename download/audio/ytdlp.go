@@ -170,22 +170,13 @@ func (p *Provider) runYtDlpDownload(ctx context.Context, url, outputPath string)
 		url,
 	}
 
-	// Add postprocessor for format conversion if needed
-	if p.config.OutputFormat != "" && p.config.Bitrate != "disable" {
-		args = append(args,
-			"--postprocessor-args", fmt.Sprintf("ffmpeg:-b:a %s", p.config.Bitrate),
-		)
-
-		// Add format-specific postprocessor
-		switch p.config.OutputFormat {
-		case "mp3":
-			args = append(args, "--extract-audio", "--audio-format", "mp3", "--audio-quality", p.config.Bitrate)
-		case "flac":
-			args = append(args, "--extract-audio", "--audio-format", "flac")
-		case "m4a":
-			args = append(args, "--extract-audio", "--audio-format", "m4a", "--audio-quality", p.config.Bitrate)
-		case "opus":
-			args = append(args, "--extract-audio", "--audio-format", "opus", "--audio-quality", p.config.Bitrate)
+	// Add audio extraction postprocessor for format conversion.
+	// --extract-audio + --audio-format handles conversion; --audio-quality sets bitrate.
+	// FLAC is lossless so --audio-quality is not applicable.
+	if p.config.OutputFormat != "" {
+		args = append(args, "--extract-audio", "--audio-format", p.config.OutputFormat)
+		if p.config.Bitrate != "" && p.config.Bitrate != "disable" && p.config.OutputFormat != "flac" {
+			args = append(args, "--audio-quality", p.config.Bitrate)
 		}
 	}
 

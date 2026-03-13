@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"io"
 	"log"
 	"os"
@@ -41,23 +42,17 @@ func (w *LogTeeWriter) Write(p []byte) (n int, err error) {
 		w.buf = w.buf[len(w.buf)-maxLogTeeBuf:]
 	}
 	for {
-		idx := 0
-		for i, b := range w.buf {
-			if b == '\n' {
-				line := string(w.buf[idx : i+1])
-				idx = i + 1
-				if strings.Contains(line, "ERROR:") || strings.Contains(line, "WARN:") {
-					select {
-					case w.errors <- strings.TrimSuffix(line, "\n"):
-					default:
-					}
-				}
-			}
-		}
-		if idx > 0 {
-			w.buf = w.buf[idx:]
-		} else {
+		nl := bytes.IndexByte(w.buf, '\n')
+		if nl < 0 {
 			break
+		}
+		line := string(w.buf[:nl])
+		w.buf = w.buf[nl+1:]
+		if strings.Contains(line, "ERROR:") || strings.Contains(line, "WARN:") {
+			select {
+			case w.errors <- line:
+			default:
+			}
 		}
 	}
 	return n, nil

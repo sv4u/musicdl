@@ -2,6 +2,7 @@ package plan
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -540,6 +541,61 @@ func TestExecutor_WaitForShutdown_NilWG(t *testing.T) {
 		if !<-results {
 			t.Error("Expected all WaitForShutdown calls to complete when wg is nil")
 		}
+	}
+}
+
+// --- Bug 4: Executor must not leak goroutines on context cancellation ---
+
+func TestExecutor_Execute_ContextCancellation_NoLeak(t *testing.T) {
+	downloadStarted := make(chan struct{}, 10)
+	downloadBlocking := make(chan struct{})
+
+	downloader := &mockDownloader{
+		downloadFunc: func(ctx context.Context, item *PlanItem) (bool, string, error) {
+			downloadStarted <- struct{}{}
+			select {
+			case <-downloadBlocking:
+				return true, "/tmp/test.mp3", nil
+			case <-ctx.Done():
+				return false, "", ctx.Err()
+			}
+		},
+	}
+	executor := NewExecutor(downloader, 2)
+	plan := NewDownloadPlan(nil)
+
+	for i := 0; i < 5; i++ {
+		plan.AddItem(&PlanItem{
+			ItemID:     fmt.Sprintf("track:%d", i),
+			ItemType:   PlanItemTypeTrack,
+			SpotifyURL: fmt.Sprintf("https://open.spotify.com/track/test%d", i),
+			Name:       fmt.Sprintf("Track %d", i),
+			Status:     PlanItemStatusPending,
+		})
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := executor.Execute(ctx, plan, nil)
+		errCh <- err
+	}()
+
+	// Wait for at least one download to start
+	<-downloadStarted
+
+	// Cancel the context and unblock all downloads
+	cancel()
+	close(downloadBlocking)
+
+	// Execute must return without hanging (goroutines properly cleaned up)
+	select {
+	case <-errCh:
+		// success: Execute returned
+	case <-time.After(5 * time.Second):
+		t.Fatal("Execute did not return after context cancellation; goroutine leak likely")
 	}
 }
 

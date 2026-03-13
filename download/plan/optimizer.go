@@ -142,6 +142,7 @@ func sanitizePathPart(name string) string {
 }
 
 // removeDuplicates removes duplicate track items from the plan.
+// Deduplicates both Spotify tracks (by SpotifyID) and YouTube tracks (by video ID).
 func (o *Optimizer) removeDuplicates(plan *DownloadPlan) {
 	seenTrackIDs := make(map[string]*PlanItem)
 	itemsToRemove := make(map[int]bool)
@@ -151,12 +152,19 @@ func (o *Optimizer) removeDuplicates(plan *DownloadPlan) {
 			continue
 		}
 
-		if item.SpotifyID == "" {
+		dedupeKey := ""
+		if item.SpotifyID != "" {
+			dedupeKey = "spotify:" + item.SpotifyID
+		} else if item.YouTubeURL != "" {
+			if vid := ExtractYouTubeVideoID(item.YouTubeURL); vid != "" {
+				dedupeKey = "youtube:" + vid
+			}
+		}
+		if dedupeKey == "" {
 			continue
 		}
 
-		// Check if we've seen this track ID before
-		if existing, exists := seenTrackIDs[item.SpotifyID]; exists {
+		if existing, exists := seenTrackIDs[dedupeKey]; exists {
 			// Mark for removal
 			itemsToRemove[i] = true
 
@@ -197,7 +205,7 @@ func (o *Optimizer) removeDuplicates(plan *DownloadPlan) {
 				}
 			}
 		} else {
-			seenTrackIDs[item.SpotifyID] = item
+			seenTrackIDs[dedupeKey] = item
 		}
 	}
 

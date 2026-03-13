@@ -535,3 +535,48 @@ albums: []
 		t.Errorf("Expected second playlist to be YouTube, got %q", cfg.Playlists[1].URL)
 	}
 }
+
+// --- Bug 7: SetDefaults should not re-enable rate limiting when user configures requests/window ---
+
+func TestSetDefaults_RateLimitAutoEnable(t *testing.T) {
+	d := &DownloadSettings{}
+	d.SetDefaults()
+
+	if !d.SpotifyRateLimitEnabled {
+		t.Error("SpotifyRateLimitEnabled should be true when nothing is configured")
+	}
+	if d.SpotifyRateLimitRequests != 10 {
+		t.Errorf("SpotifyRateLimitRequests = %d, want 10", d.SpotifyRateLimitRequests)
+	}
+	if !d.DownloadRateLimitEnabled {
+		t.Error("DownloadRateLimitEnabled should be true when nothing is configured")
+	}
+	if d.DownloadRateLimitRequests != 2 {
+		t.Errorf("DownloadRateLimitRequests = %d, want 2", d.DownloadRateLimitRequests)
+	}
+}
+
+func TestSetDefaults_RateLimitExplicitRequests(t *testing.T) {
+	d := &DownloadSettings{
+		SpotifyRateLimitRequests: 20,
+	}
+	d.SetDefaults()
+
+	if d.SpotifyRateLimitRequests != 20 {
+		t.Errorf("SpotifyRateLimitRequests = %d, want 20 (user-configured)", d.SpotifyRateLimitRequests)
+	}
+}
+
+func TestSetDefaults_RateLimitExplicitWindow(t *testing.T) {
+	d := &DownloadSettings{
+		DownloadRateLimitWindow: 5.0,
+	}
+	d.SetDefaults()
+
+	if d.DownloadRateLimitWindow != 5.0 {
+		t.Errorf("DownloadRateLimitWindow = %f, want 5.0 (user-configured)", d.DownloadRateLimitWindow)
+	}
+	if d.DownloadRateLimitRequests != 2 {
+		t.Errorf("DownloadRateLimitRequests = %d, want 2 (default)", d.DownloadRateLimitRequests)
+	}
+}

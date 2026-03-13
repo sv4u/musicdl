@@ -29,6 +29,18 @@ type SpecDownloadItem struct {
 	Error           string                 `json:"error,omitempty"`
 	RawOutput       string                 `json:"raw_output,omitempty"`
 	SourceContext   map[string]interface{} `json:"source_context,omitempty"`
+	TrackMetadata   map[string]interface{} `json:"track_metadata,omitempty"`
+}
+
+// SpecContainer is the spec JSON shape for album/artist container items.
+type SpecContainer struct {
+	ID         string                 `json:"id"`
+	Type       string                 `json:"type"`
+	Name       string                 `json:"name"`
+	SpotifyURI string                 `json:"spotify_uri,omitempty"`
+	ParentID   string                 `json:"parent_id,omitempty"`
+	ChildIDs   []string               `json:"child_ids,omitempty"`
+	Metadata   map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // SpecPlaylist is the spec JSON shape for a playlist definition.
@@ -58,7 +70,26 @@ type SpecPlan struct {
 	EstimatedSizeMB *float64           `json:"estimated_size_mb,omitempty"`
 	Downloads       []SpecDownloadItem `json:"downloads"`
 	Playlists       []SpecPlaylist     `json:"playlists"`
-	M3Us            []SpecM3UItem       `json:"m3us,omitempty"`
+	M3Us            []SpecM3UItem      `json:"m3us,omitempty"`
+	Containers      []SpecContainer    `json:"containers,omitempty"`
+}
+
+// metadataToSerializable converts a metadata map to a JSON-serializable map.
+// Struct values (e.g. *YouTubeVideoMetadata) are converted to map[string]interface{}
+// via JSON round-trip so they survive serialization.
+func metadataToSerializable(m map[string]interface{}) map[string]interface{} {
+	if len(m) == 0 {
+		return nil
+	}
+	data, err := json.Marshal(m)
+	if err != nil {
+		return m
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return m
+	}
+	return result
 }
 
 // PlanToSpec converts a DownloadPlan to the spec JSON shape.
@@ -71,11 +102,13 @@ func PlanToSpec(plan *DownloadPlan, configHash, configFile string, generatedAt t
 		Downloads:   make([]SpecDownloadItem, 0),
 		Playlists:   make([]SpecPlaylist, 0),
 		M3Us:        make([]SpecM3UItem, 0),
+		Containers:  make([]SpecContainer, 0),
 	}
 
 	trackCount := 0
 	for _, item := range plan.Items {
-		if item.ItemType == PlanItemTypeTrack {
+		switch item.ItemType {
+		case PlanItemTypeTrack:
 			trackCount++
 			di := SpecDownloadItem{
 				ID:         item.ItemID,
@@ -91,20 +124,10 @@ func PlanToSpec(plan *DownloadPlan, configHash, configFile string, generatedAt t
 			} else if item.SpotifyID != "" {
 				di.SpotifyURI = "spotify:track:" + item.SpotifyID
 			}
-			if item.Metadata != nil {
-				if m, ok := item.Metadata["spotify_metadata"].(map[string]interface{}); ok {
-					di.SpotifyMetadata = m
-				}
-				if m, ok := item.Metadata["youtube_metadata"].(map[string]interface{}); ok {
-					di.YouTubeMetadata = m
-				}
-				if m, ok := item.Metadata["source_context"].(map[string]interface{}); ok {
-					di.SourceContext = m
-				}
-			}
+			di.TrackMetadata = metadataToSerializable(item.Metadata)
 			spec.Downloads = append(spec.Downloads, di)
-		}
-		if item.ItemType == PlanItemTypePlaylist {
+
+		case PlanItemTypePlaylist:
 			trackIDs := make([]string, 0, len(item.ChildIDs))
 			for _, childID := range item.ChildIDs {
 				child := plan.GetItem(childID)
@@ -116,19 +139,41 @@ func PlanToSpec(plan *DownloadPlan, configHash, configFile string, generatedAt t
 			if sourceURL == "" {
 				sourceURL = item.YouTubeURL
 			}
-			spec.Playlists = append(spec.Playlists, SpecPlaylist{
+			sp := SpecPlaylist{
 				ID:        item.ItemID,
 				Name:      item.Name,
 				SourceURL: sourceURL,
 				TrackIDs:  trackIDs,
-			})
+			}
 			if item.Metadata != nil {
 				if createM3U, ok := item.Metadata["create_m3u"].(bool); ok && createM3U {
-					spec.Playlists[len(spec.Playlists)-1].CreateM3U = true
+					sp.CreateM3U = true
 				}
 			}
-		}
-		if item.ItemType == PlanItemTypeM3U && item.ParentID != "" {
+			spec.Playlists = append(spec.Playlists, sp)
+
+		case PlanItemTypeAlbum, PlanItemTypeArtist:
+			sourceURL := item.SpotifyURL
+			if sourceURL == "" {
+				sourceURL = item.YouTubeURL
+			}
+			sc := SpecContainer{
+				ID:       item.ItemID,
+				Type:     string(item.ItemType),
+				Name:     item.Name,
+				ParentID: item.ParentID,
+				ChildIDs: append([]string{}, item.ChildIDs...),
+				Metadata: metadataToSerializable(item.Metadata),
+			}
+			if sourceURL != "" {
+				sc.SpotifyURI = sourceURL
+			}
+			spec.Containers = append(spec.Containers, sc)
+
+		case PlanItemTypeM3U:
+			if item.ParentID == "" {
+				continue
+			}
 			playlistName := ""
 			albumName := ""
 			if item.Metadata != nil {
@@ -153,6 +198,21 @@ func PlanToSpec(plan *DownloadPlan, configHash, configFile string, generatedAt t
 	return spec
 }
 
+// parseSpecStatus normalizes a spec status string to a valid PlanItemStatus.
+func parseSpecStatus(s string) PlanItemStatus {
+	status := PlanItemStatus(s)
+	switch status {
+	case PlanItemStatusPending, PlanItemStatusSkipped, PlanItemStatusCompleted,
+		PlanItemStatusFailed, PlanItemStatusInProgress:
+		return status
+	default:
+		if s == "metadata_only" {
+			return PlanItemStatusSkipped
+		}
+		return PlanItemStatusPending
+	}
+}
+
 // SpecToPlan converts a SpecPlan to a DownloadPlan for use by the executor.
 func SpecToPlan(spec *SpecPlan) (*DownloadPlan, error) {
 	if spec == nil {
@@ -166,27 +226,24 @@ func SpecToPlan(spec *SpecPlan) (*DownloadPlan, error) {
 	})
 
 	for _, d := range spec.Downloads {
-		status := PlanItemStatus(d.Status)
-		switch status {
-		case PlanItemStatusPending, PlanItemStatusSkipped, PlanItemStatusCompleted,
-			PlanItemStatusFailed, PlanItemStatusInProgress:
-			// valid
-		default:
-			if d.Status == "metadata_only" {
-				status = PlanItemStatusSkipped
-			} else {
-				status = PlanItemStatusPending
-			}
-		}
+		status := parseSpecStatus(d.Status)
+
+		// Prefer TrackMetadata (full metadata map) over legacy SpotifyMetadata/YouTubeMetadata
 		metadata := make(map[string]interface{})
-		if len(d.SpotifyMetadata) > 0 {
-			metadata["spotify_metadata"] = d.SpotifyMetadata
-		}
-		if len(d.YouTubeMetadata) > 0 {
-			metadata["youtube_metadata"] = d.YouTubeMetadata
-		}
-		if len(d.SourceContext) > 0 {
-			metadata["source_context"] = d.SourceContext
+		if len(d.TrackMetadata) > 0 {
+			for k, v := range d.TrackMetadata {
+				metadata[k] = v
+			}
+		} else {
+			if len(d.SpotifyMetadata) > 0 {
+				metadata["spotify_metadata"] = d.SpotifyMetadata
+			}
+			if len(d.YouTubeMetadata) > 0 {
+				metadata["youtube_metadata"] = d.YouTubeMetadata
+			}
+			if len(d.SourceContext) > 0 {
+				metadata["source_context"] = d.SourceContext
+			}
 		}
 		item := &PlanItem{
 			ItemID:     d.ID,
@@ -207,20 +264,44 @@ func SpecToPlan(spec *SpecPlan) (*DownloadPlan, error) {
 		plan.AddItem(item)
 	}
 
+	// Restore container items (albums, artists) before playlists so
+	// parent references resolve correctly.
+	for _, c := range spec.Containers {
+		itemType := PlanItemType(c.Type)
+		if itemType != PlanItemTypeAlbum && itemType != PlanItemTypeArtist {
+			itemType = PlanItemTypeAlbum
+		}
+		item := &PlanItem{
+			ItemID:    c.ID,
+			ItemType:  itemType,
+			Name:      c.Name,
+			ParentID:  c.ParentID,
+			ChildIDs:  append([]string{}, c.ChildIDs...),
+			Status:    PlanItemStatusPending,
+			Metadata:  c.Metadata,
+			CreatedAt: time.Now(),
+			Progress:  0,
+		}
+		if c.SpotifyURI != "" {
+			item.SpotifyURL = c.SpotifyURI
+		}
+		plan.AddItem(item)
+	}
+
 	for _, p := range spec.Playlists {
 		playlistItemID := "playlist:" + p.Name
 		if p.ID != "" {
 			playlistItemID = p.ID
 		}
 		item := &PlanItem{
-			ItemID:     playlistItemID,
-			ItemType:   PlanItemTypePlaylist,
-			Name:       p.Name,
-			ChildIDs:   append([]string{}, p.TrackIDs...),
-			Status:     PlanItemStatusPending,
-			Metadata:   map[string]interface{}{"create_m3u": p.CreateM3U},
-			CreatedAt:  time.Now(),
-			Progress:   0,
+			ItemID:    playlistItemID,
+			ItemType:  PlanItemTypePlaylist,
+			Name:      p.Name,
+			ChildIDs:  append([]string{}, p.TrackIDs...),
+			Status:    PlanItemStatusPending,
+			Metadata:  map[string]interface{}{"create_m3u": p.CreateM3U},
+			CreatedAt: time.Now(),
+			Progress:  0,
 		}
 		if strings.Contains(playlistItemID, "youtube") {
 			item.YouTubeURL = p.SourceURL

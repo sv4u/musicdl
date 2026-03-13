@@ -677,3 +677,136 @@ func TestOptimizer_RemoveDuplicates_ComplexParentChildRelationships(t *testing.T
 		t.Error("Expected album2 to not reference duplicate track:2")
 	}
 }
+
+// --- Bug 9: YouTube track deduplication ---
+
+func TestOptimizer_RemoveDuplicates_YouTubeTracks(t *testing.T) {
+	optimizer := NewOptimizer(false, config.OverwriteSkip, "", "")
+	plan := NewDownloadPlan(nil)
+
+	track1 := &PlanItem{
+		ItemID:     "track:yt1",
+		ItemType:   PlanItemTypeTrack,
+		YouTubeURL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+		Name:       "Original",
+		Status:     PlanItemStatusPending,
+	}
+	plan.AddItem(track1)
+
+	track2 := &PlanItem{
+		ItemID:     "track:yt2",
+		ItemType:   PlanItemTypeTrack,
+		YouTubeURL: "https://youtu.be/dQw4w9WgXcQ",
+		Name:       "Duplicate (short URL)",
+		Status:     PlanItemStatusPending,
+	}
+	plan.AddItem(track2)
+
+	optimizer.removeDuplicates(plan)
+
+	trackCount := 0
+	for _, item := range plan.Items {
+		if item.ItemType == PlanItemTypeTrack {
+			trackCount++
+		}
+	}
+	if trackCount != 1 {
+		t.Errorf("Expected 1 YouTube track after dedup, got %d", trackCount)
+	}
+	if plan.Items[0].ItemID != "track:yt1" {
+		t.Errorf("Expected first track to remain, got %q", plan.Items[0].ItemID)
+	}
+}
+
+func TestOptimizer_RemoveDuplicates_YouTubeTracksWithParent(t *testing.T) {
+	optimizer := NewOptimizer(false, config.OverwriteSkip, "", "")
+	plan := NewDownloadPlan(nil)
+
+	track1 := &PlanItem{
+		ItemID:     "track:yt1",
+		ItemType:   PlanItemTypeTrack,
+		YouTubeURL: "https://www.youtube.com/watch?v=abcde_12345",
+		Name:       "YouTube Track",
+		Status:     PlanItemStatusPending,
+	}
+	plan.AddItem(track1)
+
+	track2 := &PlanItem{
+		ItemID:     "track:yt2",
+		ItemType:   PlanItemTypeTrack,
+		YouTubeURL: "https://www.youtube.com/watch?v=abcde_12345",
+		Name:       "YouTube Track (dup)",
+		Status:     PlanItemStatusPending,
+	}
+	plan.AddItem(track2)
+
+	playlist := &PlanItem{
+		ItemID:   "playlist:p1",
+		ItemType: PlanItemTypePlaylist,
+		Name:     "My Playlist",
+		Status:   PlanItemStatusPending,
+		ChildIDs: []string{"track:yt2"},
+	}
+	plan.AddItem(playlist)
+
+	optimizer.removeDuplicates(plan)
+
+	if len(playlist.ChildIDs) != 1 || playlist.ChildIDs[0] != "track:yt1" {
+		t.Errorf("Parent ChildIDs should be updated to original, got %v", playlist.ChildIDs)
+	}
+}
+
+func TestOptimizer_RemoveDuplicates_MixedSpotifyAndYouTube(t *testing.T) {
+	optimizer := NewOptimizer(false, config.OverwriteSkip, "", "")
+	plan := NewDownloadPlan(nil)
+
+	plan.AddItem(&PlanItem{
+		ItemID:    "track:s1",
+		ItemType:  PlanItemTypeTrack,
+		SpotifyID: "sp123",
+		Name:      "Spotify Original",
+		Status:    PlanItemStatusPending,
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:    "track:s2",
+		ItemType:  PlanItemTypeTrack,
+		SpotifyID: "sp123",
+		Name:      "Spotify Duplicate",
+		Status:    PlanItemStatusPending,
+	})
+
+	plan.AddItem(&PlanItem{
+		ItemID:     "track:y1",
+		ItemType:   PlanItemTypeTrack,
+		YouTubeURL: "https://www.youtube.com/watch?v=ytVid_12345",
+		Name:       "YouTube Original",
+		Status:     PlanItemStatusPending,
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:     "track:y2",
+		ItemType:   PlanItemTypeTrack,
+		YouTubeURL: "https://www.youtube.com/watch?v=ytVid_12345",
+		Name:       "YouTube Duplicate",
+		Status:     PlanItemStatusPending,
+	})
+
+	plan.AddItem(&PlanItem{
+		ItemID:     "track:u1",
+		ItemType:   PlanItemTypeTrack,
+		YouTubeURL: "https://www.youtube.com/watch?v=uniqueVideo",
+		Name:       "Unique Track",
+		Status:     PlanItemStatusPending,
+	})
+
+	optimizer.removeDuplicates(plan)
+
+	trackCount := 0
+	for _, item := range plan.Items {
+		if item.ItemType == PlanItemTypeTrack {
+			trackCount++
+		}
+	}
+	if trackCount != 3 {
+		t.Errorf("Expected 3 tracks (1 spotify + 1 youtube + 1 unique) after dedup, got %d", trackCount)
+	}
+}

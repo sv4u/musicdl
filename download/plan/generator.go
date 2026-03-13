@@ -1146,31 +1146,89 @@ func (g *Generator) processAlbum(ctx context.Context, plan *DownloadPlan, album 
 		albumName = album.Name
 	}
 
-	// Use processAlbumTracks with a dummy parent
-	dummyParent := &PlanItem{
-		ItemID:   fmt.Sprintf("album_parent:%s", albumID),
-		ItemType: PlanItemTypeAlbum,
+	albumSpotifyURL := ""
+	if albumData.ExternalURLs != nil {
+		albumSpotifyURL = albumData.ExternalURLs.Spotify
 	}
-	if err := g.processAlbumTracks(ctx, plan, dummyParent, albumID); err != nil {
-		return fmt.Errorf("failed to process album tracks: %w", err)
+	if albumSpotifyURL == "" {
+		albumSpotifyURL = album.URL
 	}
 
-	// Fix up the album item created by processAlbumTracks
-	albumItem := plan.GetItem(fmt.Sprintf("album:%s", albumID))
-	if albumItem == nil {
-		return fmt.Errorf("processAlbumTracks did not create album item for %s", albumID)
+	// Create album item directly (no dummy parent)
+	albumItem := &PlanItem{
+		ItemID:     fmt.Sprintf("album:%s", albumID),
+		ItemType:   PlanItemTypeAlbum,
+		SpotifyID:  albumID,
+		SpotifyURL: albumSpotifyURL,
+		Name:       albumName,
+		Status:     PlanItemStatusPending,
+		Metadata: map[string]interface{}{
+			"album_type":   albumData.AlbumType,
+			"release_date": albumData.ReleaseDate,
+			"source_name":  album.Name,
+			"source_url":   album.URL,
+			"create_m3u":   album.CreateM3U,
+		},
 	}
-	albumItem.ParentID = ""
-	albumItem.SpotifyURL = ""
-	if albumData.ExternalURLs != nil {
-		albumItem.SpotifyURL = albumData.ExternalURLs.Spotify
+	plan.AddItem(albumItem)
+	g.seenAlbumIDs[albumID] = true
+
+	// Fetch all tracks via spotigo's auto-pagination (reuses cached album from above)
+	var allTracks []spotigo.SimplifiedTrack
+	err = g.runWithRateLimitRetry(ctx, func() error {
+		var err2 error
+		allTracks, err2 = g.spotifyClient.AllAlbumTracks(ctx, albumID, func(p spotigo.PaginationProgress) {
+			g.notifyPlanProgress(fmt.Sprintf("Fetching tracks for album '%s': %d/%d", albumName, p.FetchedItems, p.TotalItems), p.FetchedItems)
+		})
+		return err2
+	})
+	if err != nil {
+		log.Printf("ERROR: album_tracks_fetch_failed album_id=%s error=%v", albumID, err)
+		return fmt.Errorf("failed to fetch album tracks: %w", err)
 	}
-	if albumItem.SpotifyURL == "" {
-		albumItem.SpotifyURL = album.URL
+
+	for _, track := range allTracks {
+		trackID := track.ID
+		if trackID == "" {
+			continue
+		}
+		if g.seenTrackIDs[trackID] {
+			log.Printf("INFO: duplicate_detected type=track spotify_id=%s track_name=%s context=album", trackID, track.Name)
+			existingTrackItemID := fmt.Sprintf("track:%s", trackID)
+			existingTrack := plan.GetItem(existingTrackItemID)
+			if existingTrack != nil {
+				albumItem.ChildIDs = append(albumItem.ChildIDs, existingTrackItemID)
+			}
+			continue
+		}
+		trackSpotifyURL := ""
+		if track.ExternalURLs != nil {
+			trackSpotifyURL = track.ExternalURLs.Spotify
+		}
+		metadata := map[string]interface{}{
+			"track_number": track.TrackNumber,
+			"disc_number":  track.DiscNumber,
+			"title":        track.Name,
+			"album":        albumName,
+			"duration_ms":  track.DurationMs,
+		}
+		if len(track.Artists) > 0 {
+			metadata["artist"] = track.Artists[0].Name
+		}
+		trackItem := &PlanItem{
+			ItemID:     fmt.Sprintf("track:%s", trackID),
+			ItemType:   PlanItemTypeTrack,
+			SpotifyID:  trackID,
+			SpotifyURL: trackSpotifyURL,
+			ParentID:   albumItem.ItemID,
+			Name:       track.Name,
+			Status:     PlanItemStatusPending,
+			Metadata:   metadata,
+		}
+		plan.AddItem(trackItem)
+		albumItem.ChildIDs = append(albumItem.ChildIDs, trackItem.ItemID)
+		g.seenTrackIDs[trackID] = true
 	}
-	albumItem.Metadata["source_name"] = album.Name
-	albumItem.Metadata["source_url"] = album.URL
-	albumItem.Metadata["create_m3u"] = album.CreateM3U
 
 	if album.CreateM3U {
 		m3uItem := &PlanItem{

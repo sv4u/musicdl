@@ -482,3 +482,279 @@ func TestPlanCacheFile_StaleCheck(t *testing.T) {
 		t.Error("Backdated plan file should be outside TTL")
 	}
 }
+
+// --- Bug 1: TrackMetadata round-trip preserves all metadata fields ---
+
+func TestTrackMetadataRoundTrip(t *testing.T) {
+	plan := NewDownloadPlan(nil)
+	plan.AddItem(&PlanItem{
+		ItemID:     "track:abc",
+		ItemType:   PlanItemTypeTrack,
+		SpotifyID:  "abc",
+		SpotifyURL: "https://open.spotify.com/track/abc",
+		YouTubeURL: "https://www.youtube.com/watch?v=xyz",
+		Name:       "Test Track",
+		FilePath:   "Artist/Album/01 - Test Track.mp3",
+		Status:     PlanItemStatusPending,
+		Metadata: map[string]interface{}{
+			"artist":              "Test Artist",
+			"title":               "Test Track",
+			"album":               "Test Album",
+			"track_number":        float64(1),
+			"disc_number":         float64(1),
+			"duration_ms":         float64(240000),
+			"spotify_enhancement": true,
+		},
+	})
+
+	spec := PlanToSpec(plan, "hash", "config.yml", time.Now().UTC())
+	if len(spec.Downloads) != 1 {
+		t.Fatalf("spec.Downloads len = %d, want 1", len(spec.Downloads))
+	}
+	di := spec.Downloads[0]
+	if di.TrackMetadata == nil {
+		t.Fatal("TrackMetadata should not be nil after PlanToSpec")
+	}
+	if di.TrackMetadata["artist"] != "Test Artist" {
+		t.Errorf("TrackMetadata[artist] = %v, want Test Artist", di.TrackMetadata["artist"])
+	}
+	if di.TrackMetadata["album"] != "Test Album" {
+		t.Errorf("TrackMetadata[album] = %v, want Test Album", di.TrackMetadata["album"])
+	}
+
+	back, err := SpecToPlan(spec)
+	if err != nil {
+		t.Fatalf("SpecToPlan: %v", err)
+	}
+	trackItems := back.GetItemsByType(PlanItemTypeTrack)
+	if len(trackItems) != 1 {
+		t.Fatalf("round-trip track items = %d, want 1", len(trackItems))
+	}
+	track := trackItems[0]
+	if v, _ := track.Metadata["artist"].(string); v != "Test Artist" {
+		t.Errorf("round-trip Metadata[artist] = %v, want Test Artist", track.Metadata["artist"])
+	}
+	if v, _ := track.Metadata["album"].(string); v != "Test Album" {
+		t.Errorf("round-trip Metadata[album] = %v, want Test Album", track.Metadata["album"])
+	}
+	if v, _ := track.Metadata["track_number"].(float64); v != 1 {
+		t.Errorf("round-trip Metadata[track_number] = %v, want 1", track.Metadata["track_number"])
+	}
+	if v, _ := track.Metadata["spotify_enhancement"].(bool); !v {
+		t.Errorf("round-trip Metadata[spotify_enhancement] = %v, want true", track.Metadata["spotify_enhancement"])
+	}
+}
+
+func TestStructMetadataSurvivesRoundTrip(t *testing.T) {
+	type fakeYTMeta struct {
+		VideoID  string `json:"video_id"`
+		Title    string `json:"title"`
+		Duration int    `json:"duration"`
+	}
+	plan := NewDownloadPlan(nil)
+	plan.AddItem(&PlanItem{
+		ItemID:     "track:yt1",
+		ItemType:   PlanItemTypeTrack,
+		YouTubeURL: "https://www.youtube.com/watch?v=vid1",
+		Name:       "YT Track",
+		Status:     PlanItemStatusPending,
+		Metadata: map[string]interface{}{
+			"youtube_metadata": &fakeYTMeta{VideoID: "vid1", Title: "YT Track", Duration: 300},
+			"artist":           "Some Artist",
+		},
+	})
+
+	spec := PlanToSpec(plan, "hash", "c.yml", time.Now().UTC())
+	if spec.Downloads[0].TrackMetadata == nil {
+		t.Fatal("TrackMetadata should not be nil for struct metadata")
+	}
+	ytm, ok := spec.Downloads[0].TrackMetadata["youtube_metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("youtube_metadata should be a map after serialization, got %T", spec.Downloads[0].TrackMetadata["youtube_metadata"])
+	}
+	if ytm["video_id"] != "vid1" {
+		t.Errorf("youtube_metadata.video_id = %v, want vid1", ytm["video_id"])
+	}
+
+	back, err := SpecToPlan(spec)
+	if err != nil {
+		t.Fatalf("SpecToPlan: %v", err)
+	}
+	track := back.GetItemsByType(PlanItemTypeTrack)[0]
+	ytm2, ok := track.Metadata["youtube_metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("round-trip youtube_metadata type = %T, want map[string]interface{}", track.Metadata["youtube_metadata"])
+	}
+	if ytm2["video_id"] != "vid1" {
+		t.Errorf("round-trip youtube_metadata.video_id = %v, want vid1", ytm2["video_id"])
+	}
+}
+
+func TestLegacySpotifyMetadataFallback(t *testing.T) {
+	spec := &SpecPlan{
+		ConfigHash:  "abc",
+		ConfigFile:  "config.yml",
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		TotalTracks: 1,
+		Downloads: []SpecDownloadItem{
+			{
+				ID:         "track:legacy",
+				YouTubeURL: "https://youtube.com/watch?v=old",
+				OutputPath: "x.mp3",
+				Status:     "pending",
+				SpotifyMetadata: map[string]interface{}{
+					"title":  "Legacy Title",
+					"artist": "Legacy Artist",
+				},
+				YouTubeMetadata: map[string]interface{}{
+					"video_id": "old",
+				},
+			},
+		},
+	}
+
+	plan, err := SpecToPlan(spec)
+	if err != nil {
+		t.Fatalf("SpecToPlan: %v", err)
+	}
+	track := plan.Items[0]
+	sm, ok := track.Metadata["spotify_metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected legacy spotify_metadata fallback")
+	}
+	if sm["title"] != "Legacy Title" {
+		t.Errorf("legacy spotify_metadata.title = %v, want Legacy Title", sm["title"])
+	}
+	ym, ok := track.Metadata["youtube_metadata"].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected legacy youtube_metadata fallback")
+	}
+	if ym["video_id"] != "old" {
+		t.Errorf("legacy youtube_metadata.video_id = %v, want old", ym["video_id"])
+	}
+}
+
+// --- Bug 3: Album and Artist container items round-trip ---
+
+func TestContainerRoundTrip(t *testing.T) {
+	plan := NewDownloadPlan(nil)
+	plan.AddItem(&PlanItem{
+		ItemID:    "track:t1",
+		ItemType:  PlanItemTypeTrack,
+		SpotifyID: "t1",
+		Name:      "Track 1",
+		Status:    PlanItemStatusPending,
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:     "album:a1",
+		ItemType:   PlanItemTypeAlbum,
+		SpotifyURL: "https://open.spotify.com/album/a1",
+		Name:       "Test Album",
+		ChildIDs:   []string{"track:t1"},
+		Status:     PlanItemStatusPending,
+		Metadata:   map[string]interface{}{"release_date": "2024-01-01", "create_m3u": true},
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:     "artist:ar1",
+		ItemType:   PlanItemTypeArtist,
+		SpotifyURL: "https://open.spotify.com/artist/ar1",
+		Name:       "Test Artist",
+		ChildIDs:   []string{"album:a1"},
+		Status:     PlanItemStatusPending,
+		Metadata:   map[string]interface{}{"genres": "rock"},
+	})
+
+	spec := PlanToSpec(plan, "hash", "c.yml", time.Now().UTC())
+	if len(spec.Containers) != 2 {
+		t.Fatalf("spec.Containers len = %d, want 2", len(spec.Containers))
+	}
+
+	albumFound := false
+	artistFound := false
+	for _, c := range spec.Containers {
+		switch c.Type {
+		case "album":
+			albumFound = true
+			if c.Name != "Test Album" {
+				t.Errorf("album container name = %q, want Test Album", c.Name)
+			}
+			if len(c.ChildIDs) != 1 || c.ChildIDs[0] != "track:t1" {
+				t.Errorf("album container ChildIDs = %v, want [track:t1]", c.ChildIDs)
+			}
+		case "artist":
+			artistFound = true
+			if c.Name != "Test Artist" {
+				t.Errorf("artist container name = %q, want Test Artist", c.Name)
+			}
+		}
+	}
+	if !albumFound {
+		t.Error("album container not found in spec")
+	}
+	if !artistFound {
+		t.Error("artist container not found in spec")
+	}
+
+	back, err := SpecToPlan(spec)
+	if err != nil {
+		t.Fatalf("SpecToPlan: %v", err)
+	}
+
+	albumItems := back.GetItemsByType(PlanItemTypeAlbum)
+	if len(albumItems) != 1 {
+		t.Fatalf("round-trip album items = %d, want 1", len(albumItems))
+	}
+	if albumItems[0].Name != "Test Album" {
+		t.Errorf("round-trip album name = %q, want Test Album", albumItems[0].Name)
+	}
+	if len(albumItems[0].ChildIDs) != 1 {
+		t.Errorf("round-trip album ChildIDs len = %d, want 1", len(albumItems[0].ChildIDs))
+	}
+
+	artistItems := back.GetItemsByType(PlanItemTypeArtist)
+	if len(artistItems) != 1 {
+		t.Fatalf("round-trip artist items = %d, want 1", len(artistItems))
+	}
+	if artistItems[0].Name != "Test Artist" {
+		t.Errorf("round-trip artist name = %q, want Test Artist", artistItems[0].Name)
+	}
+}
+
+func TestContainersDiskRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	configHash := "container_disk_hash"
+
+	plan := NewDownloadPlan(nil)
+	plan.AddItem(&PlanItem{
+		ItemID:   "track:t1",
+		ItemType: PlanItemTypeTrack,
+		Name:     "Track 1",
+		Status:   PlanItemStatusPending,
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:   "album:a1",
+		ItemType: PlanItemTypeAlbum,
+		Name:     "Disk Album",
+		ChildIDs: []string{"track:t1"},
+		Status:   PlanItemStatusPending,
+	})
+
+	if err := SavePlanByHash(plan, dir, configHash, "config.yml"); err != nil {
+		t.Fatalf("SavePlanByHash: %v", err)
+	}
+	loaded, err := LoadPlanByHash(dir, configHash)
+	if err != nil {
+		t.Fatalf("LoadPlanByHash: %v", err)
+	}
+
+	albumItems := loaded.GetItemsByType(PlanItemTypeAlbum)
+	if len(albumItems) != 1 {
+		t.Fatalf("disk round-trip album items = %d, want 1", len(albumItems))
+	}
+	if albumItems[0].Name != "Disk Album" {
+		t.Errorf("disk round-trip album name = %q, want Disk Album", albumItems[0].Name)
+	}
+	if len(albumItems[0].ChildIDs) != 1 || albumItems[0].ChildIDs[0] != "track:t1" {
+		t.Errorf("disk round-trip album ChildIDs = %v, want [track:t1]", albumItems[0].ChildIDs)
+	}
+}

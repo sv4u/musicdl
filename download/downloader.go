@@ -271,8 +271,11 @@ func (d *Downloader) downloadYouTubeTrack(ctx context.Context, item *plan.PlanIt
 	}
 	log.Printf("INFO: download_start youtube_id=%s track=%s artist=%s", videoID, song.Title, song.Artist)
 
-	// 4. Check if file already exists
-	outputPath := d.getOutputPath(song)
+	// 4. Check if file already exists (prefer pre-computed path from optimizer)
+	outputPath := item.FilePath
+	if outputPath == "" {
+		outputPath = d.getOutputPath(song)
+	}
 	fileExists := d.fileExistsCached(outputPath)
 
 	if fileExists && d.config.Overwrite == config.OverwriteSkip {

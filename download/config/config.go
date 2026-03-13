@@ -118,7 +118,10 @@ func (d *DownloadSettings) SetDefaults() {
 	if d.SpotifyRetryMaxDelay == 0 {
 		d.SpotifyRetryMaxDelay = 120.0
 	}
-	if !d.SpotifyRateLimitEnabled && d.SpotifyRateLimitRequests == 0 {
+	// Auto-enable rate limiting only when no rate limit fields were configured
+	// (all at zero values). If the user set requests or window explicitly, they
+	// likely configured rate limiting intentionally, so respect their enabled setting.
+	if !d.SpotifyRateLimitEnabled && d.SpotifyRateLimitRequests == 0 && d.SpotifyRateLimitWindow == 0 {
 		d.SpotifyRateLimitEnabled = true
 	}
 	if d.SpotifyRateLimitRequests == 0 {
@@ -127,7 +130,7 @@ func (d *DownloadSettings) SetDefaults() {
 	if d.SpotifyRateLimitWindow == 0 {
 		d.SpotifyRateLimitWindow = 1.0
 	}
-	if !d.DownloadRateLimitEnabled && d.DownloadRateLimitRequests == 0 {
+	if !d.DownloadRateLimitEnabled && d.DownloadRateLimitRequests == 0 && d.DownloadRateLimitWindow == 0 {
 		d.DownloadRateLimitEnabled = true
 	}
 	if d.DownloadRateLimitRequests == 0 {

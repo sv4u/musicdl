@@ -69,29 +69,30 @@ func (e *Executor) Execute(ctx context.Context, plan *DownloadPlan, progressCall
 	sem := make(chan struct{}, e.maxWorkers)
 
 	for _, item := range trackItems {
-		// Check for shutdown
 		if e.isShutdownRequested() {
 			break
 		}
-
-		// Check context cancellation
-		if err := ctx.Err(); err != nil {
-			return nil, err
+		if ctx.Err() != nil {
+			break
 		}
 
 		wg.Add(1)
 		go func(trackItem *PlanItem) {
 			defer wg.Done()
 
-			// Acquire semaphore
-			sem <- struct{}{}
-			defer func() { <-sem }()
+			// Acquire semaphore; bail early if context cancelled while waiting
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				return
+			}
 
 			e.executeTrack(ctx, trackItem, plan)
 		}(item)
 	}
 
-	// Wait for all downloads to complete
+	// Always wait for launched goroutines to finish before returning
 	wg.Wait()
 
 	// Clear execution WaitGroup after completion
