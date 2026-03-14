@@ -127,6 +127,16 @@ proxyPost('/api/recovery/circuit-breaker/reset', 'Failed to reset circuit breake
 proxyPost('/api/recovery/resume/clear', 'Failed to clear resume state');
 proxyPost('/api/recovery/resume/retry-failed', 'Failed to retry failed items');
 
+// History proxy — uses pathFilter so parameterised sub-routes like
+// /api/history/runs/{runID} are forwarded with the real path intact.
+app.use(
+  createProxyMiddleware({
+    target: goAPIBaseURL,
+    pathFilter: '/api/history',
+    changeOrigin: true,
+  })
+);
+
 // Swagger proxy — these endpoints return HTML and JSON respectively, so we
 // must NOT use res.json() (which would double-serialize the HTML string into
 // "\"<!DOCTYPE html>...\"" with Content-Type: application/json). Instead,
