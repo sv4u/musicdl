@@ -17,6 +17,7 @@ import (
 	"github.com/sv4u/musicdl/download"
 	"github.com/sv4u/musicdl/download/audio"
 	"github.com/sv4u/musicdl/download/config"
+	"github.com/sv4u/musicdl/download/history"
 	"github.com/sv4u/musicdl/download/metadata"
 	"github.com/sv4u/musicdl/download/plan"
 	"github.com/sv4u/musicdl/download/spotify"
@@ -63,6 +64,7 @@ type APIServer struct {
 	logBroadcaster    *LogBroadcaster
 	planBroadcaster   *PlanBroadcaster
 	statsTracker      *StatsTracker
+	historyTracker    *history.Tracker
 	circuitBreaker    *CircuitBreaker
 	resumeState       *ResumeState
 	cancelFuncMu      sync.Mutex
@@ -85,30 +87,60 @@ type RunTracker struct {
 // NewAPIServer creates a new API server.
 func NewAPIServer(port int) *APIServer {
 	cacheDir := getCacheDir()
+
+	historyPath := filepath.Join(cacheDir, "history")
+	historyTracker, err := history.NewTracker(historyPath, 50, 30)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "WARN: failed to create history tracker: %v\n", err)
+	}
+
 	return &APIServer{
 		port:              port,
 		currentRunTracker: &RunTracker{},
 		logBroadcaster:    NewLogBroadcaster(),
 		planBroadcaster:   NewPlanBroadcaster(),
 		statsTracker:      NewStatsTracker(cacheDir),
+		historyTracker:    historyTracker,
 		circuitBreaker:    NewCircuitBreaker(5, 3, 60*time.Second),
 		resumeState:       NewResumeState(cacheDir),
 	}
 }
 
 // completeRun finalizes a running operation, recording the outcome to the stats
-// tracker, circuit breaker, and run tracker. Call this exactly once when an
-// operation started by planHandler or downloadHandler finishes (successfully or
-// with an error). The runID parameter ensures EndRunByID only finalizes the
-// stats for the specific run that started it, preventing the race where a stale
-// goroutine could finalize a newer run's stats.
+// tracker, history tracker, circuit breaker, and run tracker. Call this exactly
+// once when an operation started by planHandler or downloadHandler finishes
+// (successfully or with an error). The runID parameter ensures EndRunByID only
+// finalizes the stats for the specific run that started it, preventing the race
+// where a stale goroutine could finalize a newer run's stats.
 func (s *APIServer) completeRun(runID string, err error) {
+	// Capture run statistics while statsTracker.currentRun still belongs to
+	// this run. Once isRunning is cleared below, a new HTTP request can pass
+	// the alreadyRunning guard and call StartRun, which replaces currentRun
+	// with a zeroed-out struct. Reading stats after that point would record
+	// empty history.
+	var runStats map[string]interface{}
+	if s.historyTracker != nil {
+		runStats = s.buildRunStatistics()
+	}
+
 	s.currentRunTracker.mu.Lock()
 	s.currentRunTracker.isRunning = false
 	s.currentRunTracker.err = err
 	s.currentRunTracker.mu.Unlock()
 
 	s.statsTracker.EndRunByID(runID)
+
+	if s.historyTracker != nil {
+		state := "completed"
+		phase := "completed"
+		errMsg := ""
+		if err != nil {
+			state = "error"
+			phase = "error"
+			errMsg = err.Error()
+		}
+		s.historyTracker.StopRun(runID, state, phase, runStats, errMsg)
+	}
 
 	if err != nil {
 		s.circuitBreaker.RecordFailure()
@@ -117,6 +149,22 @@ func (s *APIServer) completeRun(runID string, err error) {
 	} else {
 		s.circuitBreaker.RecordSuccess()
 		s.logBroadcaster.BroadcastString("info", "Operation completed successfully", "runner")
+	}
+}
+
+// buildRunStatistics reads the current run stats from the stats tracker and
+// returns them as a generic map for the history tracker.
+func (s *APIServer) buildRunStatistics() map[string]interface{} {
+	stats := s.statsTracker.GetStats()
+	run := stats.CurrentRun
+	return map[string]interface{}{
+		"downloaded":   run.Downloaded,
+		"failed":       run.Failed,
+		"skipped":      run.Skipped,
+		"retries":      run.Retries,
+		"rateLimits":   run.RateLimits,
+		"bytesWritten": run.BytesWritten,
+		"elapsedSec":   run.ElapsedSec,
 	}
 }
 
@@ -315,6 +363,7 @@ func (s *APIServer) executeDownload(ctx context.Context, configPath string, resu
 	executor := plan.NewExecutor(downloader, maxWorkers)
 	var flushMu sync.Mutex
 	var itemsSinceFlush int
+	var snapshotCounter int
 	progressCallback := func(item *plan.PlanItem) {
 		s.planBroadcaster.BroadcastItemUpdate(item)
 		switch item.Status {
@@ -349,15 +398,32 @@ func (s *APIServer) executeDownload(ctx context.Context, configPath string, resu
 			s.statsTracker.RecordSkip()
 			s.logBroadcaster.BroadcastString("info", fmt.Sprintf("Skipped: %s", item.Name), "download")
 		}
-		// Batch resume state writes: flush to disk every 10 items instead of
-		// every single track to reduce I/O pressure during large downloads.
-		// The flush counter is protected by its own mutex because the executor
-		// calls this callback from up to maxWorkers concurrent goroutines.
+		// Batch resume state writes and history snapshots. The flush counter is
+		// protected by its own mutex because the executor calls this callback
+		// from up to maxWorkers concurrent goroutines.
 		flushMu.Lock()
 		itemsSinceFlush++
+		snapshotCounter++
 		if itemsSinceFlush >= 10 {
 			s.resumeState.Flush()
 			itemsSinceFlush = 0
+		}
+		if snapshotCounter%25 == 0 && s.historyTracker != nil {
+			planStats := loadedPlan.GetExecutionStatistics()
+			total := planStats["total"]
+			done := planStats["completed"] + planStats["failed"] + planStats["skipped"]
+			progress := float64(0)
+			if total > 0 {
+				progress = float64(done) / float64(total) * 100.0
+			}
+			statsMap := map[string]interface{}{
+				"completed":   planStats["completed"],
+				"failed":      planStats["failed"],
+				"skipped":     planStats["skipped"],
+				"in_progress": planStats["in_progress"],
+				"total":       total,
+			}
+			s.historyTracker.AddSnapshot(progress, statsMap, "running", "executing")
 		}
 		flushMu.Unlock()
 	}
@@ -429,6 +495,11 @@ func (s *APIServer) Run() int {
 	mux.HandleFunc("POST /api/recovery/resume/clear", s.resumeClearHandler)
 	mux.HandleFunc("POST /api/recovery/resume/retry-failed", s.resumeRetryFailedHandler)
 
+	// History endpoints
+	mux.HandleFunc("GET /api/history/runs", s.historyRunsHandler)
+	mux.HandleFunc("GET /api/history/runs/{runID}", s.historyRunDetailHandler)
+	mux.HandleFunc("GET /api/history/activity", s.historyActivityHandler)
+
 	// Swagger/OpenAPI documentation
 	mux.HandleFunc("GET /api/docs", s.swaggerUIHandler)
 	mux.HandleFunc("GET /api/docs/swagger.json", s.swaggerSpecHandler)
@@ -456,6 +527,9 @@ func (s *APIServer) Run() int {
 	go func() {
 		<-sigCh
 		fmt.Println("\nShutting down API server...")
+		if s.historyTracker != nil {
+			s.historyTracker.Close()
+		}
 		s.spotifyClientMu.Lock()
 		if s.spotifyClient != nil {
 			s.spotifyClient.Close()
@@ -707,6 +781,9 @@ func (s *APIServer) planHandler(w http.ResponseWriter, r *http.Request) {
 	s.currentRunTracker.mu.Unlock()
 
 	runID := s.statsTracker.StartRun("plan")
+	if s.historyTracker != nil {
+		s.historyTracker.StartRun(runID)
+	}
 	s.logBroadcaster.BroadcastString("info", "Plan generation started", "plan")
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -717,9 +794,10 @@ func (s *APIServer) planHandler(w http.ResponseWriter, r *http.Request) {
 	s.cancelFuncMu.Unlock()
 
 	// Run the operation asynchronously. completeRun MUST be called when done
-	// to record the outcome in the circuit breaker and stats tracker. The runID
-	// is captured so EndRunByID only finalizes this specific run's stats.
-	// Panic recovery ensures completeRun is always called so isRunning is cleared.
+	// to record the outcome in the circuit breaker, stats tracker, and history
+	// tracker. The runID is captured so EndRunByID only finalizes this specific
+	// run's stats. Panic recovery ensures completeRun is always called so
+	// isRunning is cleared.
 	go func() {
 		var runErr error
 		defer func() {
@@ -820,6 +898,9 @@ func (s *APIServer) downloadHandler(w http.ResponseWriter, r *http.Request) {
 	s.currentRunTracker.mu.Unlock()
 
 	runID := s.statsTracker.StartRun("download")
+	if s.historyTracker != nil {
+		s.historyTracker.StartRun(runID)
+	}
 	s.logBroadcaster.BroadcastString("info", "Download started", "download")
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -830,9 +911,10 @@ func (s *APIServer) downloadHandler(w http.ResponseWriter, r *http.Request) {
 	s.cancelFuncMu.Unlock()
 
 	// Run the operation asynchronously. completeRun MUST be called when done
-	// to record the outcome in the circuit breaker and stats tracker. The runID
-	// is captured so EndRunByID only finalizes this specific run's stats.
-	// Panic recovery ensures completeRun is always called so isRunning is cleared.
+	// to record the outcome in the circuit breaker, stats tracker, and history
+	// tracker. The runID is captured so EndRunByID only finalizes this specific
+	// run's stats. Panic recovery ensures completeRun is always called so
+	// isRunning is cleared.
 	go func() {
 		var runErr error
 		defer func() {

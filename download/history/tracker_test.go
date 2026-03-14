@@ -68,7 +68,7 @@ func TestTracker_StopRun(t *testing.T) {
 		"total":     12,
 	}
 
-	err = tracker.StopRun("completed", "completed", statistics, "")
+	err = tracker.StopRun(runID, "completed", "completed", statistics, "")
 	if err != nil {
 		t.Fatalf("StopRun() failed: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestTracker_ListRuns(t *testing.T) {
 		runID := "test-run-" + string(rune('0'+i))
 		tracker.StartRun(runID)
 		time.Sleep(10 * time.Millisecond) // Ensure different timestamps
-		_ = tracker.StopRun("completed", "completed", map[string]interface{}{}, "")
+		_ = tracker.StopRun(runID, "completed", "completed", map[string]interface{}{}, "")
 	}
 
 	runIDs, err := tracker.ListRuns()
@@ -174,7 +174,7 @@ func TestTracker_CleanupOldRuns(t *testing.T) {
 		runID := "test-run-" + string(rune('0'+i))
 		tracker.StartRun(runID)
 		time.Sleep(10 * time.Millisecond)
-		_ = tracker.StopRun("completed", "completed", map[string]interface{}{}, "")
+		_ = tracker.StopRun(runID, "completed", "completed", map[string]interface{}{}, "")
 	}
 
 	// Verify only 2 runs remain

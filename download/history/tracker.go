@@ -83,13 +83,20 @@ func (t *Tracker) StartRun(runID string) {
 	})
 }
 
-// StopRun stops tracking the current run and saves it.
-func (t *Tracker) StopRun(state, phase string, statistics map[string]interface{}, errMsg string) error {
+// StopRun stops tracking the current run and saves it. The runID must match
+// the run that was started; if a different run is now current (because a new
+// StartRun replaced it), StopRun returns nil without modifying the new run.
+// This mirrors EndRunByID in the stats tracker and prevents a completing
+// goroutine from corrupting a newer run that started in the meantime.
+func (t *Tracker) StopRun(runID, state, phase string, statistics map[string]interface{}, errMsg string) error {
 	t.currentRunMu.Lock()
 	defer t.currentRunMu.Unlock()
 
 	if t.currentRun == nil {
-		return nil // No run to stop
+		return nil
+	}
+	if t.currentRun.RunID != runID {
+		return nil
 	}
 
 	// Stop snapshot ticker

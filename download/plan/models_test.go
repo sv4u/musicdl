@@ -144,6 +144,7 @@ func TestDownloadPlan_GetExecutionStatistics_EmptyPlan(t *testing.T) {
 		"failed":      0,
 		"pending":     0,
 		"in_progress": 0,
+		"skipped":     0,
 		"total":       0,
 	}
 
@@ -200,7 +201,7 @@ func TestDownloadPlan_GetExecutionStatistics_OnlyTracks(t *testing.T) {
 	}
 }
 
-func TestDownloadPlan_GetExecutionStatistics_ExcludesSkipped(t *testing.T) {
+func TestDownloadPlan_GetExecutionStatistics_IncludesSkipped(t *testing.T) {
 	plan := NewDownloadPlan(nil)
 	plan.AddItem(&PlanItem{
 		ItemID:    "track:1",
@@ -223,15 +224,17 @@ func TestDownloadPlan_GetExecutionStatistics_ExcludesSkipped(t *testing.T) {
 
 	stats := plan.GetExecutionStatistics()
 
-	// Should only count 2 items (pending and completed), skipping the skipped one
-	if stats["total"] != 2 {
-		t.Errorf("Expected total=2 (excluding skipped), got %d", stats["total"])
+	if stats["total"] != 3 {
+		t.Errorf("Expected total=3 (all tracks including skipped), got %d", stats["total"])
 	}
 	if stats["pending"] != 1 {
 		t.Errorf("Expected pending=1, got %d", stats["pending"])
 	}
 	if stats["completed"] != 1 {
 		t.Errorf("Expected completed=1, got %d", stats["completed"])
+	}
+	if stats["skipped"] != 1 {
+		t.Errorf("Expected skipped=1, got %d", stats["skipped"])
 	}
 }
 
@@ -343,9 +346,9 @@ func TestDownloadPlan_GetExecutionStatistics_MixedScenario(t *testing.T) {
 
 	stats := plan.GetExecutionStatistics()
 
-	// Should count 7 track items (excluding skipped and non-tracks)
-	if stats["total"] != 7 {
-		t.Errorf("Expected total=7, got %d", stats["total"])
+	// 8 track items (non-track items excluded), including 1 skipped
+	if stats["total"] != 8 {
+		t.Errorf("Expected total=8, got %d", stats["total"])
 	}
 	if stats["pending"] != 2 {
 		t.Errorf("Expected pending=2, got %d", stats["pending"])
@@ -358,6 +361,9 @@ func TestDownloadPlan_GetExecutionStatistics_MixedScenario(t *testing.T) {
 	}
 	if stats["in_progress"] != 1 {
 		t.Errorf("Expected in_progress=1, got %d", stats["in_progress"])
+	}
+	if stats["skipped"] != 1 {
+		t.Errorf("Expected skipped=1, got %d", stats["skipped"])
 	}
 }
 

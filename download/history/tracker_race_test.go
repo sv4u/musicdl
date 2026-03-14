@@ -69,7 +69,7 @@ func TestAddSnapshot_RaceCondition(t *testing.T) {
 			"completed": 10,
 			"total":     10,
 		}
-		_ = tracker.StopRun("completed", "completed", statistics, "")
+		_ = tracker.StopRun(runID, "completed", "completed", statistics, "")
 		close(done)
 	}()
 
@@ -101,7 +101,7 @@ func TestSnapshotTicker_RaceCondition(t *testing.T) {
 		"completed": 10,
 		"total":     10,
 	}
-	err = tracker.StopRun("completed", "completed", statistics, "")
+	err = tracker.StopRun(runID, "completed", "completed", statistics, "")
 	if err != nil {
 		t.Fatalf("StopRun() failed: %v", err)
 	}
@@ -164,5 +164,5 @@ func TestAddSnapshot_ConcurrentAccess(t *testing.T) {
 		"completed": 10,
 		"total":     10,
 	}
-	_ = tracker.StopRun("completed", "completed", statistics, "")
+	_ = tracker.StopRun(runID, "completed", "completed", statistics, "")
 }

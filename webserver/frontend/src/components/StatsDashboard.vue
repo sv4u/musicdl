@@ -37,7 +37,10 @@
       <!-- Success Rate Bar -->
       <div class="mb-6">
         <div class="flex items-center justify-between mb-2">
-          <span class="text-slate-400 text-sm">Success Rate</span>
+          <span class="text-slate-400 text-sm flex items-center">
+            Success Rate
+            <InfoTooltip text="Percentage of tracks that downloaded successfully across all runs" />
+          </span>
           <span class="text-white font-bold">{{ cumulative.successRate.toFixed(1) }}%</span>
         </div>
         <div class="w-full bg-slate-600 rounded-full h-3">
@@ -58,11 +61,14 @@
       </div>
 
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Plans Generated" :value="cumulative.totalPlansGenerated" color="purple" />
-        <StatCard label="Rate Limits" :value="cumulative.totalRateLimits" color="orange" />
-        <StatCard label="Retries" :value="cumulative.totalRetries" color="indigo" />
+        <StatCard label="Plans Generated" :value="cumulative.totalPlansGenerated" color="purple" tooltip="Number of times a download plan was created from your config" />
+        <StatCard label="Rate Limits" :value="cumulative.totalRateLimits" color="orange" tooltip="Times Spotify throttled API requests due to too many calls" />
+        <StatCard label="Retries" :value="cumulative.totalRetries" color="indigo" tooltip="Download attempts that were retried after an initial failure" />
         <div class="bg-slate-800 rounded-lg p-3 border border-slate-600">
-          <div class="text-slate-500 text-xs uppercase tracking-wider">Storage Used</div>
+          <div class="text-slate-500 text-xs uppercase tracking-wider flex items-center">
+            Storage Used
+            <InfoTooltip text="Total disk space used by downloaded audio files" />
+          </div>
           <div class="text-white text-lg font-bold mt-1">{{ formatBytes(cumulative.totalBytesWritten) }}</div>
         </div>
       </div>
@@ -102,9 +108,12 @@
               circuitBreaker.state === 'closed' ? 'bg-green-400' :
               circuitBreaker.state === 'half_open' ? 'bg-yellow-400' : 'bg-red-400'
             ]"
+            :aria-label="'Circuit breaker status: ' + circuitBreaker.state"
+            role="status"
           ></div>
-          <span class="text-slate-300">
-            Circuit Breaker: <span class="font-mono">{{ circuitBreaker.state }}</span>
+          <span class="text-slate-300 flex items-center">
+            Circuit Breaker: <span class="font-mono ml-1">{{ circuitBreaker.state }}</span>
+            <InfoTooltip text="Automatic safety switch that pauses downloads after repeated failures to prevent hammering a failing service" />
           </span>
           <span class="text-slate-500 text-sm">
             ({{ circuitBreaker.failureCount }}/{{ circuitBreaker.failureThreshold }} failures)
@@ -152,6 +161,7 @@
 import { ref, onMounted, onUnmounted } from 'vue';
 import axios from 'axios';
 import StatCard from './StatCard.vue';
+import InfoTooltip from './InfoTooltip.vue';
 
 interface CumulativeStats {
   totalDownloaded: number;

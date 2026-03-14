@@ -5,7 +5,7 @@
       <div class="max-w-7xl mx-auto px-4 py-6 flex items-center justify-between">
         <div class="flex items-center gap-4">
           <h1 class="text-3xl font-bold text-white flex items-center gap-2">
-            <svg class="w-8 h-8 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+            <svg class="w-8 h-8 text-blue-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
               <path d="M3 2a2 2 0 012-2h10a2 2 0 012 2v16a2 2 0 01-2 2H5a2 2 0 01-2-2V2z" />
             </svg>
             musicdl
@@ -34,9 +34,12 @@
         <div class="bg-slate-800 rounded-lg p-6 border border-slate-700">
           <h2 class="text-lg font-semibold text-white mb-4">API Status</h2>
           <div class="flex items-center gap-3">
-            <div :class="['w-4 h-4 rounded-full', apiHealthy ? 'bg-green-400' : 'bg-red-400']"></div>
+            <div :class="['w-4 h-4 rounded-full', apiHealthy ? 'bg-green-400' : 'bg-red-400']" :aria-label="apiHealthy ? 'API connected' : 'API disconnected'" role="status"></div>
             <span class="text-slate-300">{{ apiHealthy ? 'Connected' : 'Disconnected' }}</span>
-            <span v-if="wsClients > 0" class="text-slate-500 text-sm ml-auto">{{ wsClients }} WS client(s)</span>
+            <span v-if="wsClients > 0" class="text-slate-500 text-sm ml-auto flex items-center">
+              {{ wsClients }} WS client(s)
+              <InfoTooltip text="Active WebSocket connections to this dashboard for live updates" />
+            </span>
           </div>
         </div>
 
@@ -45,7 +48,7 @@
         <div v-else class="bg-slate-800 rounded-lg p-6 border border-slate-700">
           <h2 class="text-lg font-semibold text-white mb-4">Spotify Rate Limit</h2>
           <div class="flex items-center gap-3">
-            <div class="w-4 h-4 rounded-full bg-green-400"></div>
+            <div class="w-4 h-4 rounded-full bg-green-400" aria-label="No active rate limit" role="status"></div>
             <span class="text-slate-300">No active rate limit</span>
           </div>
         </div>
@@ -53,39 +56,46 @@
 
       <!-- Tabs -->
       <div class="bg-slate-800 rounded-lg border border-slate-700 shadow-lg">
-        <div class="flex border-b border-slate-700 overflow-x-auto">
+        <div class="flex border-b border-slate-700 overflow-x-auto scrollbar-hide" role="tablist" aria-label="Dashboard navigation">
           <button
             v-for="tab in tabs"
             :key="tab"
-            :class="['px-6 py-3 font-medium transition-colors whitespace-nowrap', activeTab === tab ? 'text-blue-400 border-b-2 border-blue-400' : 'text-slate-400 hover:text-white']"
+            role="tab"
+            :aria-selected="activeTab === tab"
+            :aria-controls="`tabpanel-${tab.toLowerCase()}`"
+            :class="['px-6 py-3 font-medium transition-colors whitespace-nowrap flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-800 rounded-t-lg', activeTab === tab ? 'text-blue-400 border-b-2 border-blue-400' : 'text-slate-400 hover:text-white']"
             @click="activeTab = tab"
           >
+            <svg class="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" :d="tabIcons[tab]" />
+            </svg>
             {{ tab }}
           </button>
         </div>
 
         <div class="p-8">
-          <!-- Download Tab -->
-          <div v-show="activeTab === 'Download'" class="space-y-6">
-            <DownloadDashboard />
+          <div v-show="activeTab === 'Overview'" id="tabpanel-overview" role="tabpanel" aria-label="Overview" class="space-y-6">
+            <OverviewDashboard @switch-tab="(tab: string) => activeTab = tab as typeof activeTab" />
           </div>
 
-          <!-- Configuration Tab -->
-          <div v-show="activeTab === 'Configuration'" class="space-y-6">
+          <div v-show="activeTab === 'Downloads'" id="tabpanel-downloads" role="tabpanel" aria-label="Downloads" class="space-y-6">
+            <DownloadDashboard />
+            <StatsDashboard />
+          </div>
+
+          <div v-show="activeTab === 'Analytics'" id="tabpanel-analytics" role="tabpanel" aria-label="Analytics" class="space-y-6">
+            <AnalyticsDashboard />
+          </div>
+
+          <div v-show="activeTab === 'Logs'" id="tabpanel-logs" role="tabpanel" aria-label="Logs" class="space-y-6">
+            <LogViewer />
+          </div>
+
+          <div v-show="activeTab === 'Configuration'" id="tabpanel-configuration" role="tabpanel" aria-label="Configuration" class="space-y-6">
             <ConfigEditor v-if="configExists" />
             <div v-else class="text-center py-12">
               <p class="text-slate-400">No configuration file found at /download/config.yaml</p>
             </div>
-          </div>
-
-          <!-- Logs Tab -->
-          <div v-show="activeTab === 'Logs'" class="space-y-6">
-            <LogViewer />
-          </div>
-
-          <!-- Statistics Tab -->
-          <div v-show="activeTab === 'Statistics'" class="space-y-6">
-            <StatsDashboard />
           </div>
         </div>
       </div>
@@ -96,11 +106,22 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
 import axios from 'axios';
+import OverviewDashboard from './components/OverviewDashboard.vue';
 import DownloadDashboard from './components/DownloadDashboard.vue';
+import StatsDashboard from './components/StatsDashboard.vue';
+import AnalyticsDashboard from './components/AnalyticsDashboard.vue';
 import ConfigEditor from './components/ConfigEditor.vue';
 import LogViewer from './components/LogViewer.vue';
 import RateLimitAlert from './components/RateLimitAlert.vue';
-import StatsDashboard from './components/StatsDashboard.vue';
+import InfoTooltip from './components/InfoTooltip.vue';
+
+const tabIcons: Record<string, string> = {
+  Overview: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6',
+  Downloads: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4',
+  Analytics: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z',
+  Logs: 'M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z',
+  Configuration: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z',
+};
 
 interface RateLimitInfo {
   active: boolean;
@@ -115,8 +136,8 @@ interface VersionInfo {
   spotigo: string;
 }
 
-const activeTab = ref<'Download' | 'Configuration' | 'Logs' | 'Statistics'>('Download');
-const tabs = ['Download', 'Configuration', 'Logs', 'Statistics'];
+const activeTab = ref<'Overview' | 'Downloads' | 'Analytics' | 'Logs' | 'Configuration'>('Overview');
+const tabs = ['Overview', 'Downloads', 'Analytics', 'Logs', 'Configuration'];
 const apiHealthy = ref(false);
 const configExists = ref(false);
 const wsClients = ref(0);

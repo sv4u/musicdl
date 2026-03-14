@@ -264,26 +264,16 @@ func (p *DownloadPlan) GetStatistics() map[string]interface{} {
 // useful for tracking download progress.
 // The returned map contains: "completed", "failed", "pending", "in_progress", "total".
 func (p *DownloadPlan) GetExecutionStatistics() map[string]int {
-	// Filter to only track items, excluding skipped items
-	trackItems := make([]*PlanItem, 0)
-	for _, item := range p.Items {
-		if item.ItemType == PlanItemTypeTrack {
-			// Use thread-safe GetStatus() to check status
-			status := item.GetStatus()
-			if status != PlanItemStatusSkipped {
-				trackItems = append(trackItems, item)
-			}
-		}
-	}
-
-	// Count by status
 	completed := 0
 	failed := 0
 	pending := 0
 	inProgress := 0
+	skipped := 0
 
-	for _, item := range trackItems {
-		// Use thread-safe GetStatus() method
+	for _, item := range p.Items {
+		if item.ItemType != PlanItemTypeTrack {
+			continue
+		}
 		status := item.GetStatus()
 		switch status {
 		case PlanItemStatusCompleted:
@@ -294,6 +284,8 @@ func (p *DownloadPlan) GetExecutionStatistics() map[string]int {
 			pending++
 		case PlanItemStatusInProgress:
 			inProgress++
+		case PlanItemStatusSkipped:
+			skipped++
 		}
 	}
 
@@ -302,7 +294,8 @@ func (p *DownloadPlan) GetExecutionStatistics() map[string]int {
 		"failed":      failed,
 		"pending":     pending,
 		"in_progress": inProgress,
-		"total":       len(trackItems),
+		"skipped":     skipped,
+		"total":       completed + failed + pending + inProgress + skipped,
 	}
 }
 

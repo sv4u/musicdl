@@ -82,30 +82,23 @@ jobs:
             touch coverage-integration.out
           fi
 
-      - name: Install gocovmerge for coverage merging
-        run: go install github.com/wadey/gocovmerge@latest
-
       - name: Merge coverage profiles
         run: |
-          # Ensure unit coverage file exists
           if [ ! -f coverage-unit.out ]; then
             echo "Error: coverage-unit.out not found. Coverage generation may have failed."
             exit 1
           fi
           
-          # Merge unit and integration coverage profiles
           if [ -f coverage-integration.out ] && [ -s coverage-integration.out ]; then
             echo "Merging unit and integration test coverage..."
-            gocovmerge coverage-unit.out coverage-integration.out > coverage.out || {
-              echo "Warning: gocovmerge failed, using unit test coverage only"
-              cp coverage-unit.out coverage.out
-            }
+            head -1 coverage-unit.out > coverage.out
+            tail -n +2 coverage-unit.out >> coverage.out
+            tail -n +2 coverage-integration.out >> coverage.out
           else
             echo "Using unit test coverage only (integration tests not available)"
             cp coverage-unit.out coverage.out
           fi
           
-          # Verify coverage file was created and is not empty
           if [ ! -f coverage.out ]; then
             echo "Error: Coverage file coverage.out was not created"
             exit 1
@@ -113,7 +106,6 @@ jobs:
           
           if [ ! -s coverage.out ]; then
             echo "Warning: Coverage file coverage.out is empty. This may indicate no code was covered by tests."
-            # Don't exit with error for empty coverage, just warn
           else
             echo "✓ Coverage file created successfully ($(wc -l < coverage.out) lines)"
           fi

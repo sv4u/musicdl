@@ -1,21 +1,27 @@
 <template>
   <div class="bg-slate-800 rounded-lg p-3 border border-slate-600">
-    <div class="text-slate-500 text-xs uppercase tracking-wider">{{ label }}</div>
+    <div class="text-slate-500 text-xs uppercase tracking-wider flex items-center">
+      {{ label }}
+      <InfoTooltip v-if="tooltip" :text="tooltip" />
+    </div>
     <div :class="['text-lg font-bold mt-1', textColorClass]">{{ value }}</div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import InfoTooltip from './InfoTooltip.vue';
 
 interface Props {
   label: string;
   value: number | string;
   color?: string;
+  tooltip?: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   color: 'white',
+  tooltip: '',
 });
 
 const textColorClass = computed(() => {
