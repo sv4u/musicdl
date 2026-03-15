@@ -91,6 +91,7 @@ type Generator struct {
 	seenArtistIDs          map[string]bool
 	seenYouTubeVideoIDs    map[string]bool
 	seenYouTubePlaylistIDs map[string]bool
+	seenSourceURLs         map[string]bool
 	// rateLimitNotifier is optional; when set, called during Spotify rate limit wait with (totalSec, remainingSec).
 	rateLimitNotifier func(totalSec, remainingSec int)
 	// planProgressCallback is optional; when set, called during plan generation to report progress.
@@ -109,6 +110,7 @@ func NewGenerator(cfg *config.MusicDLConfig, spotifyClient SpotifyClientInterfac
 		seenArtistIDs:          make(map[string]bool),
 		seenYouTubeVideoIDs:    make(map[string]bool),
 		seenYouTubePlaylistIDs: make(map[string]bool),
+		seenSourceURLs:         make(map[string]bool),
 	}
 }
 
@@ -204,6 +206,16 @@ func (g *Generator) processSong(ctx context.Context, plan *DownloadPlan, song co
 	// Check if this is a YouTube URL
 	if IsYouTubeVideo(song.URL) {
 		return g.processYouTubeVideo(ctx, plan, song)
+	}
+	// Check other direct-download sources
+	if IsSoundCloudTrack(song.URL) {
+		return g.processDirectTrack(ctx, plan, song, SourceTypeSoundCloud)
+	}
+	if IsBandcampTrack(song.URL) {
+		return g.processDirectTrack(ctx, plan, song, SourceTypeBandcamp)
+	}
+	if IsAudiusTrack(song.URL) {
+		return g.processDirectTrack(ctx, plan, song, SourceTypeAudius)
 	}
 
 	// Process as Spotify track
@@ -529,6 +541,22 @@ func (g *Generator) performSpotifySearch(ctx context.Context, item *PlanItem, se
 
 // processArtist processes an artist and adds albums/tracks to plan.
 func (g *Generator) processArtist(ctx context.Context, plan *DownloadPlan, artist config.MusicSource) error {
+	// Handle Bandcamp artist pages (download entire discography)
+	if IsBandcampArtist(artist.URL) || IsBandcampURL(artist.URL) {
+		return g.processDirectPlaylist(ctx, plan, config.MusicSource{
+			Name:      artist.Name,
+			URL:       artist.URL,
+			CreateM3U: false,
+		}, SourceTypeBandcamp)
+	}
+	// Handle SoundCloud user pages
+	if IsSoundCloudUser(artist.URL) {
+		return g.processDirectPlaylist(ctx, plan, config.MusicSource{
+			Name:      artist.Name,
+			URL:       artist.URL,
+			CreateM3U: false,
+		}, SourceTypeSoundCloud)
+	}
 	// Explicitly reject YouTube URLs
 	if IsYouTubeURL(artist.URL) {
 		errMsg := fmt.Sprintf("YouTube URLs are not supported for artists. Use songs or playlists instead. URL: %s", artist.URL)
@@ -761,6 +789,13 @@ func (g *Generator) processPlaylist(ctx context.Context, plan *DownloadPlan, pla
 	// Check if this is a YouTube playlist
 	if IsYouTubePlaylist(playlist.URL) {
 		return g.processYouTubePlaylist(ctx, plan, playlist)
+	}
+	// Check other direct-download playlist sources
+	if IsSoundCloudSet(playlist.URL) {
+		return g.processDirectPlaylist(ctx, plan, playlist, SourceTypeSoundCloud)
+	}
+	if IsAudiusPlaylist(playlist.URL) {
+		return g.processDirectPlaylist(ctx, plan, playlist, SourceTypeAudius)
 	}
 
 	playlistID := spotigo.ExtractID(playlist.URL, "playlist")
@@ -1060,6 +1095,14 @@ func (g *Generator) processYouTubePlaylist(ctx context.Context, plan *DownloadPl
 
 // processAlbum processes an album and adds tracks/M3U to plan.
 func (g *Generator) processAlbum(ctx context.Context, plan *DownloadPlan, album config.MusicSource) error {
+	// Handle Bandcamp album URLs
+	if IsBandcampAlbum(album.URL) {
+		return g.processDirectPlaylist(ctx, plan, config.MusicSource{
+			Name:      album.Name,
+			URL:       album.URL,
+			CreateM3U: album.CreateM3U,
+		}, SourceTypeBandcamp)
+	}
 	// Explicitly reject YouTube URLs
 	if IsYouTubeURL(album.URL) {
 		errMsg := fmt.Sprintf("YouTube URLs are not supported for albums. Use songs or playlists instead. URL: %s", album.URL)
@@ -1246,4 +1289,236 @@ func (g *Generator) processAlbum(ctx context.Context, plan *DownloadPlan, album 
 	}
 
 	return nil
+}
+
+// processDirectTrack processes a single track from a yt-dlp-compatible source
+// (SoundCloud, Bandcamp, Audius) and adds it to the plan. yt-dlp is used
+// for metadata extraction via --dump-json.
+func (g *Generator) processDirectTrack(ctx context.Context, dp *DownloadPlan, song config.MusicSource, source SourceType) error {
+	if g.audioProvider == nil {
+		return fmt.Errorf("audioProvider is required for %s track processing", source)
+	}
+
+	// Dedup by URL
+	if g.seenSourceURLs[song.URL] {
+		log.Printf("INFO: duplicate_detected type=%s_track url=%s", source, song.URL)
+		return nil
+	}
+
+	videoMetadata, err := g.audioProvider.GetVideoMetadata(ctx, song.URL)
+	if err != nil {
+		log.Printf("ERROR: %s_metadata_extraction_failed url=%s error=%v", source, song.URL, err)
+		item := &PlanItem{
+			ItemID:   fmt.Sprintf("track:%s:error:%s", source, song.Name),
+			ItemType: PlanItemTypeTrack,
+			Source:   source,
+			Name:     song.Name,
+			Status:   PlanItemStatusFailed,
+			Error:    err.Error(),
+			Metadata: map[string]interface{}{
+				"source_url": song.URL,
+				"error":      err.Error(),
+			},
+		}
+		dp.AddItem(item)
+		return err
+	}
+
+	trackName := videoMetadata.Title
+	if trackName == "" {
+		trackName = song.Name
+	}
+
+	metadata := map[string]interface{}{
+		"source_name": song.Name,
+		"source_url":  song.URL,
+		"title":       trackName,
+	}
+	if videoMetadata.Uploader != "" {
+		metadata["artist"] = videoMetadata.Uploader
+	}
+	if videoMetadata.Duration > 0 {
+		metadata["duration"] = videoMetadata.Duration
+	}
+
+	itemID := fmt.Sprintf("track:%s:%s", source, videoMetadata.VideoID)
+	if videoMetadata.VideoID == "" {
+		itemID = fmt.Sprintf("track:%s:%s", source, song.Name)
+	}
+
+	item := &PlanItem{
+		ItemID:    itemID,
+		ItemType:  PlanItemTypeTrack,
+		Source:    source,
+		SourceURL: song.URL,
+		Name:      trackName,
+		Status:    PlanItemStatusPending,
+		Metadata:  metadata,
+	}
+
+	// Attempt Spotify enhancement (non-blocking)
+	g.enhanceDirectTrackWithSpotify(ctx, item, videoMetadata)
+
+	dp.AddItem(item)
+	g.seenSourceURLs[song.URL] = true
+	return nil
+}
+
+// processDirectPlaylist processes a playlist/album/artist from a yt-dlp-compatible
+// source (SoundCloud set, Bandcamp album/artist, Audius playlist) by extracting
+// all entries via yt-dlp --flat-playlist --dump-json, then creating plan items.
+func (g *Generator) processDirectPlaylist(ctx context.Context, dp *DownloadPlan, playlist config.MusicSource, source SourceType) error {
+	if g.audioProvider == nil {
+		return fmt.Errorf("audioProvider is required for %s playlist processing", source)
+	}
+
+	// Dedup by URL
+	if g.seenSourceURLs[playlist.URL] {
+		log.Printf("INFO: duplicate_detected type=%s_playlist url=%s", source, playlist.URL)
+		return nil
+	}
+
+	playlistInfo, err := g.audioProvider.GetPlaylistInfo(ctx, playlist.URL)
+	if err != nil {
+		log.Printf("ERROR: %s_playlist_metadata_extraction_failed url=%s error=%v", source, playlist.URL, err)
+		item := &PlanItem{
+			ItemID:   fmt.Sprintf("playlist:%s:error:%s", source, playlist.Name),
+			ItemType: PlanItemTypePlaylist,
+			Source:   source,
+			Name:     playlist.Name,
+			Status:   PlanItemStatusFailed,
+			Error:    err.Error(),
+			Metadata: map[string]interface{}{
+				"source_url": playlist.URL,
+				"error":      err.Error(),
+			},
+		}
+		dp.AddItem(item)
+		return err
+	}
+
+	playlistName := playlistInfo.Title
+	if playlistName == "" {
+		playlistName = playlist.Name
+	}
+
+	playlistItemID := fmt.Sprintf("playlist:%s:%s", source, playlistInfo.PlaylistID)
+	if playlistInfo.PlaylistID == "" {
+		playlistItemID = fmt.Sprintf("playlist:%s:%s", source, playlist.Name)
+	}
+
+	playlistItem := &PlanItem{
+		ItemID:    playlistItemID,
+		ItemType:  PlanItemTypePlaylist,
+		Source:    source,
+		SourceURL: playlist.URL,
+		Name:      playlistName,
+		Status:    PlanItemStatusPending,
+		Metadata: map[string]interface{}{
+			"source_name": playlist.Name,
+			"source_url":  playlist.URL,
+			"create_m3u":  playlist.CreateM3U,
+		},
+	}
+	if playlistInfo.Description != "" {
+		playlistItem.Metadata["description"] = playlistInfo.Description
+	}
+
+	dp.AddItem(playlistItem)
+	g.seenSourceURLs[playlist.URL] = true
+
+	for _, entry := range playlistInfo.Entries {
+		entryID := entry.VideoID
+		if entryID == "" {
+			continue
+		}
+
+		entryURL := entry.WebpageURL
+		if entryURL == "" {
+			continue
+		}
+
+		// Dedup entries
+		entryKey := fmt.Sprintf("%s:%s", source, entryID)
+		if g.seenSourceURLs[entryKey] {
+			existingItemID := fmt.Sprintf("track:%s:%s", source, entryID)
+			existing := dp.GetItem(existingItemID)
+			if existing != nil {
+				playlistItem.ChildIDs = append(playlistItem.ChildIDs, existingItemID)
+			}
+			continue
+		}
+
+		metadata := map[string]interface{}{
+			"title": entry.Title,
+		}
+		if entry.Uploader != "" {
+			metadata["artist"] = entry.Uploader
+		}
+		if entry.Duration > 0 {
+			metadata["duration"] = entry.Duration
+		}
+
+		trackItem := &PlanItem{
+			ItemID:    fmt.Sprintf("track:%s:%s", source, entryID),
+			ItemType:  PlanItemTypeTrack,
+			Source:    source,
+			SourceURL: entryURL,
+			ParentID:  playlistItem.ItemID,
+			Name:      entry.Title,
+			Status:    PlanItemStatusPending,
+			Metadata:  metadata,
+		}
+
+		g.enhanceDirectTrackWithSpotify(ctx, trackItem, &entry)
+
+		dp.AddItem(trackItem)
+		playlistItem.ChildIDs = append(playlistItem.ChildIDs, trackItem.ItemID)
+		g.seenSourceURLs[entryKey] = true
+	}
+
+	if playlist.CreateM3U {
+		m3uItem := &PlanItem{
+			ItemID:   fmt.Sprintf("m3u:%s:%s", source, playlistName),
+			ItemType: PlanItemTypeM3U,
+			ParentID: playlistItem.ItemID,
+			Name:     fmt.Sprintf("%s.m3u", playlistName),
+			Status:   PlanItemStatusPending,
+			Metadata: map[string]interface{}{
+				"playlist_name": playlistName,
+			},
+		}
+		dp.AddItem(m3uItem)
+		playlistItem.ChildIDs = append(playlistItem.ChildIDs, m3uItem.ItemID)
+	}
+
+	return nil
+}
+
+// enhanceDirectTrackWithSpotify attempts to enhance a direct-source track
+// with Spotify metadata (same logic as YouTube enhancement).
+func (g *Generator) enhanceDirectTrackWithSpotify(ctx context.Context, item *PlanItem, meta *audio.YouTubeVideoMetadata) {
+	if g.spotifyClient == nil || meta == nil {
+		return
+	}
+	title := meta.Title
+	if title == "" {
+		title = item.Name
+	}
+	if title == "" {
+		return
+	}
+	artist := meta.Uploader
+	if artist == "" {
+		if a, ok := item.Metadata["artist"].(string); ok && a != "" {
+			artist = a
+		}
+	}
+	if artist == "" {
+		searchQuery := fmt.Sprintf("track:%s", title)
+		g.performSpotifySearch(ctx, item, searchQuery, "")
+		return
+	}
+	searchQuery := fmt.Sprintf("track:%s artist:%s", title, artist)
+	g.performSpotifySearch(ctx, item, searchQuery, artist)
 }

@@ -1455,3 +1455,414 @@ func TestGeneratePlan_WithYouTubeVideo_SpotifyEnhancement(t *testing.T) {
 		t.Error("Expected spotify_url in enhancement")
 	}
 }
+
+// --- Tests for new multi-source support ---
+
+func TestGeneratePlan_WithSoundCloudTrack(t *testing.T) {
+	cfg := &config.MusicDLConfig{
+		Version: "1.2",
+		Download: config.DownloadSettings{
+			ClientID:     "test_id",
+			ClientSecret: "test_secret",
+		},
+		Songs: []config.MusicSource{
+			{Name: "SC Track", URL: "https://soundcloud.com/artist/track-name"},
+		},
+	}
+
+	mockClient := newMockSpotifyClient()
+	mockAP := newMockAudioProvider()
+	mockAP.videoMetadata["https://soundcloud.com/artist/track-name"] = &audio.YouTubeVideoMetadata{
+		VideoID:  "sc-track-id",
+		Title:    "SC Track Title",
+		Uploader: "SC Artist",
+		Duration: 240,
+	}
+
+	generator := NewGenerator(cfg, mockClient, mockAP)
+	plan, err := generator.GeneratePlan(context.Background())
+	if err != nil {
+		t.Fatalf("GeneratePlan() failed: %v", err)
+	}
+
+	tracks := plan.GetItemsByType(PlanItemTypeTrack)
+	if len(tracks) != 1 {
+		t.Fatalf("expected 1 track, got %d", len(tracks))
+	}
+	item := tracks[0]
+	if item.Source != SourceTypeSoundCloud {
+		t.Errorf("expected source %q, got %q", SourceTypeSoundCloud, item.Source)
+	}
+	if item.SourceURL != "https://soundcloud.com/artist/track-name" {
+		t.Errorf("expected SourceURL preserved, got %q", item.SourceURL)
+	}
+	if item.Name != "SC Track Title" {
+		t.Errorf("expected name %q, got %q", "SC Track Title", item.Name)
+	}
+}
+
+func TestGeneratePlan_WithBandcampTrack(t *testing.T) {
+	cfg := &config.MusicDLConfig{
+		Version: "1.2",
+		Download: config.DownloadSettings{
+			ClientID:     "test_id",
+			ClientSecret: "test_secret",
+		},
+		Songs: []config.MusicSource{
+			{Name: "BC Track", URL: "https://artist.bandcamp.com/track/my-song"},
+		},
+	}
+
+	mockClient := newMockSpotifyClient()
+	mockAP := newMockAudioProvider()
+	mockAP.videoMetadata["https://artist.bandcamp.com/track/my-song"] = &audio.YouTubeVideoMetadata{
+		VideoID:  "bc-track-id",
+		Title:    "My Song",
+		Uploader: "Artist",
+		Duration: 300,
+	}
+
+	generator := NewGenerator(cfg, mockClient, mockAP)
+	plan, err := generator.GeneratePlan(context.Background())
+	if err != nil {
+		t.Fatalf("GeneratePlan() failed: %v", err)
+	}
+
+	tracks := plan.GetItemsByType(PlanItemTypeTrack)
+	if len(tracks) != 1 {
+		t.Fatalf("expected 1 track, got %d", len(tracks))
+	}
+	if tracks[0].Source != SourceTypeBandcamp {
+		t.Errorf("expected source %q, got %q", SourceTypeBandcamp, tracks[0].Source)
+	}
+}
+
+func TestGeneratePlan_WithAudiusTrack(t *testing.T) {
+	cfg := &config.MusicDLConfig{
+		Version: "1.2",
+		Download: config.DownloadSettings{
+			ClientID:     "test_id",
+			ClientSecret: "test_secret",
+		},
+		Songs: []config.MusicSource{
+			{Name: "Audius Track", URL: "https://audius.co/artist/my-track"},
+		},
+	}
+
+	mockClient := newMockSpotifyClient()
+	mockAP := newMockAudioProvider()
+	mockAP.videoMetadata["https://audius.co/artist/my-track"] = &audio.YouTubeVideoMetadata{
+		VideoID:  "audius-track-id",
+		Title:    "My Audius Track",
+		Uploader: "Audius Artist",
+		Duration: 180,
+	}
+
+	generator := NewGenerator(cfg, mockClient, mockAP)
+	plan, err := generator.GeneratePlan(context.Background())
+	if err != nil {
+		t.Fatalf("GeneratePlan() failed: %v", err)
+	}
+
+	tracks := plan.GetItemsByType(PlanItemTypeTrack)
+	if len(tracks) != 1 {
+		t.Fatalf("expected 1 track, got %d", len(tracks))
+	}
+	if tracks[0].Source != SourceTypeAudius {
+		t.Errorf("expected source %q, got %q", SourceTypeAudius, tracks[0].Source)
+	}
+}
+
+func TestGeneratePlan_WithSoundCloudSet(t *testing.T) {
+	cfg := &config.MusicDLConfig{
+		Version: "1.2",
+		Download: config.DownloadSettings{
+			ClientID:     "test_id",
+			ClientSecret: "test_secret",
+		},
+		Playlists: []config.MusicSource{
+			{Name: "SC Set", URL: "https://soundcloud.com/artist/sets/my-set", CreateM3U: true},
+		},
+	}
+
+	mockClient := newMockSpotifyClient()
+	mockAP := newMockAudioProvider()
+	mockAP.playlistInfo["https://soundcloud.com/artist/sets/my-set"] = &audio.YouTubePlaylistInfo{
+		PlaylistID: "sc-set-id",
+		Title:      "My Set",
+		Entries: []audio.YouTubeVideoMetadata{
+			{VideoID: "sc-v1", Title: "Track 1", Uploader: "Artist", WebpageURL: "https://soundcloud.com/artist/track-1"},
+			{VideoID: "sc-v2", Title: "Track 2", Uploader: "Artist", WebpageURL: "https://soundcloud.com/artist/track-2"},
+		},
+	}
+
+	generator := NewGenerator(cfg, mockClient, mockAP)
+	plan, err := generator.GeneratePlan(context.Background())
+	if err != nil {
+		t.Fatalf("GeneratePlan() failed: %v", err)
+	}
+
+	playlists := plan.GetItemsByType(PlanItemTypePlaylist)
+	if len(playlists) != 1 {
+		t.Fatalf("expected 1 playlist, got %d", len(playlists))
+	}
+	if playlists[0].Source != SourceTypeSoundCloud {
+		t.Errorf("expected source %q, got %q", SourceTypeSoundCloud, playlists[0].Source)
+	}
+
+	tracks := plan.GetItemsByType(PlanItemTypeTrack)
+	if len(tracks) != 2 {
+		t.Fatalf("expected 2 tracks, got %d", len(tracks))
+	}
+	for _, tr := range tracks {
+		if tr.Source != SourceTypeSoundCloud {
+			t.Errorf("expected track source %q, got %q", SourceTypeSoundCloud, tr.Source)
+		}
+		if tr.SourceURL == "" {
+			t.Error("expected non-empty SourceURL on track")
+		}
+	}
+
+	m3us := plan.GetItemsByType(PlanItemTypeM3U)
+	if len(m3us) != 1 {
+		t.Fatalf("expected 1 M3U item, got %d", len(m3us))
+	}
+}
+
+func TestGeneratePlan_WithBandcampAlbum(t *testing.T) {
+	cfg := &config.MusicDLConfig{
+		Version: "1.2",
+		Download: config.DownloadSettings{
+			ClientID:     "test_id",
+			ClientSecret: "test_secret",
+		},
+		Albums: []config.MusicSource{
+			{Name: "BC Album", URL: "https://artist.bandcamp.com/album/my-album"},
+		},
+	}
+
+	mockClient := newMockSpotifyClient()
+	mockAP := newMockAudioProvider()
+	mockAP.playlistInfo["https://artist.bandcamp.com/album/my-album"] = &audio.YouTubePlaylistInfo{
+		PlaylistID: "bc-album-id",
+		Title:      "My Album",
+		Entries: []audio.YouTubeVideoMetadata{
+			{VideoID: "bc-t1", Title: "Song 1", Uploader: "Artist", WebpageURL: "https://artist.bandcamp.com/track/song-1"},
+			{VideoID: "bc-t2", Title: "Song 2", Uploader: "Artist", WebpageURL: "https://artist.bandcamp.com/track/song-2"},
+		},
+	}
+
+	generator := NewGenerator(cfg, mockClient, mockAP)
+	plan, err := generator.GeneratePlan(context.Background())
+	if err != nil {
+		t.Fatalf("GeneratePlan() failed: %v", err)
+	}
+
+	playlists := plan.GetItemsByType(PlanItemTypePlaylist)
+	if len(playlists) != 1 {
+		t.Fatalf("expected 1 playlist (bandcamp album), got %d", len(playlists))
+	}
+	if playlists[0].Source != SourceTypeBandcamp {
+		t.Errorf("expected source %q, got %q", SourceTypeBandcamp, playlists[0].Source)
+	}
+
+	tracks := plan.GetItemsByType(PlanItemTypeTrack)
+	if len(tracks) != 2 {
+		t.Fatalf("expected 2 tracks, got %d", len(tracks))
+	}
+}
+
+func TestGeneratePlan_WithBandcampArtist(t *testing.T) {
+	cfg := &config.MusicDLConfig{
+		Version: "1.2",
+		Download: config.DownloadSettings{
+			ClientID:     "test_id",
+			ClientSecret: "test_secret",
+		},
+		Artists: []config.MusicSource{
+			{Name: "BC Artist", URL: "https://artist.bandcamp.com/"},
+		},
+	}
+
+	mockClient := newMockSpotifyClient()
+	mockAP := newMockAudioProvider()
+	mockAP.playlistInfo["https://artist.bandcamp.com/"] = &audio.YouTubePlaylistInfo{
+		PlaylistID: "bc-artist-id",
+		Title:      "Artist Discography",
+		Entries: []audio.YouTubeVideoMetadata{
+			{VideoID: "bc-d1", Title: "Song A", Uploader: "Artist", WebpageURL: "https://artist.bandcamp.com/track/song-a"},
+		},
+	}
+
+	generator := NewGenerator(cfg, mockClient, mockAP)
+	plan, err := generator.GeneratePlan(context.Background())
+	if err != nil {
+		t.Fatalf("GeneratePlan() failed: %v", err)
+	}
+
+	playlists := plan.GetItemsByType(PlanItemTypePlaylist)
+	if len(playlists) != 1 {
+		t.Fatalf("expected 1 playlist (bandcamp artist), got %d", len(playlists))
+	}
+	if playlists[0].Source != SourceTypeBandcamp {
+		t.Errorf("expected source %q, got %q", SourceTypeBandcamp, playlists[0].Source)
+	}
+}
+
+func TestGeneratePlan_DirectTrack_Duplicate(t *testing.T) {
+	cfg := &config.MusicDLConfig{
+		Version: "1.2",
+		Download: config.DownloadSettings{
+			ClientID:     "test_id",
+			ClientSecret: "test_secret",
+		},
+		Songs: []config.MusicSource{
+			{Name: "SC Track", URL: "https://soundcloud.com/artist/track-name"},
+			{Name: "SC Track Dup", URL: "https://soundcloud.com/artist/track-name"},
+		},
+	}
+
+	mockClient := newMockSpotifyClient()
+	mockAP := newMockAudioProvider()
+	mockAP.videoMetadata["https://soundcloud.com/artist/track-name"] = &audio.YouTubeVideoMetadata{
+		VideoID:  "sc-id",
+		Title:    "Track",
+		Uploader: "Artist",
+	}
+
+	generator := NewGenerator(cfg, mockClient, mockAP)
+	plan, err := generator.GeneratePlan(context.Background())
+	if err != nil {
+		t.Fatalf("GeneratePlan() failed: %v", err)
+	}
+
+	tracks := plan.GetItemsByType(PlanItemTypeTrack)
+	if len(tracks) != 1 {
+		t.Errorf("expected 1 track (duplicate removed), got %d", len(tracks))
+	}
+}
+
+func TestGeneratePlan_DirectTrack_MetadataError(t *testing.T) {
+	cfg := &config.MusicDLConfig{
+		Version: "1.2",
+		Download: config.DownloadSettings{
+			ClientID:     "test_id",
+			ClientSecret: "test_secret",
+		},
+		Songs: []config.MusicSource{
+			{Name: "Bad SC Track", URL: "https://soundcloud.com/artist/bad-track"},
+		},
+	}
+
+	mockClient := newMockSpotifyClient()
+	mockAP := newMockAudioProvider()
+	mockAP.videoErrors["https://soundcloud.com/artist/bad-track"] = fmt.Errorf("metadata extraction failed")
+
+	generator := NewGenerator(cfg, mockClient, mockAP)
+	plan, err := generator.GeneratePlan(context.Background())
+	// GeneratePlan logs errors but doesn't return them for individual items
+	_ = err
+
+	tracks := plan.GetItemsByType(PlanItemTypeTrack)
+	if len(tracks) != 1 {
+		t.Fatalf("expected 1 failed track item, got %d", len(tracks))
+	}
+	if tracks[0].Status != PlanItemStatusFailed {
+		t.Errorf("expected status %q, got %q", PlanItemStatusFailed, tracks[0].Status)
+	}
+	if tracks[0].Error == "" {
+		t.Error("expected non-empty error on failed item")
+	}
+}
+
+func TestGeneratePlan_DirectTrack_NoAudioProvider(t *testing.T) {
+	cfg := &config.MusicDLConfig{
+		Version: "1.2",
+		Download: config.DownloadSettings{
+			ClientID:     "test_id",
+			ClientSecret: "test_secret",
+		},
+		Songs: []config.MusicSource{
+			{Name: "SC Track", URL: "https://soundcloud.com/artist/track"},
+		},
+	}
+
+	mockClient := newMockSpotifyClient()
+	generator := NewGenerator(cfg, mockClient, nil)
+	_, err := generator.GeneratePlan(context.Background())
+	// Should log error but not crash
+	_ = err
+}
+
+func TestGeneratePlan_MixedSources(t *testing.T) {
+	cfg := &config.MusicDLConfig{
+		Version: "1.2",
+		Download: config.DownloadSettings{
+			ClientID:     "test_id",
+			ClientSecret: "test_secret",
+		},
+		Songs: []config.MusicSource{
+			{Name: "Spotify Song", URL: "https://open.spotify.com/track/sp123"},
+			{Name: "YT Video", URL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+			{Name: "SC Track", URL: "https://soundcloud.com/artist/sc-track"},
+			{Name: "BC Track", URL: "https://artist.bandcamp.com/track/bc-track"},
+			{Name: "Audius Track", URL: "https://audius.co/artist/au-track"},
+		},
+	}
+
+	mockClient := newMockSpotifyClient()
+	mockClient.tracks["sp123"] = createMockTrack("sp123", "Spotify Song", "Spotify Artist")
+
+	mockAP := newMockAudioProvider()
+	mockAP.videoMetadata["https://www.youtube.com/watch?v=dQw4w9WgXcQ"] = &audio.YouTubeVideoMetadata{
+		VideoID: "dQw4w9WgXcQ", Title: "YT Video", Uploader: "YT Artist",
+	}
+	mockAP.videoMetadata["https://soundcloud.com/artist/sc-track"] = &audio.YouTubeVideoMetadata{
+		VideoID: "sc-id", Title: "SC Track", Uploader: "SC Artist",
+	}
+	mockAP.videoMetadata["https://artist.bandcamp.com/track/bc-track"] = &audio.YouTubeVideoMetadata{
+		VideoID: "bc-id", Title: "BC Track", Uploader: "BC Artist",
+	}
+	mockAP.videoMetadata["https://audius.co/artist/au-track"] = &audio.YouTubeVideoMetadata{
+		VideoID: "au-id", Title: "Audius Track", Uploader: "AU Artist",
+	}
+
+	generator := NewGenerator(cfg, mockClient, mockAP)
+	plan, err := generator.GeneratePlan(context.Background())
+	if err != nil {
+		t.Fatalf("GeneratePlan() failed: %v", err)
+	}
+
+	tracks := plan.GetItemsByType(PlanItemTypeTrack)
+	if len(tracks) != 5 {
+		t.Fatalf("expected 5 tracks from mixed sources, got %d", len(tracks))
+	}
+
+	sources := make(map[SourceType]int)
+	spotifyCount := 0
+	youtubeCount := 0
+	for _, tr := range tracks {
+		if tr.SpotifyURL != "" && tr.Source == "" {
+			spotifyCount++
+		} else if tr.YouTubeURL != "" && tr.Source == "" {
+			youtubeCount++
+		} else {
+			sources[tr.Source]++
+		}
+	}
+	if spotifyCount != 1 {
+		t.Errorf("expected 1 Spotify track, got %d", spotifyCount)
+	}
+	if youtubeCount != 1 {
+		t.Errorf("expected 1 YouTube track, got %d", youtubeCount)
+	}
+	if sources[SourceTypeSoundCloud] != 1 {
+		t.Errorf("expected 1 SoundCloud track, got %d", sources[SourceTypeSoundCloud])
+	}
+	if sources[SourceTypeBandcamp] != 1 {
+		t.Errorf("expected 1 Bandcamp track, got %d", sources[SourceTypeBandcamp])
+	}
+	if sources[SourceTypeAudius] != 1 {
+		t.Errorf("expected 1 Audius track, got %d", sources[SourceTypeAudius])
+	}
+}
