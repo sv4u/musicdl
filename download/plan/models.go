@@ -29,6 +29,17 @@ const (
 	PlanItemStatusSkipped    PlanItemStatus = "skipped"
 )
 
+// SourceType identifies the origin platform of a plan item.
+type SourceType string
+
+const (
+	SourceTypeSpotify    SourceType = "spotify"
+	SourceTypeYouTube    SourceType = "youtube"
+	SourceTypeSoundCloud SourceType = "soundcloud"
+	SourceTypeBandcamp   SourceType = "bandcamp"
+	SourceTypeAudius     SourceType = "audius"
+)
+
 // PlanItem represents a single item in the download plan.
 type PlanItem struct {
 	// Identification
@@ -37,6 +48,10 @@ type PlanItem struct {
 	SpotifyID  string       `json:"spotify_id,omitempty"`
 	SpotifyURL string       `json:"spotify_url,omitempty"`
 	YouTubeURL string       `json:"youtube_url,omitempty"`
+
+	// Generic source fields for non-Spotify/YouTube platforms (SoundCloud, Bandcamp, Audius, etc.)
+	Source    SourceType `json:"source,omitempty"`
+	SourceURL string     `json:"source_url,omitempty"`
 
 	// Hierarchy
 	ParentID string   `json:"parent_id,omitempty"`
@@ -64,6 +79,16 @@ type PlanItem struct {
 
 	// Thread safety (not serialized)
 	mu sync.RWMutex `json:"-"`
+}
+
+// DownloadURL returns the direct download URL for this item.
+// It checks SourceURL first, then falls back to YouTubeURL.
+// Returns empty string for Spotify-only items (which require search).
+func (p *PlanItem) DownloadURL() string {
+	if p.SourceURL != "" {
+		return p.SourceURL
+	}
+	return p.YouTubeURL
 }
 
 // MarkStarted marks the item as started.

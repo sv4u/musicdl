@@ -409,3 +409,119 @@ func TestDownloadPlan_SaveLoad_FileNotFound(t *testing.T) {
 		t.Error("Expected error for nonexistent file")
 	}
 }
+
+func TestPlanItem_DownloadURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		item     PlanItem
+		expected string
+	}{
+		{
+			name:     "SourceURL takes precedence",
+			item:     PlanItem{SourceURL: "https://soundcloud.com/artist/track", YouTubeURL: "https://youtube.com/watch?v=abc"},
+			expected: "https://soundcloud.com/artist/track",
+		},
+		{
+			name:     "Falls back to YouTubeURL",
+			item:     PlanItem{YouTubeURL: "https://youtube.com/watch?v=abc"},
+			expected: "https://youtube.com/watch?v=abc",
+		},
+		{
+			name:     "Bandcamp SourceURL",
+			item:     PlanItem{SourceURL: "https://artist.bandcamp.com/track/song"},
+			expected: "https://artist.bandcamp.com/track/song",
+		},
+		{
+			name:     "Audius SourceURL",
+			item:     PlanItem{SourceURL: "https://audius.co/artist/track"},
+			expected: "https://audius.co/artist/track",
+		},
+		{
+			name:     "SpotifyURL only returns empty",
+			item:     PlanItem{SpotifyURL: "https://open.spotify.com/track/123"},
+			expected: "",
+		},
+		{
+			name:     "Empty item returns empty",
+			item:     PlanItem{},
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.item.DownloadURL()
+			if result != tt.expected {
+				t.Errorf("DownloadURL() = %q, expected %q", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestPlanItem_SourceType(t *testing.T) {
+	item := &PlanItem{
+		ItemID:    "track:soundcloud:test",
+		Source:    SourceTypeSoundCloud,
+		SourceURL: "https://soundcloud.com/artist/track",
+	}
+	if item.Source != SourceTypeSoundCloud {
+		t.Errorf("expected source %q, got %q", SourceTypeSoundCloud, item.Source)
+	}
+
+	item2 := &PlanItem{
+		ItemID:    "track:bandcamp:test",
+		Source:    SourceTypeBandcamp,
+		SourceURL: "https://artist.bandcamp.com/track/song",
+	}
+	if item2.Source != SourceTypeBandcamp {
+		t.Errorf("expected source %q, got %q", SourceTypeBandcamp, item2.Source)
+	}
+
+	item3 := &PlanItem{
+		ItemID:    "track:audius:test",
+		Source:    SourceTypeAudius,
+		SourceURL: "https://audius.co/artist/track",
+	}
+	if item3.Source != SourceTypeAudius {
+		t.Errorf("expected source %q, got %q", SourceTypeAudius, item3.Source)
+	}
+}
+
+func TestPlanItem_SaveLoad_WithSourceFields(t *testing.T) {
+	plan := NewDownloadPlan(map[string]interface{}{
+		"config_version": "1.2",
+	})
+
+	plan.AddItem(&PlanItem{
+		ItemID:    "track:bandcamp:test",
+		ItemType:  PlanItemTypeTrack,
+		Source:    SourceTypeBandcamp,
+		SourceURL: "https://artist.bandcamp.com/track/song",
+		Name:      "Test Track",
+		Status:    PlanItemStatusPending,
+	})
+
+	tmpFile := t.TempDir() + "/plan_source.json"
+	if err := plan.Save(tmpFile); err != nil {
+		t.Fatalf("Failed to save plan: %v", err)
+	}
+
+	loaded, err := LoadPlan(tmpFile)
+	if err != nil {
+		t.Fatalf("Failed to load plan: %v", err)
+	}
+
+	if len(loaded.Items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(loaded.Items))
+	}
+	item := loaded.Items[0]
+	if item.Source != SourceTypeBandcamp {
+		t.Errorf("expected source %q, got %q", SourceTypeBandcamp, item.Source)
+	}
+	if item.SourceURL != "https://artist.bandcamp.com/track/song" {
+		t.Errorf("expected SourceURL preserved, got %q", item.SourceURL)
+	}
+	if item.DownloadURL() != "https://artist.bandcamp.com/track/song" {
+		t.Errorf("expected DownloadURL() to return SourceURL, got %q", item.DownloadURL())
+	}
+}
