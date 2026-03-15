@@ -589,10 +589,6 @@ func TestLoadConfig_NewAudioProviders(t *testing.T) {
 		errorSubstring string
 	}{
 		{
-			name:      "bandcamp provider accepted",
-			providers: `["bandcamp"]`,
-		},
-		{
 			name:      "audius provider accepted",
 			providers: `["audius"]`,
 		},
@@ -601,8 +597,14 @@ func TestLoadConfig_NewAudioProviders(t *testing.T) {
 			providers: `["soundcloud"]`,
 		},
 		{
-			name:      "all providers together",
-			providers: `["youtube-music", "youtube", "soundcloud", "bandcamp", "audius"]`,
+			name:      "all search providers together",
+			providers: `["youtube-music", "youtube", "soundcloud", "audius"]`,
+		},
+		{
+			name:           "bandcamp provider rejected",
+			providers:      `["bandcamp"]`,
+			expectError:    true,
+			errorSubstring: "bandcamp cannot be used as an audio_provider",
 		},
 		{
 			name:           "invalid provider rejected",

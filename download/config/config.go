@@ -212,18 +212,22 @@ func (d *DownloadSettings) Validate() error {
 		}
 	}
 
-	// Validate audio providers
+	// Validate audio providers (bandcamp has no search — direct URLs only)
 	validProviders := map[string]bool{
 		"youtube-music": true,
 		"youtube":       true,
 		"soundcloud":    true,
-		"bandcamp":      true,
 		"audius":        true,
 	}
 	for _, provider := range d.AudioProviders {
+		if provider == "bandcamp" {
+			return &ConfigError{
+				Message: "bandcamp cannot be used as an audio_provider (no search support). Use direct Bandcamp URLs in songs/albums/artists instead.",
+			}
+		}
 		if !validProviders[provider] {
 			return &ConfigError{
-				Message: fmt.Sprintf("Invalid audio provider: %s. Must be one of: youtube-music, youtube, soundcloud, bandcamp, audius", provider),
+				Message: fmt.Sprintf("Invalid audio provider: %s. Must be one of: youtube-music, youtube, soundcloud, audius", provider),
 			}
 		}
 	}
