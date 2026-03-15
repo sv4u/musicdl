@@ -561,3 +561,67 @@ func TestApplySpotifyEnhancement_NoEnhancement(t *testing.T) {
 // Note: Unit tests for downloadYouTubeTrack are limited because Downloader uses concrete types.
 // The helper functions (youtubeMetadataToSong, applySpotifyEnhancement) are already tested above.
 // Full download flow tests are integration tests in youtube_integration_test.go.
+
+func TestPlanItem_DownloadURL_Routing(t *testing.T) {
+	tests := []struct {
+		name        string
+		item        *plan.PlanItem
+		expectedURL string
+	}{
+		{
+			name: "SourceURL routes to direct download",
+			item: &plan.PlanItem{
+				SourceURL: "https://soundcloud.com/artist/track",
+				Source:    plan.SourceTypeSoundCloud,
+			},
+			expectedURL: "https://soundcloud.com/artist/track",
+		},
+		{
+			name: "Bandcamp SourceURL routes to direct download",
+			item: &plan.PlanItem{
+				SourceURL: "https://artist.bandcamp.com/track/song",
+				Source:    plan.SourceTypeBandcamp,
+			},
+			expectedURL: "https://artist.bandcamp.com/track/song",
+		},
+		{
+			name: "Audius SourceURL routes to direct download",
+			item: &plan.PlanItem{
+				SourceURL: "https://audius.co/artist/track",
+				Source:    plan.SourceTypeAudius,
+			},
+			expectedURL: "https://audius.co/artist/track",
+		},
+		{
+			name: "YouTubeURL falls back correctly",
+			item: &plan.PlanItem{
+				YouTubeURL: "https://youtube.com/watch?v=abc",
+			},
+			expectedURL: "https://youtube.com/watch?v=abc",
+		},
+		{
+			name: "SourceURL takes precedence over YouTubeURL",
+			item: &plan.PlanItem{
+				SourceURL:  "https://soundcloud.com/artist/track",
+				YouTubeURL: "https://youtube.com/watch?v=abc",
+			},
+			expectedURL: "https://soundcloud.com/artist/track",
+		},
+		{
+			name: "SpotifyURL only has empty DownloadURL",
+			item: &plan.PlanItem{
+				SpotifyURL: "https://open.spotify.com/track/123",
+			},
+			expectedURL: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.item.DownloadURL()
+			if result != tt.expectedURL {
+				t.Errorf("DownloadURL() = %q, expected %q", result, tt.expectedURL)
+			}
+		})
+	}
+}

@@ -67,11 +67,11 @@ func (d *Downloader) DownloadTrack(ctx context.Context, item *plan.PlanItem) (bo
 			if errors.As(err, &rateLimitErr) && rateLimitErr.RetryAfter > 0 {
 				waitTime = time.Duration(rateLimitErr.RetryAfter+10) * time.Second
 			}
-			url := item.SpotifyURL
-			if url == "" {
-				url = item.YouTubeURL
-			}
-			log.Printf("INFO: retry attempt=%d max_retries=%d url=%s error=%v wait_seconds=%d", attempt, maxRetries, url, err, int(waitTime.Seconds()))
+		url := item.SpotifyURL
+		if url == "" {
+			url = item.DownloadURL()
+		}
+		log.Printf("INFO: retry attempt=%d max_retries=%d url=%s error=%v wait_seconds=%d", attempt, maxRetries, url, err, int(waitTime.Seconds()))
 			select {
 			case <-ctx.Done():
 				return false, "", ctx.Err()
@@ -82,7 +82,7 @@ func (d *Downloader) DownloadTrack(ctx context.Context, item *plan.PlanItem) (bo
 
 	url := item.SpotifyURL
 	if url == "" {
-		url = item.YouTubeURL
+		url = item.DownloadURL()
 	}
 	log.Printf("ERROR: download_failed url=%s attempts=%d error=%v", url, maxRetries, lastErr)
 	return false, "", fmt.Errorf("failed to download %s after %d attempts: %w", url, maxRetries, lastErr)
@@ -90,14 +90,87 @@ func (d *Downloader) DownloadTrack(ctx context.Context, item *plan.PlanItem) (bo
 
 // downloadTrackAttempt performs a single download attempt.
 func (d *Downloader) downloadTrackAttempt(ctx context.Context, item *plan.PlanItem) (bool, string, error) {
-	// Route to appropriate handler based on URL type
+	// Route: generic SourceURL → direct download (Bandcamp, SoundCloud, Audius)
+	if item.SourceURL != "" {
+		return d.downloadDirectTrack(ctx, item)
+	}
+	// Route: YouTube URL → direct download (backward compat)
 	if item.YouTubeURL != "" {
 		return d.downloadYouTubeTrack(ctx, item)
 	}
+	// Route: Spotify URL → search + download
 	if item.SpotifyURL != "" {
 		return d.downloadSpotifyTrack(ctx, item)
 	}
-	return false, "", fmt.Errorf("no Spotify URL or YouTube URL provided in plan item")
+	return false, "", fmt.Errorf("no download URL provided in plan item")
+}
+
+// downloadDirectTrack downloads a track from any yt-dlp-compatible source (SoundCloud, Bandcamp, Audius).
+// Metadata is extracted from PlanItem.Metadata, then the URL is passed to yt-dlp.
+func (d *Downloader) downloadDirectTrack(ctx context.Context, item *plan.PlanItem) (bool, string, error) {
+	downloadURL := item.DownloadURL()
+	sourceType := string(item.Source)
+	if sourceType == "" {
+		sourceType = "direct"
+	}
+
+	song, ok := songFromPlanItemMetadata(item)
+	if !ok {
+		if d.audioProvider == nil {
+			return false, "", fmt.Errorf("audioProvider is required for direct downloads")
+		}
+		vidMeta, err := d.audioProvider.GetVideoMetadata(ctx, downloadURL)
+		if err != nil {
+			return false, "", fmt.Errorf("failed to get metadata from %s: %w", sourceType, err)
+		}
+		song = youtubeMetadataToSong(vidMeta, item)
+	}
+
+	applySpotifyEnhancement(song, item)
+
+	log.Printf("INFO: download_start source=%s track=%s artist=%s", sourceType, song.Title, song.Artist)
+
+	outputPath := item.FilePath
+	if outputPath == "" {
+		outputPath = d.getOutputPath(song)
+	}
+	fileExists := d.fileExistsCached(outputPath)
+
+	if fileExists && d.config.Overwrite == config.OverwriteSkip {
+		log.Printf("INFO: download_skipped reason=file_exists source=%s track=%s path=%s", sourceType, song.Title, outputPath)
+		return true, outputPath, nil
+	}
+	if fileExists && d.config.Overwrite == config.OverwriteMetadata {
+		log.Printf("INFO: metadata_update_start source=%s track=%s path=%s", sourceType, song.Title, outputPath)
+		if err := d.metadataEmbedder.Embed(ctx, outputPath, song, song.CoverURL); err != nil {
+			return false, "", fmt.Errorf("failed to update metadata: %w", err)
+		}
+		log.Printf("INFO: metadata_update_complete source=%s track=%s path=%s", sourceType, song.Title, outputPath)
+		return true, outputPath, nil
+	}
+
+	if d.audioProvider == nil {
+		return false, "", fmt.Errorf("audioProvider is required for downloads")
+	}
+	downloadedPath, rawOutput, err := d.audioProvider.Download(ctx, downloadURL, outputPath)
+	item.SetRawOutput(rawOutput)
+	if err != nil {
+		return false, "", fmt.Errorf("failed to download from %s: %w", sourceType, err)
+	}
+
+	if err := d.metadataEmbedder.Embed(ctx, downloadedPath, song, song.CoverURL); err != nil {
+		log.Printf("WARN: metadata_embed_failed source=%s track=%s path=%s error=%v", sourceType, song.Title, downloadedPath, err)
+	} else {
+		log.Printf("INFO: metadata_embed_complete source=%s track=%s path=%s", sourceType, song.Title, downloadedPath)
+	}
+
+	if _, err := os.Stat(downloadedPath); err != nil {
+		d.setFileExistsCached(downloadedPath, false)
+		return false, "", fmt.Errorf("file not found after download: %w", err)
+	}
+	d.invalidateFileCache(downloadedPath)
+	log.Printf("INFO: download_complete source=%s track=%s artist=%s path=%s", sourceType, song.Title, song.Artist, downloadedPath)
+	return true, downloadedPath, nil
 }
 
 // songFromPlanItemMetadata builds a Song from plan item metadata when present.
