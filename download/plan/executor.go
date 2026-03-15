@@ -2,6 +2,7 @@ package plan
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -139,6 +140,10 @@ func (e *Executor) executeTrack(ctx context.Context, item *PlanItem, plan *Downl
 	// Download track
 	success, filePath, err := e.downloader.DownloadTrack(ctx, item)
 	if err != nil {
+		if errors.Is(err, ErrUnavailable) {
+			item.MarkSkipped("")
+			return
+		}
 		item.MarkFailed(err.Error())
 		return
 	}

@@ -134,11 +134,10 @@ musicdl --version
 
 Configuration is a YAML file (version 1.2). Two layouts are supported.
 
-### Spec layout (top-level)
+### Full Configuration Reference
 
 ```yaml
 version: "1.2"
-threads: 4
 
 spotify:
   client_id: "your_client_id"
@@ -147,22 +146,41 @@ spotify:
 rate_limits:
   spotify_retries: 3
   youtube_retries: 3
-  youtube_bandwidth: 1048576
+  youtube_bandwidth: 1048576        # bytes/sec bandwidth limit for downloads
 
 download:
-  format: "mp3"
-  bitrate: "320k"
-  output: "{artist}/{album}/{title}.{output-ext}"
-  audio_providers:
+  threads: 4                        # parallel download workers (1–16)
+  max_retries: 3                    # retry attempts per track before marking failed
+  format: "mp3"                     # output format: mp3, flac, m4a, opus
+  bitrate: "320k"                   # audio bitrate (ignored for flac)
+  output: "{artist}/{album}/{disc-number}{track-number} - {title}.{output-ext}"
+  audio_providers:                  # search providers tried in order for Spotify tracks
     - "youtube-music"
     - "youtube"
-    # - "soundcloud"   # SoundCloud search via yt-dlp
-    # - "audius"        # Audius REST API search
-  overwrite: "skip"
+    # - "soundcloud"                # SoundCloud search via yt-dlp
+    # - "audius"                    # Audius REST API search
+  overwrite: "skip"                 # skip | overwrite | metadata
+  cookies_from_browser: ""          # optional: "chrome", "firefox", "brave", "edge", etc.
+                                    # passes --cookies-from-browser to yt-dlp for
+                                    # age-restricted or login-gated content
 
 songs:
   - name: "Song Name"
     url: "https://open.spotify.com/track/..."
+
+artists:
+  - name: "Artist Name"
+    url: "https://open.spotify.com/artist/..."
+
+playlists:
+  - name: "Playlist Name"
+    url: "https://open.spotify.com/playlist/..."
+    create_m3u: true
+
+albums:
+  - name: "Album Name"
+    url: "https://open.spotify.com/album/..."
+    create_m3u: true
 ```
 
 ### Legacy layout (all under `download`)
@@ -181,13 +199,14 @@ download:
     - "youtube-music"
     - "youtube"
   overwrite: "skip"
+  cookies_from_browser: ""
 
 songs:
   - name: "Song Name"
     url: "https://open.spotify.com/track/..."
 ```
 
-If both are present, legacy fields take precedence. The `output` field must contain `{title}`. `threads` must be between 1 and 16.
+If both layouts are present, legacy fields take precedence. The `output` field must contain `{title}`. `threads` must be between 1 and 16.
 
 ### Output template placeholders
 
@@ -353,6 +372,15 @@ Working directory in the image is `/download`. Set `MUSICDL_CACHE_DIR` if you wa
 
 - **Audius search returns no results**  
   The Audius search provider uses the public discovery API. If tracks aren't found, try adjusting the search query (artist name + track title). Note that Audius has a smaller catalog than Spotify or YouTube.
+
+- **"no audio found for: Artist - Title"**  
+  The audio search tried multiple query variants (original, stripped feat, title-only, simplified) across all configured `audio_providers` and found no match. This usually means the track is from a very niche artist not present on YouTube/SoundCloud/Audius. Consider adding the track as a direct URL if you can find it manually.
+
+- **"yt-dlp download failed" for age-restricted or explicit content**  
+  musicdl passes `--age-limit 99` to yt-dlp by default. If content is still blocked, set `cookies_from_browser` in your config (e.g. `cookies_from_browser: "chrome"`) to allow yt-dlp to use your browser's authentication cookies.
+
+- **YouTube playlist tracks show as "[Private video]"**  
+  Private or deleted YouTube videos are automatically skipped (marked as "skipped" rather than "failed") and do not count toward the failure total. These videos were removed or made private by the uploader and cannot be downloaded.
 
 ## Plex Integration
 

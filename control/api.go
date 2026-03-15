@@ -193,11 +193,12 @@ func (s *APIServer) initClientsFromConfig(cfg *config.MusicDLConfig) (*spotify.S
 	s.spotifyClient = spotifyClient
 	s.spotifyClientMu.Unlock()
 	audioConfig := &audio.Config{
-		OutputFormat:   cfg.Download.Format,
-		Bitrate:        cfg.Download.Bitrate,
-		AudioProviders: cfg.Download.AudioProviders,
-		CacheMaxSize:   cfg.Download.AudioSearchCacheMaxSize,
-		CacheTTL:       cfg.Download.AudioSearchCacheTTL,
+		OutputFormat:       cfg.Download.Format,
+		Bitrate:            cfg.Download.Bitrate,
+		AudioProviders:     cfg.Download.AudioProviders,
+		CookiesFromBrowser: cfg.Download.CookiesFromBrowser,
+		CacheMaxSize:       cfg.Download.AudioSearchCacheMaxSize,
+		CacheTTL:           cfg.Download.AudioSearchCacheTTL,
 	}
 	audioProvider, err := audio.NewProvider(audioConfig)
 	if err != nil {

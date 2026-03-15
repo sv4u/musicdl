@@ -186,11 +186,12 @@ func planCommand(configPath string, noTUI bool) int {
 	}
 
 	audioConfig := &audio.Config{
-		OutputFormat:   cfg.Download.Format,
-		Bitrate:        cfg.Download.Bitrate,
-		AudioProviders: cfg.Download.AudioProviders,
-		CacheMaxSize:   cfg.Download.AudioSearchCacheMaxSize,
-		CacheTTL:       cfg.Download.AudioSearchCacheTTL,
+		OutputFormat:       cfg.Download.Format,
+		Bitrate:            cfg.Download.Bitrate,
+		AudioProviders:     cfg.Download.AudioProviders,
+		CookiesFromBrowser: cfg.Download.CookiesFromBrowser,
+		CacheMaxSize:       cfg.Download.AudioSearchCacheMaxSize,
+		CacheTTL:           cfg.Download.AudioSearchCacheTTL,
 	}
 	audioProvider, err := audio.NewProvider(audioConfig)
 	if err != nil {
@@ -271,11 +272,12 @@ func downloadCLICommand(configPath string, noTUI bool) int {
 	}
 
 	audioConfig := &audio.Config{
-		OutputFormat:   cfg.Download.Format,
-		Bitrate:        cfg.Download.Bitrate,
-		AudioProviders: cfg.Download.AudioProviders,
-		CacheMaxSize:   cfg.Download.AudioSearchCacheMaxSize,
-		CacheTTL:       cfg.Download.AudioSearchCacheTTL,
+		OutputFormat:       cfg.Download.Format,
+		Bitrate:            cfg.Download.Bitrate,
+		AudioProviders:     cfg.Download.AudioProviders,
+		CookiesFromBrowser: cfg.Download.CookiesFromBrowser,
+		CacheMaxSize:       cfg.Download.AudioSearchCacheMaxSize,
+		CacheTTL:           cfg.Download.AudioSearchCacheTTL,
 	}
 	audioProvider, err := audio.NewProvider(audioConfig)
 	if err != nil {

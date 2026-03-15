@@ -20,6 +20,9 @@ type Config struct {
 	// Provider settings
 	AudioProviders []string
 
+	// yt-dlp settings
+	CookiesFromBrowser string // e.g. "chrome", "firefox" — passed as --cookies-from-browser
+
 	// Cache settings
 	CacheMaxSize int
 	CacheTTL     int

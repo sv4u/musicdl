@@ -30,13 +30,14 @@ type DownloadSettings struct {
 	ClientSecret string `yaml:"client_secret"`
 
 	// Basic download settings
-	Threads        int           `yaml:"threads"`
-	MaxRetries     int           `yaml:"max_retries"`
-	Format         string        `yaml:"format"`
-	Bitrate        string        `yaml:"bitrate"`
-	Output         string        `yaml:"output"`
-	AudioProviders []string      `yaml:"audio_providers"`
-	Overwrite      OverwriteMode `yaml:"overwrite"`
+	Threads            int           `yaml:"threads"`
+	MaxRetries         int           `yaml:"max_retries"`
+	Format             string        `yaml:"format"`
+	Bitrate            string        `yaml:"bitrate"`
+	Output             string        `yaml:"output"`
+	AudioProviders     []string      `yaml:"audio_providers"`
+	Overwrite          OverwriteMode `yaml:"overwrite"`
+	CookiesFromBrowser string        `yaml:"cookies_from_browser"` // e.g. "chrome", "firefox"
 
 	// Cache settings
 	CacheMaxSize              int `yaml:"cache_max_size"`

@@ -60,6 +60,12 @@ func (d *Downloader) DownloadTrack(ctx context.Context, item *plan.PlanItem) (bo
 			return true, filePath, nil
 		}
 
+		// Permanently unavailable tracks should not be retried
+		if errors.Is(err, plan.ErrUnavailable) {
+			log.Printf("INFO: download_skipped reason=unavailable name=%s", item.Name)
+			return false, "", plan.ErrUnavailable
+		}
+
 		lastErr = err
 		if attempt < maxRetries {
 			waitTime := time.Duration(1<<uint(attempt)) * time.Second
@@ -88,8 +94,18 @@ func (d *Downloader) DownloadTrack(ctx context.Context, item *plan.PlanItem) (bo
 	return false, "", fmt.Errorf("failed to download %s after %d attempts: %w", url, maxRetries, lastErr)
 }
 
+// isUnavailableTrack returns true when the plan item represents a video that can never
+// be downloaded (private, deleted, or region-blocked with no workaround).
+func isUnavailableTrack(item *plan.PlanItem) bool {
+	name := strings.ToLower(strings.TrimSpace(item.Name))
+	return name == "[private video]" || name == "[deleted video]" || name == "[unavailable video]"
+}
+
 // downloadTrackAttempt performs a single download attempt.
 func (d *Downloader) downloadTrackAttempt(ctx context.Context, item *plan.PlanItem) (bool, string, error) {
+	if isUnavailableTrack(item) {
+		return false, "", plan.ErrUnavailable
+	}
 	// Route: generic SourceURL → direct download (Bandcamp, SoundCloud, Audius)
 	if item.SourceURL != "" {
 		return d.downloadDirectTrack(ctx, item)
@@ -284,14 +300,14 @@ func (d *Downloader) downloadSpotifyTrack(ctx context.Context, item *plan.PlanIt
 		return true, outputPath, nil
 	}
 
-	// Search for audio using audio provider
-	searchQuery := fmt.Sprintf("%s - %s", song.Artist, song.Title)
-	audioURL, err := d.audioProvider.Search(ctx, searchQuery)
+	// Search for audio using audio provider with fallback query variants
+	variants := audio.GenerateSearchVariants(song.Artist, song.Title)
+	audioURL, err := d.audioProvider.SearchWithFallbacks(ctx, variants)
 	if err != nil {
-		return false, "", fmt.Errorf("failed to search for audio: %w", err)
+		return false, "", fmt.Errorf("no audio found for: %s - %s", song.Artist, song.Title)
 	}
 	if audioURL == "" {
-		return false, "", fmt.Errorf("no audio found for: %s", searchQuery)
+		return false, "", fmt.Errorf("no audio found for: %s - %s", song.Artist, song.Title)
 	}
 
 	// 4. Download audio file

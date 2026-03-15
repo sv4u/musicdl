@@ -2,10 +2,15 @@ package plan
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"sync"
 	"time"
 )
+
+// ErrUnavailable signals that a track is permanently unavailable (private, deleted, etc.)
+// and should be skipped rather than retried.
+var ErrUnavailable = errors.New("track unavailable")
 
 // PlanItemType represents the type of a plan item.
 type PlanItemType string

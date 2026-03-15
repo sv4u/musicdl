@@ -54,9 +54,13 @@ func (p *Provider) runYtDlpSearch(ctx context.Context, searchQuery string) (stri
 		"--no-warnings",
 		"--flat-playlist",
 		"--default-search", "extract",
+		"--age-limit", "99",
 		"--dump-json",
-		searchQuery,
 	}
+	if p.config.CookiesFromBrowser != "" {
+		args = append(args, "--cookies-from-browser", p.config.CookiesFromBrowser)
+	}
+	args = append(args, searchQuery)
 
 	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
 	output, err := cmd.CombinedOutput()
@@ -165,11 +169,14 @@ func (p *Provider) runYtDlpDownload(ctx context.Context, url, outputPath string)
 	args := []string{
 		"--format", formatStr,
 		"--quiet",
-		"--no-warnings",
 		"--encoding", "UTF-8",
+		"--age-limit", "99",
 		"--output", outputTemplate,
-		url,
 	}
+	if p.config.CookiesFromBrowser != "" {
+		args = append(args, "--cookies-from-browser", p.config.CookiesFromBrowser)
+	}
+	args = append(args, url)
 
 	// Add audio extraction postprocessor for format conversion.
 	// --extract-audio + --audio-format handles conversion; --audio-quality sets bitrate.
@@ -198,8 +205,12 @@ func (p *Provider) runYtDlpDownload(ctx context.Context, url, outputPath string)
 				Original: err,
 			}
 		}
+		detail := strings.TrimSpace(rawOutput)
+		if detail == "" {
+			detail = err.Error()
+		}
 		return "", rawOutput, &DownloadError{
-			Message:  fmt.Sprintf("yt-dlp download failed: %v", err),
+			Message:  fmt.Sprintf("yt-dlp download failed: %s", detail),
 			Original: err,
 		}
 	}
