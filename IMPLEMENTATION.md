@@ -23,13 +23,29 @@ A complete webserver interface has been successfully added to musicdl with the f
 
 **Endpoints:**
 - `GET /api/health` - Health check
+- `GET /api/version` - Version info
 - `GET /api/config` - Retrieve config.yaml
 - `POST /api/config` - Save config.yaml
 - `POST /api/download/plan` - Generate plan
 - `POST /api/download/run` - Execute download
+- `POST /api/download/stop` - Stop active download
 - `GET /api/download/status` - Get current operation status
 - `GET /api/rate-limit-status` - Get Spotify rate limit info
+- `GET /api/plan` - Get current plan snapshot
+- `GET /api/ws/plan` - WebSocket for real-time plan updates
 - `GET /api/logs` - Retrieve recent logs
+- `GET /api/ws/logs` - WebSocket for real-time log streaming
+- `GET /api/stats` - Download statistics
+- `POST /api/stats/reset` - Reset statistics
+- `GET /api/recovery/status` - Circuit breaker and resume state
+- `POST /api/recovery/circuit-breaker/reset` - Reset circuit breaker
+- `POST /api/recovery/resume/clear` - Clear resume state
+- `POST /api/recovery/resume/retry-failed` - Retry failed items
+- `GET /api/history/runs` - List past download runs
+- `GET /api/history/runs/{runID}` - Get details of a specific run
+- `GET /api/history/activity` - Activity log
+- `GET /api/docs` - Swagger UI
+- `GET /api/docs/swagger.json` - OpenAPI spec
 
 ### 2. Node.js/Express Backend (`webserver/backend/`)
 
@@ -316,16 +332,32 @@ open http://localhost:3000
 ./musicdl api --port 8080
 ```
 
+## Multi-Source Support
+
+The download engine supports five source platforms. Each can be used via direct URL in the config, and some also serve as search providers for Spotify track matching.
+
+| Source | Direct URL | Search Provider |
+|-----------|------------|-----------------|
+| Spotify | tracks, albums, artists, playlists | N/A (metadata source) |
+| YouTube | videos, playlists | `youtube-music`, `youtube` |
+| SoundCloud| tracks, sets, user pages | `soundcloud` |
+| Bandcamp | tracks, albums, artist pages | No (direct URL only) |
+| Audius | tracks, playlists | `audius` (REST API) |
+
+Key implementation files:
+
+- `download/plan/soundcloud.go`, `bandcamp.go`, `audius.go` - URL detection
+- `download/audius/client.go` - Audius REST API client
+- `download/plan/generator.go` - `processDirectTrack`, `processDirectPlaylist`
+- `download/audio/provider.go` - `searchAudius`, per-provider rate limiting
+- `download/downloader.go` - `downloadDirectTrack`
+
 ## Next Steps for Enhancement
 
-1. **WebSocket Support** - Real-time log streaming instead of polling
-2. **Authentication** - User login/session management
-3. **Multiple Configs** - Support managing multiple configs
-4. **Advanced Scheduling** - Schedule downloads for specific times
-5. **Statistics Dashboard** - Show download history and stats
-6. **API Documentation** - Swagger UI for API exploration
-7. **Error Recovery** - Built-in retry logic with exponential backoff
-8. **Notifications** - Email/webhook alerts on completion
+1. **Authentication** - User login/session management
+2. **Multiple Configs** - Support managing multiple configs
+3. **Advanced Scheduling** - Schedule downloads for specific times
+4. **Notifications** - Email/webhook alerts on completion
 
 ## Verification Checklist
 

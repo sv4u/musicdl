@@ -84,6 +84,18 @@ npm install
 npm run dev
 ```
 
+## Supported Music Sources
+
+musicdl supports direct URLs from multiple platforms in your `config.yaml`:
+
+- **Spotify** — tracks, albums, artists, playlists (requires API credentials)
+- **YouTube** — videos, playlists
+- **SoundCloud** — tracks, sets (playlists), user pages
+- **Bandcamp** — tracks, albums, artist pages (full discography)
+- **Audius** — tracks, playlists
+
+See [README.md](README.md#music-sources) for URL format examples and the full source capability table.
+
 ## Web Interface Features
 
 ### Download Tab
