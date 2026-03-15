@@ -542,7 +542,7 @@ func (g *Generator) performSpotifySearch(ctx context.Context, item *PlanItem, se
 // processArtist processes an artist and adds albums/tracks to plan.
 func (g *Generator) processArtist(ctx context.Context, plan *DownloadPlan, artist config.MusicSource) error {
 	// Handle Bandcamp artist pages (download entire discography)
-	if IsBandcampArtist(artist.URL) || IsBandcampURL(artist.URL) {
+	if IsBandcampArtist(artist.URL) {
 		return g.processDirectPlaylist(ctx, plan, config.MusicSource{
 			Name:      artist.Name,
 			URL:       artist.URL,
@@ -1361,6 +1361,9 @@ func (g *Generator) processDirectTrack(ctx context.Context, dp *DownloadPlan, so
 
 	dp.AddItem(item)
 	g.seenSourceURLs[song.URL] = true
+	if videoMetadata.VideoID != "" {
+		g.seenSourceURLs[fmt.Sprintf("%s:%s", source, videoMetadata.VideoID)] = true
+	}
 	return nil
 }
 
@@ -1438,9 +1441,9 @@ func (g *Generator) processDirectPlaylist(ctx context.Context, dp *DownloadPlan,
 			continue
 		}
 
-		// Dedup entries
+		// Dedup entries by both source:id key and full URL for cross-path dedup
 		entryKey := fmt.Sprintf("%s:%s", source, entryID)
-		if g.seenSourceURLs[entryKey] {
+		if g.seenSourceURLs[entryKey] || g.seenSourceURLs[entryURL] {
 			existingItemID := fmt.Sprintf("track:%s:%s", source, entryID)
 			existing := dp.GetItem(existingItemID)
 			if existing != nil {
@@ -1475,6 +1478,7 @@ func (g *Generator) processDirectPlaylist(ctx context.Context, dp *DownloadPlan,
 		dp.AddItem(trackItem)
 		playlistItem.ChildIDs = append(playlistItem.ChildIDs, trackItem.ItemID)
 		g.seenSourceURLs[entryKey] = true
+		g.seenSourceURLs[entryURL] = true
 	}
 
 	if playlist.CreateM3U {
