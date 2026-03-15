@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/sv4u/musicdl/download/audius"
 	"github.com/sv4u/musicdl/download/spotify"
 )
 
@@ -36,6 +37,14 @@ type Config struct {
 	SoundCloudRateLimitRequests int
 	SoundCloudRateLimitWindow   float64
 
+	BandcampRateLimitEnabled  bool
+	BandcampRateLimitRequests int
+	BandcampRateLimitWindow   float64
+
+	AudiusRateLimitEnabled  bool
+	AudiusRateLimitRequests int
+	AudiusRateLimitWindow   float64
+
 	// Optional general rate limiter for network impact management
 	GeneralRateLimiter interface {
 		WaitForRequest(ctx context.Context) error
@@ -50,7 +59,8 @@ type Provider struct {
 	generalRateLimiter interface {
 		WaitForRequest(ctx context.Context) error
 	}
-	tempDir string
+	audiusClient *audius.Client
+	tempDir      string
 }
 
 // NewProvider creates a new audio provider.
@@ -85,10 +95,35 @@ func NewProvider(config *Config) (*Provider, error) {
 		)
 	}
 
+	if config.BandcampRateLimitEnabled {
+		rateLimiters["bandcamp"] = spotify.NewRateLimiter(
+			config.BandcampRateLimitEnabled,
+			config.BandcampRateLimitRequests,
+			config.BandcampRateLimitWindow,
+		)
+	}
+
+	if config.AudiusRateLimitEnabled {
+		rateLimiters["audius"] = spotify.NewRateLimiter(
+			config.AudiusRateLimitEnabled,
+			config.AudiusRateLimitRequests,
+			config.AudiusRateLimitWindow,
+		)
+	}
+
 	// Create temp directory
 	tempDir := filepath.Join(os.TempDir(), "musicdl")
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create temp directory: %w", err)
+	}
+
+	// Create Audius client if audius is in the provider list
+	var audiusClient *audius.Client
+	for _, p := range config.AudioProviders {
+		if p == "audius" {
+			audiusClient = audius.NewClient()
+			break
+		}
 	}
 
 	return &Provider{
@@ -96,6 +131,7 @@ func NewProvider(config *Config) (*Provider, error) {
 		searchCache:        searchCache,
 		rateLimiters:       rateLimiters,
 		generalRateLimiter: config.GeneralRateLimiter,
+		audiusClient:       audiusClient,
 		tempDir:            tempDir,
 	}, nil
 }
@@ -170,11 +206,15 @@ func (p *Provider) normalizeQuery(query string) string {
 
 // searchProvider searches using a specific provider.
 func (p *Provider) searchProvider(ctx context.Context, provider, query string) (string, error) {
-	// Build search query based on provider
+	// Audius uses its own REST API for search, not yt-dlp search prefixes
+	if provider == "audius" {
+		return p.searchAudius(ctx, query)
+	}
+
+	// All other providers use yt-dlp search prefixes
 	var searchQuery string
 	switch provider {
 	case "youtube-music":
-		// YouTube Music - use regular YouTube search (yt-dlp doesn't have separate ytmsearch)
 		searchQuery = fmt.Sprintf("ytsearch1:%s", query)
 	case "youtube":
 		searchQuery = fmt.Sprintf("ytsearch:%s", query)
@@ -184,8 +224,26 @@ func (p *Provider) searchProvider(ctx context.Context, provider, query string) (
 		searchQuery = fmt.Sprintf("ytsearch:%s", query)
 	}
 
-	// Use yt-dlp to search
 	return p.runYtDlpSearch(ctx, searchQuery)
+}
+
+// searchAudius searches for a track on Audius via the REST API.
+// Returns an Audius track URL that yt-dlp can then download.
+func (p *Provider) searchAudius(ctx context.Context, query string) (string, error) {
+	if p.audiusClient == nil {
+		return "", &SearchError{Message: "Audius client not initialized"}
+	}
+	trackURL, err := p.audiusClient.SearchBestMatch(ctx, query)
+	if err != nil {
+		return "", &SearchError{
+			Message:  fmt.Sprintf("Audius search failed: %v", err),
+			Original: err,
+		}
+	}
+	if trackURL == "" {
+		return "", &SearchError{Message: "No results from Audius search"}
+	}
+	return trackURL, nil
 }
 
 // Download downloads audio to output path.
@@ -219,7 +277,12 @@ func (p *Provider) detectProvider(url string) string {
 	if strings.Contains(urlLower, "soundcloud.com") {
 		return "soundcloud"
 	}
-	// Default to youtube
+	if strings.Contains(urlLower, "bandcamp.com") {
+		return "bandcamp"
+	}
+	if strings.Contains(urlLower, "audius.co") {
+		return "audius"
+	}
 	return "youtube"
 }
 

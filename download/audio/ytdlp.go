@@ -100,11 +100,12 @@ func (p *Provider) runYtDlpSearch(ctx context.Context, searchQuery string) (stri
 		url = result.WebpageURL
 	}
 	if url == "" && result.ID != "" {
-		// Construct URL from ID
 		if strings.HasPrefix(searchQuery, "ytsearch") {
 			url = fmt.Sprintf("https://www.youtube.com/watch?v=%s", result.ID)
 		} else if strings.HasPrefix(searchQuery, "scsearch") {
 			url = fmt.Sprintf("https://soundcloud.com/%s", result.ID)
+		} else {
+			url = result.ID
 		}
 	}
 

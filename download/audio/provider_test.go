@@ -2,10 +2,15 @@ package audio
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/sv4u/musicdl/download/audius"
 )
 
 func TestNewProvider(t *testing.T) {
@@ -64,6 +69,11 @@ func TestProvider_DetectProvider(t *testing.T) {
 		{"https://www.youtube.com/watch?v=test", "youtube"},
 		{"https://youtu.be/test", "youtube"},
 		{"https://soundcloud.com/user/track", "soundcloud"},
+		{"https://artist.bandcamp.com/track/song", "bandcamp"},
+		{"https://artist.bandcamp.com/album/album-name", "bandcamp"},
+		{"https://ARTIST.BANDCAMP.COM/track/song", "bandcamp"},
+		{"https://audius.co/artist/track", "audius"},
+		{"https://AUDIUS.CO/artist/track", "audius"},
 		{"https://example.com/video", "youtube"}, // default
 	}
 
@@ -265,6 +275,214 @@ func TestProvider_FindDownloadedFile(t *testing.T) {
 	result = provider.findDownloadedFile(basePath + ".mp3")
 	if result != similarPath {
 		t.Errorf("Expected %s, got %s", similarPath, result)
+	}
+}
+
+func TestProvider_SearchAudius_Success(t *testing.T) {
+	type searchResp struct {
+		Data []audius.Track `json:"data"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/tracks/search" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(searchResp{
+			Data: []audius.Track{
+				{
+					ID:        "track-abc",
+					Title:     "Best Match Song",
+					Permalink: "best-match-song",
+					User:      audius.User{Handle: "cool-artist", Name: "Cool Artist"},
+					Duration:  240,
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider, err := NewProvider(&Config{
+		OutputFormat:   "mp3",
+		AudioProviders: []string{"audius"},
+		CacheMaxSize:   10,
+		CacheTTL:       3600,
+	})
+	if err != nil {
+		t.Fatalf("NewProvider() failed: %v", err)
+	}
+	provider.audiusClient = audius.NewClient(audius.WithBaseURL(server.URL))
+
+	ctx := context.Background()
+	url, err := provider.searchAudius(ctx, "Cool Artist Best Match Song")
+	if err != nil {
+		t.Fatalf("searchAudius() error: %v", err)
+	}
+	expected := "https://audius.co/cool-artist/best-match-song"
+	if url != expected {
+		t.Errorf("searchAudius() = %q, expected %q", url, expected)
+	}
+}
+
+func TestProvider_SearchAudius_NoResults(t *testing.T) {
+	type searchResp struct {
+		Data []audius.Track `json:"data"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(searchResp{Data: []audius.Track{}})
+	}))
+	defer server.Close()
+
+	provider, _ := NewProvider(&Config{
+		OutputFormat:   "mp3",
+		AudioProviders: []string{"audius"},
+	})
+	provider.audiusClient = audius.NewClient(audius.WithBaseURL(server.URL))
+
+	ctx := context.Background()
+	_, err := provider.searchAudius(ctx, "nonexistent track xyz")
+	if err == nil {
+		t.Fatal("searchAudius() expected error for no results")
+	}
+	searchErr, ok := err.(*SearchError)
+	if !ok {
+		t.Fatalf("expected *SearchError, got %T", err)
+	}
+	if searchErr.Message != "No results from Audius search" {
+		t.Errorf("unexpected error message: %q", searchErr.Message)
+	}
+}
+
+func TestProvider_SearchAudius_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	provider, _ := NewProvider(&Config{
+		OutputFormat:   "mp3",
+		AudioProviders: []string{"audius"},
+	})
+	provider.audiusClient = audius.NewClient(audius.WithBaseURL(server.URL))
+
+	ctx := context.Background()
+	_, err := provider.searchAudius(ctx, "test query")
+	if err == nil {
+		t.Fatal("searchAudius() expected error for server error")
+	}
+	if _, ok := err.(*SearchError); !ok {
+		t.Errorf("expected *SearchError, got %T", err)
+	}
+}
+
+func TestProvider_SearchAudius_NilClient(t *testing.T) {
+	provider, _ := NewProvider(&Config{
+		OutputFormat:   "mp3",
+		AudioProviders: []string{"youtube"},
+	})
+	// audiusClient is nil because "audius" is not in AudioProviders
+
+	ctx := context.Background()
+	_, err := provider.searchAudius(ctx, "test")
+	if err == nil {
+		t.Fatal("searchAudius() expected error when client is nil")
+	}
+	searchErr, ok := err.(*SearchError)
+	if !ok {
+		t.Fatalf("expected *SearchError, got %T", err)
+	}
+	if searchErr.Message != "Audius client not initialized" {
+		t.Errorf("unexpected error message: %q", searchErr.Message)
+	}
+}
+
+func TestProvider_SearchAudius_ViaSearchProvider(t *testing.T) {
+	type searchResp struct {
+		Data []audius.Track `json:"data"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(searchResp{
+			Data: []audius.Track{
+				{
+					ID:        "trk-1",
+					Title:     "Found Track",
+					Permalink: "found-track",
+					User:      audius.User{Handle: "artist1", Name: "Artist One"},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider, _ := NewProvider(&Config{
+		OutputFormat:   "mp3",
+		AudioProviders: []string{"audius"},
+		CacheMaxSize:   10,
+		CacheTTL:       3600,
+	})
+	provider.audiusClient = audius.NewClient(audius.WithBaseURL(server.URL))
+
+	ctx := context.Background()
+	url, err := provider.searchProvider(ctx, "audius", "Artist One Found Track")
+	if err != nil {
+		t.Fatalf("searchProvider(audius) error: %v", err)
+	}
+	expected := "https://audius.co/artist1/found-track"
+	if url != expected {
+		t.Errorf("searchProvider(audius) = %q, expected %q", url, expected)
+	}
+}
+
+func TestProvider_Search_AudiusEndToEnd(t *testing.T) {
+	type searchResp struct {
+		Data []audius.Track `json:"data"`
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(searchResp{
+			Data: []audius.Track{
+				{
+					ID:        "trk-e2e",
+					Title:     "E2E Song",
+					Permalink: "e2e-song",
+					User:      audius.User{Handle: "e2e-artist"},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider, _ := NewProvider(&Config{
+		OutputFormat:   "mp3",
+		AudioProviders: []string{"audius"},
+		CacheMaxSize:   10,
+		CacheTTL:       3600,
+	})
+	provider.audiusClient = audius.NewClient(audius.WithBaseURL(server.URL))
+
+	ctx := context.Background()
+	url, err := provider.Search(ctx, "E2E Song")
+	if err != nil {
+		t.Fatalf("Search() with audius provider error: %v", err)
+	}
+	expected := "https://audius.co/e2e-artist/e2e-song"
+	if url != expected {
+		t.Errorf("Search() = %q, expected %q", url, expected)
+	}
+
+	// Second call should hit cache
+	url2, err := provider.Search(ctx, "E2E Song")
+	if err != nil {
+		t.Fatalf("Search() cache hit error: %v", err)
+	}
+	if url2 != expected {
+		t.Errorf("cached Search() = %q, expected %q", url2, expected)
+	}
+	stats := provider.GetCacheStats()
+	if stats.Hits < 1 {
+		t.Error("expected at least 1 cache hit")
 	}
 }
 
