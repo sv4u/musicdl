@@ -611,7 +611,7 @@ func applySpotifyEnhancement(song *metadata.Song, item *plan.PlanItem) {
 	}
 
 	// Apply enhancement fields (only if not already set or if enhancement provides better data)
-	if album, ok := enhancement["album"].(string); ok && album != "" && song.Album == "YouTube" {
+	if album, ok := enhancement["album"].(string); ok && album != "" && (song.Album == "" || song.Album == "YouTube") {
 		song.Album = album
 	}
 
