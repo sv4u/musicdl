@@ -155,6 +155,43 @@ func TestExecutor_Execute_MissingSpotifyURL(t *testing.T) {
 	}
 }
 
+func TestExecutor_Execute_SourceURLOnly(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "sc_track.mp3")
+	if err := os.WriteFile(testFile, []byte("audio"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	downloader := &mockDownloader{
+		downloadFunc: func(ctx context.Context, item *PlanItem) (bool, string, error) {
+			return true, testFile, nil
+		},
+	}
+	executor := NewExecutor(downloader, 2)
+	plan := NewDownloadPlan(nil)
+
+	trackItem := &PlanItem{
+		ItemID:    "track:soundcloud:artist/track",
+		ItemType:  PlanItemTypeTrack,
+		Source:    SourceTypeSoundCloud,
+		SourceURL: "https://soundcloud.com/artist/track",
+		Name:      "SC Track",
+		Status:    PlanItemStatusPending,
+	}
+	plan.AddItem(trackItem)
+
+	stats, err := executor.Execute(context.Background(), plan, nil)
+	if err != nil {
+		t.Fatalf("Execute() returned error: %v", err)
+	}
+	if stats["completed"] != 1 {
+		t.Errorf("expected 1 completed, got %d", stats["completed"])
+	}
+	if trackItem.Status != PlanItemStatusCompleted {
+		t.Errorf("expected status COMPLETED, got %s", trackItem.Status)
+	}
+}
+
 func TestExecutor_UpdateContainerStatus_AllCompleted(t *testing.T) {
 	downloader := &mockDownloader{}
 	executor := NewExecutor(downloader, 2)

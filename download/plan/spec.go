@@ -22,6 +22,8 @@ type SpecDownloadItem struct {
 	Name            string                 `json:"name,omitempty"`
 	YouTubeURL      string                 `json:"youtube_url"`
 	SpotifyURI      string                 `json:"spotify_uri,omitempty"`
+	Source          string                 `json:"source,omitempty"`
+	SourceURL       string                 `json:"source_url,omitempty"`
 	SpotifyMetadata map[string]interface{} `json:"spotify_metadata,omitempty"`
 	YouTubeMetadata map[string]interface{} `json:"youtube_metadata,omitempty"`
 	OutputPath      string                 `json:"output_path"`
@@ -114,6 +116,8 @@ func PlanToSpec(plan *DownloadPlan, configHash, configFile string, generatedAt t
 				ID:         item.ItemID,
 				Name:       item.Name,
 				YouTubeURL: item.YouTubeURL,
+				Source:     string(item.Source),
+				SourceURL:  item.SourceURL,
 				OutputPath: item.FilePath,
 				Status:     string(item.Status),
 				Error:      item.Error,
@@ -139,6 +143,9 @@ func PlanToSpec(plan *DownloadPlan, configHash, configFile string, generatedAt t
 			if sourceURL == "" {
 				sourceURL = item.YouTubeURL
 			}
+			if sourceURL == "" {
+				sourceURL = item.SourceURL
+			}
 			sp := SpecPlaylist{
 				ID:        item.ItemID,
 				Name:      item.Name,
@@ -156,6 +163,9 @@ func PlanToSpec(plan *DownloadPlan, configHash, configFile string, generatedAt t
 			sourceURL := item.SpotifyURL
 			if sourceURL == "" {
 				sourceURL = item.YouTubeURL
+			}
+			if sourceURL == "" {
+				sourceURL = item.SourceURL
 			}
 			sc := SpecContainer{
 				ID:       item.ItemID,
@@ -250,6 +260,8 @@ func SpecToPlan(spec *SpecPlan) (*DownloadPlan, error) {
 			ItemType:   PlanItemTypeTrack,
 			Name:       d.Name,
 			YouTubeURL: d.YouTubeURL,
+			Source:     SourceType(d.Source),
+			SourceURL:  d.SourceURL,
 			FilePath:   d.OutputPath,
 			Status:     status,
 			Error:      d.Error,
@@ -305,6 +317,8 @@ func SpecToPlan(spec *SpecPlan) (*DownloadPlan, error) {
 		}
 		if strings.Contains(playlistItemID, "youtube") {
 			item.YouTubeURL = p.SourceURL
+		} else if strings.Contains(playlistItemID, "soundcloud") || strings.Contains(playlistItemID, "bandcamp") || strings.Contains(playlistItemID, "audius") {
+			item.SourceURL = p.SourceURL
 		} else {
 			item.SpotifyURL = p.SourceURL
 		}

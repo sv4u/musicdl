@@ -13,7 +13,8 @@ import (
 // Downloader interface for downloading tracks.
 type Downloader interface {
 	// DownloadTrack downloads a track from a PlanItem.
-	// The PlanItem contains either a SpotifyURL or YouTubeURL, along with metadata.
+	// The PlanItem contains a SourceURL (SoundCloud, Bandcamp, Audius),
+	// YouTubeURL, or SpotifyURL, along with metadata.
 	// Returns (success, filePath, error)
 	DownloadTrack(ctx context.Context, item *PlanItem) (bool, string, error)
 }
@@ -130,9 +131,8 @@ func (e *Executor) executeTrack(ctx context.Context, item *PlanItem, plan *Downl
 		e.notifyProgress(item)
 	}()
 
-	// Check if item has a valid URL (either Spotify or YouTube)
-	if item.SpotifyURL == "" && item.YouTubeURL == "" {
-		item.MarkFailed("Missing URL for track (neither SpotifyURL nor YouTubeURL provided)")
+	if item.SpotifyURL == "" && item.YouTubeURL == "" && item.SourceURL == "" {
+		item.MarkFailed("Missing URL for track (no SpotifyURL, YouTubeURL, or SourceURL provided)")
 		return
 	}
 

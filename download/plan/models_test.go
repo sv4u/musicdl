@@ -413,37 +413,37 @@ func TestDownloadPlan_SaveLoad_FileNotFound(t *testing.T) {
 func TestPlanItem_DownloadURL(t *testing.T) {
 	tests := []struct {
 		name     string
-		item     PlanItem
+		item     *PlanItem
 		expected string
 	}{
 		{
 			name:     "SourceURL takes precedence",
-			item:     PlanItem{SourceURL: "https://soundcloud.com/artist/track", YouTubeURL: "https://youtube.com/watch?v=abc"},
+			item:     &PlanItem{SourceURL: "https://soundcloud.com/artist/track", YouTubeURL: "https://youtube.com/watch?v=abc"},
 			expected: "https://soundcloud.com/artist/track",
 		},
 		{
 			name:     "Falls back to YouTubeURL",
-			item:     PlanItem{YouTubeURL: "https://youtube.com/watch?v=abc"},
+			item:     &PlanItem{YouTubeURL: "https://youtube.com/watch?v=abc"},
 			expected: "https://youtube.com/watch?v=abc",
 		},
 		{
 			name:     "Bandcamp SourceURL",
-			item:     PlanItem{SourceURL: "https://artist.bandcamp.com/track/song"},
+			item:     &PlanItem{SourceURL: "https://artist.bandcamp.com/track/song"},
 			expected: "https://artist.bandcamp.com/track/song",
 		},
 		{
 			name:     "Audius SourceURL",
-			item:     PlanItem{SourceURL: "https://audius.co/artist/track"},
+			item:     &PlanItem{SourceURL: "https://audius.co/artist/track"},
 			expected: "https://audius.co/artist/track",
 		},
 		{
 			name:     "SpotifyURL only returns empty",
-			item:     PlanItem{SpotifyURL: "https://open.spotify.com/track/123"},
+			item:     &PlanItem{SpotifyURL: "https://open.spotify.com/track/123"},
 			expected: "",
 		},
 		{
 			name:     "Empty item returns empty",
-			item:     PlanItem{},
+			item:     &PlanItem{},
 			expected: "",
 		},
 	}

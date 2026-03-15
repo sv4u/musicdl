@@ -758,3 +758,107 @@ func TestContainersDiskRoundTrip(t *testing.T) {
 		t.Errorf("disk round-trip album ChildIDs = %v, want [track:t1]", albumItems[0].ChildIDs)
 	}
 }
+
+func TestSpecRoundTrip_DirectSourceItems(t *testing.T) {
+	plan := NewDownloadPlan(map[string]interface{}{
+		"config_version": "1.2",
+	})
+
+	plan.AddItem(&PlanItem{
+		ItemID:    "track:soundcloud:artist/track",
+		ItemType:  PlanItemTypeTrack,
+		Name:      "SC Track",
+		Source:    SourceTypeSoundCloud,
+		SourceURL: "https://soundcloud.com/artist/track",
+		Status:    PlanItemStatusPending,
+		Metadata:  map[string]interface{}{"uploader": "SC Artist"},
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:    "track:bandcamp:artist/song",
+		ItemType:  PlanItemTypeTrack,
+		Name:      "BC Track",
+		Source:    SourceTypeBandcamp,
+		SourceURL: "https://artist.bandcamp.com/track/song",
+		Status:    PlanItemStatusCompleted,
+		FilePath:  "/music/artist/song.mp3",
+		Metadata:  map[string]interface{}{"uploader": "BC Artist"},
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:    "track:audius:artist/track",
+		ItemType:  PlanItemTypeTrack,
+		Name:      "Audius Track",
+		Source:    SourceTypeAudius,
+		SourceURL: "https://audius.co/artist/track",
+		Status:    PlanItemStatusPending,
+	})
+	plan.AddItem(&PlanItem{
+		ItemID:    "playlist:soundcloud:artist/sets/my-set",
+		ItemType:  PlanItemTypePlaylist,
+		Name:      "SC Set",
+		SourceURL: "https://soundcloud.com/artist/sets/my-set",
+		ChildIDs:  []string{"track:soundcloud:artist/track"},
+		Status:    PlanItemStatusPending,
+		Metadata:  map[string]interface{}{"create_m3u": true},
+	})
+
+	spec := PlanToSpec(plan, "abc123", "config.yaml", time.Now())
+
+	if len(spec.Downloads) != 3 {
+		t.Fatalf("expected 3 downloads, got %d", len(spec.Downloads))
+	}
+	if spec.Downloads[0].Source != "soundcloud" {
+		t.Errorf("expected source 'soundcloud', got %q", spec.Downloads[0].Source)
+	}
+	if spec.Downloads[0].SourceURL != "https://soundcloud.com/artist/track" {
+		t.Errorf("expected SourceURL preserved, got %q", spec.Downloads[0].SourceURL)
+	}
+	if spec.Downloads[1].Source != "bandcamp" {
+		t.Errorf("expected source 'bandcamp', got %q", spec.Downloads[1].Source)
+	}
+
+	restored, err := SpecToPlan(spec)
+	if err != nil {
+		t.Fatalf("SpecToPlan() error: %v", err)
+	}
+
+	tracks := restored.GetItemsByType(PlanItemTypeTrack)
+	if len(tracks) != 3 {
+		t.Fatalf("expected 3 tracks after restore, got %d", len(tracks))
+	}
+
+	for _, tr := range tracks {
+		switch tr.ItemID {
+		case "track:soundcloud:artist/track":
+			if tr.Source != SourceTypeSoundCloud {
+				t.Errorf("expected source %q, got %q", SourceTypeSoundCloud, tr.Source)
+			}
+			if tr.SourceURL != "https://soundcloud.com/artist/track" {
+				t.Errorf("expected SourceURL preserved, got %q", tr.SourceURL)
+			}
+			if tr.DownloadURL() != "https://soundcloud.com/artist/track" {
+				t.Errorf("expected DownloadURL() to return SourceURL, got %q", tr.DownloadURL())
+			}
+		case "track:bandcamp:artist/song":
+			if tr.Source != SourceTypeBandcamp {
+				t.Errorf("expected source %q, got %q", SourceTypeBandcamp, tr.Source)
+			}
+			if tr.Status != PlanItemStatusCompleted {
+				t.Errorf("expected status completed, got %q", tr.Status)
+			}
+		case "track:audius:artist/track":
+			if tr.Source != SourceTypeAudius {
+				t.Errorf("expected source %q, got %q", SourceTypeAudius, tr.Source)
+			}
+		default:
+			t.Errorf("unexpected track ID: %s", tr.ItemID)
+		}
+	}
+
+	playlists := restored.GetItemsByType(PlanItemTypePlaylist)
+	if len(playlists) != 1 {
+		t.Fatalf("expected 1 playlist, got %d", len(playlists))
+	}
+	if playlists[0].SourceURL != "https://soundcloud.com/artist/sets/my-set" {
+		t.Errorf("expected playlist SourceURL preserved, got %q", playlists[0].SourceURL)
+	}
+}
