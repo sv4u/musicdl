@@ -580,3 +580,71 @@ func TestSetDefaults_RateLimitExplicitWindow(t *testing.T) {
 		t.Errorf("DownloadRateLimitRequests = %d, want 2 (default)", d.DownloadRateLimitRequests)
 	}
 }
+
+func TestLoadConfig_NewAudioProviders(t *testing.T) {
+	tests := []struct {
+		name           string
+		providers      string
+		expectError    bool
+		errorSubstring string
+	}{
+		{
+			name:      "bandcamp provider accepted",
+			providers: `["bandcamp"]`,
+		},
+		{
+			name:      "audius provider accepted",
+			providers: `["audius"]`,
+		},
+		{
+			name:      "soundcloud provider accepted",
+			providers: `["soundcloud"]`,
+		},
+		{
+			name:      "all providers together",
+			providers: `["youtube-music", "youtube", "soundcloud", "bandcamp", "audius"]`,
+		},
+		{
+			name:           "invalid provider rejected",
+			providers:      `["invalid-source"]`,
+			expectError:    true,
+			errorSubstring: "Invalid audio provider",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			configPath := filepath.Join(tmpDir, "config.yaml")
+
+			configYAML := `version: "1.2"
+download:
+  client_id: "test_id"
+  client_secret: "test_secret"
+  audio_providers: ` + tt.providers + `
+songs: []
+artists: []
+playlists: []
+albums: []
+`
+			if err := os.WriteFile(configPath, []byte(configYAML), 0644); err != nil {
+				t.Fatalf("Failed to write config: %v", err)
+			}
+
+			cfg, err := LoadConfig(configPath)
+			if tt.expectError {
+				if err == nil {
+					t.Fatal("expected error for invalid provider")
+				}
+				if !strings.Contains(err.Error(), tt.errorSubstring) {
+					t.Errorf("expected error containing %q, got %q", tt.errorSubstring, err.Error())
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("LoadConfig() failed: %v", err)
+			}
+			_ = cfg
+		})
+	}
+}

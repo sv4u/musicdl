@@ -217,11 +217,13 @@ func (d *DownloadSettings) Validate() error {
 		"youtube-music": true,
 		"youtube":       true,
 		"soundcloud":    true,
+		"bandcamp":      true,
+		"audius":        true,
 	}
 	for _, provider := range d.AudioProviders {
 		if !validProviders[provider] {
 			return &ConfigError{
-				Message: fmt.Sprintf("Invalid audio provider: %s. Must be one of: youtube-music, youtube, soundcloud", provider),
+				Message: fmt.Sprintf("Invalid audio provider: %s. Must be one of: youtube-music, youtube, soundcloud, bandcamp, audius", provider),
 			}
 		}
 	}
