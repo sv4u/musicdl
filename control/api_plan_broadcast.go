@@ -37,6 +37,8 @@ type PlanItemSnapshot struct {
 	ChildIDs    []string               `json:"child_ids,omitempty"`
 	SpotifyURL  string                 `json:"spotify_url,omitempty"`
 	YouTubeURL  string                 `json:"youtube_url,omitempty"`
+	Source      string                 `json:"source,omitempty"`
+	SourceURL   string                 `json:"source_url,omitempty"`
 	Metadata    map[string]interface{} `json:"metadata,omitempty"`
 	Progress    float64                `json:"progress"`
 	StartedAt   *int64                 `json:"started_at,omitempty"`
@@ -379,6 +381,8 @@ func planItemToSnapshot(item *plan.PlanItem) PlanItemSnapshot {
 		ChildIDs:    childIDs,
 		SpotifyURL:  item.SpotifyURL,
 		YouTubeURL:  item.YouTubeURL,
+		Source:      string(item.Source),
+		SourceURL:   item.SourceURL,
 		Metadata:    metadata,
 		Progress:    progress,
 		StartedAt:   startedAtUnix,

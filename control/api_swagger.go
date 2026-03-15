@@ -62,7 +62,9 @@ func generateOpenAPISpec(port int) string {
     {"name": "download", "description": "Plan generation and download execution"},
     {"name": "logs", "description": "Log retrieval and real-time streaming"},
     {"name": "stats", "description": "Download statistics and metrics"},
-    {"name": "recovery", "description": "Error recovery, circuit breaker, and resume"}
+    {"name": "recovery", "description": "Error recovery, circuit breaker, and resume"},
+    {"name": "plan", "description": "Real-time plan state and WebSocket streaming"},
+    {"name": "history", "description": "Run history and activity log"}
   ],
   "paths": {
     "/api/health": {
@@ -479,6 +481,236 @@ func generateOpenAPISpec(port int) string {
               }
             }
           }
+        }
+      }
+    },
+    "/api/download/stop": {
+      "post": {
+        "tags": ["download"],
+        "summary": "Stop operation",
+        "description": "Cancel the currently running plan generation or download. Progress is saved for downloads; use Resume to continue.",
+        "responses": {
+          "200": {
+            "description": "Operation cancelled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {"type": "string", "example": "cancelled"},
+                    "message": {"type": "string"}
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No operation is running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {"type": "string", "example": "No operation is currently running"}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/plan": {
+      "get": {
+        "tags": ["plan"],
+        "summary": "Get plan snapshot",
+        "description": "Returns the current plan state including all items, their statuses, and aggregate stats",
+        "responses": {
+          "200": {
+            "description": "Current plan snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "phase": {"type": "string"},
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "item_id": {"type": "string"},
+                          "item_type": {"type": "string"},
+                          "name": {"type": "string"},
+                          "status": {"type": "string"},
+                          "error": {"type": "string"},
+                          "file_path": {"type": "string"},
+                          "parent_id": {"type": "string"},
+                          "child_ids": {"type": "array", "items": {"type": "string"}},
+                          "spotify_url": {"type": "string"},
+                          "youtube_url": {"type": "string"},
+                          "source": {"type": "string"},
+                          "source_url": {"type": "string"},
+                          "progress": {"type": "number"},
+                          "started_at": {"type": "integer"},
+                          "completed_at": {"type": "integer"}
+                        }
+                      }
+                    },
+                    "generated_at": {"type": "string"},
+                    "config_hash": {"type": "string"},
+                    "stats": {
+                      "type": "object",
+                      "properties": {
+                        "total": {"type": "integer"},
+                        "completed": {"type": "integer"},
+                        "failed": {"type": "integer"},
+                        "pending": {"type": "integer"},
+                        "in_progress": {"type": "integer"},
+                        "skipped": {"type": "integer"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ws/plan": {
+      "get": {
+        "tags": ["plan"],
+        "summary": "WebSocket plan stream",
+        "description": "Real-time plan updates via WebSocket. On connect, receives the full plan snapshot, then incremental item-level updates. Messages are JSON with type field: snapshot, item_update, phase_change."
+      }
+    },
+    "/api/history/runs": {
+      "get": {
+        "tags": ["history"],
+        "summary": "List run history",
+        "description": "Returns a summary list of past download/plan runs, sorted newest-first",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {"type": "integer", "default": 20},
+            "description": "Max runs to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Run history list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "runs": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "runId": {"type": "string"},
+                          "startedAt": {"type": "string", "format": "date-time"},
+                          "completedAt": {"type": "string", "format": "date-time"},
+                          "state": {"type": "string"},
+                          "phase": {"type": "string"},
+                          "statistics": {"type": "object"},
+                          "error": {"type": "string"},
+                          "snapshotCount": {"type": "integer"}
+                        }
+                      }
+                    },
+                    "totalRuns": {"type": "integer"}
+                  }
+                }
+              }
+            }
+          },
+          "503": {"description": "History tracking not available"}
+        }
+      }
+    },
+    "/api/history/runs/{runID}": {
+      "get": {
+        "tags": ["history"],
+        "summary": "Get run detail",
+        "description": "Returns the full run history including all progress snapshots",
+        "parameters": [
+          {
+            "name": "runID",
+            "in": "path",
+            "required": true,
+            "schema": {"type": "string"},
+            "description": "Run ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Full run history with snapshots",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "runId": {"type": "string"},
+                    "startedAt": {"type": "string", "format": "date-time"},
+                    "completedAt": {"type": "string", "format": "date-time"},
+                    "state": {"type": "string"},
+                    "phase": {"type": "string"},
+                    "statistics": {"type": "object"},
+                    "error": {"type": "string"},
+                    "snapshots": {"type": "array", "items": {"type": "object"}}
+                  }
+                }
+              }
+            }
+          },
+          "404": {"description": "Run not found"},
+          "503": {"description": "History tracking not available"}
+        }
+      }
+    },
+    "/api/history/activity": {
+      "get": {
+        "tags": ["history"],
+        "summary": "Get activity log",
+        "description": "Returns recent activity entries (download started, completed, failed, etc.)",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {"type": "integer", "default": 50},
+            "description": "Max entries to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Activity log",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "timestamp": {"type": "string", "format": "date-time"},
+                          "type": {"type": "string"},
+                          "message": {"type": "string"},
+                          "details": {"type": "object"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {"description": "History tracking not available"}
         }
       }
     }
