@@ -11,9 +11,14 @@ download:
   format: mp3
   bitrate: 128k
   output: "{artist}/{album}/{disc-number}{track-number} - {title}.{output-ext}"
+  # Audio providers for search (tried in order when matching Spotify tracks).
+  # Supported: youtube-music, youtube, soundcloud, audius
+  # Note: bandcamp has no search — use direct URLs only.
   audio_providers:
     - youtube-music
     - youtube
+    # - soundcloud
+    # - audius
   overwrite: metadata
 
 rate_limits:
@@ -21,9 +26,21 @@ rate_limits:
   youtube_retries: 3
   youtube_bandwidth: 1048576
 
-# Music sources: songs, artists, playlists, albums. Each entry: name + url (Spotify or YouTube).
-# Optional: create_m3u: true on playlists/albums to generate .m3u files.
+# Music sources: songs, artists, playlists, albums.
+# Supported URL types per source:
+#   Spotify:    tracks, albums, artists, playlists
+#   YouTube:    videos, playlists
+#   SoundCloud: tracks, sets (playlists), user pages (artists)
+#   Bandcamp:   tracks, albums, artist pages (full discography)
+#   Audius:     tracks, playlists
+
 songs: []
+  # - name: "SoundCloud Track"
+  #   url: https://soundcloud.com/artist/track-name
+  # - name: "Bandcamp Track"
+  #   url: https://artist.bandcamp.com/track/track-name
+  # - name: "Audius Track"
+  #   url: https://audius.co/artist/track-name
 
 artists:
   - name: Aries
@@ -32,6 +49,8 @@ artists:
     url: https://open.spotify.com/artist/4cJKDGSv4Dz9QycXYmo565
   - name: Fall Out Boy
     url: https://open.spotify.com/artist/4UXqAaa6dQYAk18Lv7PEgX
+  # - name: "Bandcamp Artist"
+  #   url: https://artist.bandcamp.com
 
 playlists:
   - name: planet namek
@@ -39,5 +58,9 @@ playlists:
   - name: hell
     url: https://open.spotify.com/playlist/74yTlcAU98jlhzIy5Iwu4E
     create_m3u: true
+  # - name: "SoundCloud Set"
+  #   url: https://soundcloud.com/artist/sets/set-name
 
 albums: []
+  # - name: "Bandcamp Album"
+  #   url: https://artist.bandcamp.com/album/album-name

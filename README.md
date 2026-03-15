@@ -7,7 +7,7 @@
 ![License](https://img.shields.io/github/license/sv4u/musicdl)
 ![Go](https://img.shields.io/badge/go-1.24-blue?logo=go&logoColor=white)
 
-A CLI tool for downloading music from Spotify by sourcing audio from YouTube, YouTube Music, and SoundCloud, then embedding metadata into downloaded files.
+A CLI tool for downloading music from Spotify, YouTube, SoundCloud, Bandcamp, and Audius, then embedding metadata into downloaded files.
 
 ## Features
 
@@ -18,6 +18,7 @@ A CLI tool for downloading music from Spotify by sourcing audio from YouTube, Yo
 - **Config hash** – Plan file is named by config content hash (`.cache/download_plan_<hash>.json`); download rejects plan if config changed
 - **Multiple formats** – MP3, FLAC, M4A, and Opus output
 - **Flexible config** – Supports both spec layout (top-level `spotify`, `threads`, `rate_limits`) and legacy layout under `download`
+- **Multi-source downloads** – Spotify, YouTube, SoundCloud, Bandcamp, and Audius URLs as direct sources; Audius also works as a search provider
 - **Spotify and YouTube playlists** – Playlists can be Spotify playlist URLs or YouTube playlist URLs; each track is planned and downloaded (YouTube playlists require `yt-dlp` on PATH for plan generation)
 - **Real-time monitoring** – Progress tracking, log viewer, and rate limit alerts
 
@@ -155,6 +156,8 @@ download:
   audio_providers:
     - "youtube-music"
     - "youtube"
+    # - "soundcloud"   # SoundCloud search via yt-dlp
+    # - "audius"        # Audius REST API search
   overwrite: "skip"
 
 songs:
@@ -195,23 +198,50 @@ If both are present, legacy fields take precedence. The `output` field must cont
 - `{disc-number}` – Disc number (zero-padded; 00 when unknown or single disc)  
 - `{output-ext}` – File extension (e.g. mp3, flac)
 
+### Audio providers
+
+Audio providers control which services are used to **search** for audio when downloading Spotify tracks. They are tried in order until a match is found. Supported values: `youtube-music`, `youtube`, `soundcloud`, `audius`. Bandcamp has no search API and can only be used via direct URLs.
+
+```yaml
+audio_providers:
+  - youtube-music
+  - youtube
+  # - soundcloud
+  # - audius
+```
+
 ### Music sources
 
 Songs, artists, playlists, and albums are configured as lists. Extended format (name + url) is recommended; simple format (key: url) is also supported.
 
-- **Songs** – Spotify track URLs or YouTube video URLs.
-- **Artists** – Spotify artist URLs only (discography is expanded).
-- **Playlists** – Spotify playlist URLs or **YouTube playlist URLs**. For YouTube playlists, `musicdl plan` uses `yt-dlp` to resolve the playlist and its tracks; ensure `yt-dlp` is on your PATH.
-- **Albums** – Spotify album URLs only.
+Multiple source platforms are supported. `yt-dlp` must be on your PATH for YouTube, SoundCloud, Bandcamp, and Audius URL processing.
+
+| Source | Songs | Artists | Playlists | Albums |
+|-----------|-------|---------|-----------|--------|
+| Spotify | tracks | artists (discography) | playlists | albums |
+| YouTube | videos | — | playlists | — |
+| SoundCloud| tracks | user pages | sets | — |
+| Bandcamp | tracks | artist pages (discography) | — | albums |
+| Audius | tracks | — | playlists | — |
 
 ```yaml
 songs:
-  - name: "Song Name"
+  - name: "Spotify Song"
     url: "https://open.spotify.com/track/..."
+  - name: "YouTube Video"
+    url: "https://www.youtube.com/watch?v=..."
+  - name: "SoundCloud Track"
+    url: "https://soundcloud.com/artist/track-name"
+  - name: "Bandcamp Track"
+    url: "https://artist.bandcamp.com/track/track-name"
+  - name: "Audius Track"
+    url: "https://audius.co/artist/track-name"
 
 artists:
-  - name: "Artist Name"
+  - name: "Spotify Artist"
     url: "https://open.spotify.com/artist/..."
+  - name: "Bandcamp Artist"
+    url: "https://artist.bandcamp.com"
 
 playlists:
   - name: "Spotify Playlist"
@@ -220,10 +250,16 @@ playlists:
   - name: "YouTube Playlist"
     url: "https://www.youtube.com/playlist?list=PL..."
     create_m3u: true
+  - name: "SoundCloud Set"
+    url: "https://soundcloud.com/artist/sets/set-name"
+    create_m3u: true
 
 albums:
-  - name: "Album Name"
+  - name: "Spotify Album"
     url: "https://open.spotify.com/album/..."
+    create_m3u: true
+  - name: "Bandcamp Album"
+    url: "https://artist.bandcamp.com/album/album-name"
     create_m3u: true
 ```
 
@@ -311,6 +347,12 @@ Working directory in the image is `/download`. Set `MUSICDL_CACHE_DIR` if you wa
 
 - **YouTube playlist has no tracks in plan**  
   Plan generation for YouTube playlists uses `yt-dlp` with `--flat-playlist --dump-json`. Ensure `yt-dlp` is installed and on your PATH when running `musicdl plan`. If the playlist appears in the plan with zero tracks, check that the playlist URL is correct and that `yt-dlp` can access it (e.g. `yt-dlp --flat-playlist --dump-json "<playlist-url>"`).
+
+- **SoundCloud/Bandcamp/Audius URL not recognized**  
+  Ensure the URL matches the expected format (e.g. `https://soundcloud.com/artist/track`, `https://artist.bandcamp.com/track/song`, `https://audius.co/artist/track`). These sources require `yt-dlp` for metadata extraction and downloading.
+
+- **Audius search returns no results**  
+  The Audius search provider uses the public discovery API. If tracks aren't found, try adjusting the search query (artist name + track title). Note that Audius has a smaller catalog than Spotify or YouTube.
 
 ## Plex Integration
 
