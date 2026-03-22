@@ -27,7 +27,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version: '1.25'
 
       # Cache only module cache (not build cache) to reduce "File exists" / tar restore races
       # when multiple go test invocations run. Build cache is ephemeral and can cause contention.
