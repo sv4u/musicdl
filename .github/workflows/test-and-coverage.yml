@@ -123,7 +123,7 @@ jobs:
 
       - name: Install gocov tools for XML coverage
         run: |
-          go install github.com/axw/gocov/gocov@latest
+          go install github.com/axw/gocov/gocov@v1.1.0
           go install github.com/AlekSi/gocov-xml@latest
 
       - name: Generate XML coverage report
