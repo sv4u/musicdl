@@ -2,7 +2,7 @@ import express, { Express, Request, Response } from 'express';
 import cors from "cors";
 import axios from 'axios';
 import dotenv from 'dotenv';
-import { createProxyMiddleware } from 'http-proxy-middleware';
+import { createProxyMiddleware, fixRequestBody } from 'http-proxy-middleware';
 
 dotenv.config();
 
@@ -155,6 +155,20 @@ app.use(
     target: goAPIBaseURL,
     pathFilter: '/api/docs',
     changeOrigin: true,
+  })
+);
+
+// MCP server proxy — forwards Streamable HTTP transport (JSON-RPC over POST,
+// SSE streams over GET, session teardown over DELETE) to the Go API's embedded
+// MCP endpoint. Uses pathFilter so the full /mcp path is preserved.
+// fixRequestBody is required because express.json() above consumes the raw
+// request stream; without it, POST bodies arrive empty at the Go server.
+app.use(
+  createProxyMiddleware({
+    target: goAPIBaseURL,
+    pathFilter: '/mcp',
+    changeOrigin: true,
+    on: { proxyReq: fixRequestBody },
   })
 );
 
