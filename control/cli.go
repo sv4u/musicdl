@@ -190,6 +190,8 @@ func planCommand(configPath string, noTUI bool) int {
 		Bitrate:            cfg.Download.Bitrate,
 		AudioProviders:     cfg.Download.AudioProviders,
 		CookiesFromBrowser: cfg.Download.CookiesFromBrowser,
+		Cookies:            cfg.Download.Cookies,
+		JSRuntimes:         cfg.Download.JSRuntimes,
 		CacheMaxSize:       cfg.Download.AudioSearchCacheMaxSize,
 		CacheTTL:           cfg.Download.AudioSearchCacheTTL,
 	}
@@ -276,6 +278,8 @@ func downloadCLICommand(configPath string, noTUI bool) int {
 		Bitrate:            cfg.Download.Bitrate,
 		AudioProviders:     cfg.Download.AudioProviders,
 		CookiesFromBrowser: cfg.Download.CookiesFromBrowser,
+		Cookies:            cfg.Download.Cookies,
+		JSRuntimes:         cfg.Download.JSRuntimes,
 		CacheMaxSize:       cfg.Download.AudioSearchCacheMaxSize,
 		CacheTTL:           cfg.Download.AudioSearchCacheTTL,
 	}

@@ -193,6 +193,9 @@ cython_debug/
 .cache
 .logs
 
+# YouTube cookies (sensitive credentials)
+cookies.txt
+
 # Cursor plans
 .cursor/plans/
 

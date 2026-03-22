@@ -60,6 +60,12 @@ func (p *Provider) runYtDlpSearch(ctx context.Context, searchQuery string) (stri
 	if p.config.CookiesFromBrowser != "" {
 		args = append(args, "--cookies-from-browser", p.config.CookiesFromBrowser)
 	}
+	if p.config.Cookies != "" {
+		args = append(args, "--cookies", p.config.Cookies)
+	}
+	if p.config.JSRuntimes != "" {
+		args = append(args, "--js-runtimes", p.config.JSRuntimes)
+	}
 	args = append(args, searchQuery)
 
 	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
@@ -175,6 +181,12 @@ func (p *Provider) runYtDlpDownload(ctx context.Context, url, outputPath string)
 	}
 	if p.config.CookiesFromBrowser != "" {
 		args = append(args, "--cookies-from-browser", p.config.CookiesFromBrowser)
+	}
+	if p.config.Cookies != "" {
+		args = append(args, "--cookies", p.config.Cookies)
+	}
+	if p.config.JSRuntimes != "" {
+		args = append(args, "--js-runtimes", p.config.JSRuntimes)
 	}
 	args = append(args, url)
 

@@ -50,6 +50,11 @@ func main() {
 		os.Exit(apiCommand(os.Args[2:]))
 	}
 
+	// MCP server: musicdl mcp [--sse] [--port PORT]
+	if command == "mcp" {
+		os.Exit(mcpCommand(os.Args[2:]))
+	}
+
 	fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", command)
 	printUsage()
 	os.Exit(1)
@@ -65,6 +70,7 @@ COMMANDS:
     plan [--no-tui] <config-file>     Generate download plan (saves to .cache/download_plan_<hash>.json)
     download [--no-tui] <config-file> Generate plan and run downloads
     api [--port PORT]                 Start HTTP API server (default port: 5000)
+    mcp [--sse] [--port PORT]         Start MCP server (default: stdio, SSE port: 8090)
     version                           Show version information
 
 EXAMPLES:
@@ -72,6 +78,9 @@ EXAMPLES:
     musicdl download musicdl-config.yml
     musicdl api
     musicdl api --port 8080
+    musicdl mcp
+    musicdl mcp --sse
+    musicdl mcp --sse --port 9000
     musicdl version
 
 For more information, see https://github.com/sv4u/musicdl

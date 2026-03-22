@@ -5,7 +5,7 @@
 ![Security & SBOM](https://github.com/sv4u/musicdl/actions/workflows/security-and-sbom.yml/badge.svg)
 ![Version](https://img.shields.io/github/v/tag/sv4u/musicdl?label=version&sort=semver)
 ![License](https://img.shields.io/github/license/sv4u/musicdl)
-![Go](https://img.shields.io/badge/go-1.24-blue?logo=go&logoColor=white)
+![Go](https://img.shields.io/badge/go-1.25-blue?logo=go&logoColor=white)
 
 A CLI tool for downloading music from Spotify, YouTube, SoundCloud, Bandcamp, and Audius, then embedding metadata into downloaded files.
 
@@ -21,6 +21,7 @@ A CLI tool for downloading music from Spotify, YouTube, SoundCloud, Bandcamp, an
 - **Multi-source downloads** – Spotify, YouTube, SoundCloud, Bandcamp, and Audius URLs as direct sources; Audius also works as a search provider
 - **Spotify and YouTube playlists** – Playlists can be Spotify playlist URLs or YouTube playlist URLs; each track is planned and downloaded (YouTube playlists require `yt-dlp` on PATH for plan generation)
 - **Real-time monitoring** – Progress tracking, log viewer, and rate limit alerts
+- **Plex integration** – Sync M3U playlists to Plex via web UI or API; auto-detects music library, creates new playlists, updates existing ones
 
 ## Installation
 
@@ -162,7 +163,19 @@ download:
   overwrite: "skip"                 # skip | overwrite | metadata
   cookies_from_browser: ""          # optional: "chrome", "firefox", "brave", "edge", etc.
                                     # passes --cookies-from-browser to yt-dlp for
-                                    # age-restricted or login-gated content
+                                    # age-restricted or login-gated content (local only)
+  cookies: ""                       # optional: path to Netscape-format cookies.txt file
+                                    # for Docker/headless — see COOKIES.md
+  js_runtimes: ""                   # optional: JS runtime for yt-dlp (e.g. "nodejs", "deno")
+                                    # Docker image includes nodejs; set to "nodejs" for Docker
+
+plex:
+  server_url: ""                    # Plex server URL (e.g. "http://192.168.50.42:32400")
+  token: ""                         # Plex authentication token
+  section_id: ""                    # Music library section ID (empty = auto-detect)
+  music_path: ""                    # Plex-side path to music library root
+                                    # (e.g. "/data/Music" if NAS Music folder is
+                                    # mounted to /data in the Plex Docker container)
 
 songs:
   - name: "Song Name"
@@ -200,6 +213,14 @@ download:
     - "youtube"
   overwrite: "skip"
   cookies_from_browser: ""
+  cookies: ""
+  js_runtimes: ""
+
+plex:
+  server_url: ""                    # Plex server URL (e.g. "http://192.168.50.42:32400")
+  token: ""                         # Plex authentication token
+  section_id: ""                    # Music library section ID (empty = auto-detect)
+  music_path: ""                    # how Plex sees the music library (e.g. "/data/Music")
 
 songs:
   - name: "Song Name"
@@ -377,7 +398,10 @@ Working directory in the image is `/download`. Set `MUSICDL_CACHE_DIR` if you wa
   The audio search tried multiple query variants (original, stripped feat, title-only, simplified) across all configured `audio_providers` and found no match. This usually means the track is from a very niche artist not present on YouTube/SoundCloud/Audius. Consider adding the track as a direct URL if you can find it manually.
 
 - **"yt-dlp download failed" for age-restricted or explicit content**  
-  musicdl passes `--age-limit 99` to yt-dlp by default. If content is still blocked, set `cookies_from_browser` in your config (e.g. `cookies_from_browser: "chrome"`) to allow yt-dlp to use your browser's authentication cookies.
+  musicdl passes `--age-limit 99` to yt-dlp by default. If content is still blocked, set `cookies_from_browser` in your config (e.g. `cookies_from_browser: "chrome"`) for local use, or export a `cookies.txt` file and set `cookies: "/path/to/cookies.txt"` for Docker/headless deployments. See [COOKIES.md](COOKIES.md) for step-by-step browser instructions.
+
+- **"No supported JavaScript runtime could be found"**  
+  Modern yt-dlp requires a JavaScript runtime for YouTube. Add `js_runtimes: "nodejs"` to the `download` section of your config. The Docker image includes Node.js. For local installations, install Node.js, Deno, or Bun.
 
 - **YouTube playlist tracks show as "[Private video]"**  
   Private or deleted YouTube videos are automatically skipped (marked as "skipped" rather than "failed") and do not count toward the failure total. These videos were removed or made private by the uploader and cannot be downloaded.
@@ -465,18 +489,23 @@ musicdl/
 │   ├── backend/            # Express.js + TypeScript
 │   ├── frontend/           # Vue 3 + TypeScript + Vite
 │   └── README.md           # Web server documentation
+├── mcp/                    # MCP server for AI visibility
 ├── musicdl.Dockerfile         # Multi-stage Docker build
 ├── truenas-musicdl-compose.yaml  # TrueNAS Scale App config
 ├── docker-compose.web.yml    # Development compose file
 ├── dev.sh                  # Development startup script
 ├── scripts/
 │   └── plex-playlist-push.py  # Push M3U playlists to Plex
+├── COOKIES.md             # Cookie export guide (all browsers)
+├── MCP.md                 # MCP server documentation
 └── README.md              # This file
 ```
 
 ## See Also
 
-For architecture, CI/CD, and development details, see the [GitHub Wiki](https://github.com/sv4u/musicdl/wiki).
+- [COOKIES.md](COOKIES.md) – How to export YouTube cookies for Docker/headless deployments (Vivaldi, Chrome, Firefox, Safari)
+- [MCP.md](MCP.md) – AI visibility server (Model Context Protocol)
+- [GitHub Wiki](https://github.com/sv4u/musicdl/wiki) – Architecture, CI/CD, and development details
 
 ## License
 

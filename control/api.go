@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sv4u/musicdl/download"
 	"github.com/sv4u/musicdl/download/audio"
 	"github.com/sv4u/musicdl/download/config"
@@ -21,6 +22,7 @@ import (
 	"github.com/sv4u/musicdl/download/metadata"
 	"github.com/sv4u/musicdl/download/plan"
 	"github.com/sv4u/musicdl/download/spotify"
+	mcpserver "github.com/sv4u/musicdl/mcp"
 	spotigo "github.com/sv4u/spotigo/v2"
 	"gopkg.in/yaml.v3"
 )
@@ -70,6 +72,8 @@ type APIServer struct {
 	cancelFuncMu      sync.Mutex
 	cancelFunc        context.CancelFunc
 	cancelGen         uint64 // incremented on each run start; used to avoid clearing a newer run's cancel
+	mcpHandler        http.Handler
+	plexTracker       *PlexSyncTracker
 }
 
 // RunTracker tracks the current running operation.
@@ -94,7 +98,16 @@ func NewAPIServer(port int) *APIServer {
 		fmt.Fprintf(os.Stderr, "WARN: failed to create history tracker: %v\n", err)
 	}
 
-	return &APIServer{
+	workDir := os.Getenv("MUSICDL_WORK_DIR")
+	if workDir == "" {
+		workDir = "."
+	}
+	logDir := os.Getenv("MUSICDL_LOG_DIR")
+	if logDir == "" {
+		logDir = ".logs"
+	}
+
+	apiServer := &APIServer{
 		port:              port,
 		currentRunTracker: &RunTracker{},
 		logBroadcaster:    NewLogBroadcaster(),
@@ -103,7 +116,17 @@ func NewAPIServer(port int) *APIServer {
 		historyTracker:    historyTracker,
 		circuitBreaker:    NewCircuitBreaker(5, 3, 60*time.Second),
 		resumeState:       NewResumeState(cacheDir),
+		plexTracker:       &PlexSyncTracker{},
 	}
+
+	mcpProvider := mcpserver.NewFileDataProvider(workDir, cacheDir, logDir)
+	mcpProvider.SetRuntime(&apiRuntimeProvider{server: apiServer})
+	mcpSrv := mcpserver.NewServer(mcpProvider, Version)
+	apiServer.mcpHandler = gomcp.NewStreamableHTTPHandler(func(_ *http.Request) *gomcp.Server {
+		return mcpSrv
+	}, nil)
+
+	return apiServer
 }
 
 // completeRun finalizes a running operation, recording the outcome to the stats
@@ -197,6 +220,8 @@ func (s *APIServer) initClientsFromConfig(cfg *config.MusicDLConfig) (*spotify.S
 		Bitrate:            cfg.Download.Bitrate,
 		AudioProviders:     cfg.Download.AudioProviders,
 		CookiesFromBrowser: cfg.Download.CookiesFromBrowser,
+		Cookies:            cfg.Download.Cookies,
+		JSRuntimes:         cfg.Download.JSRuntimes,
 		CacheMaxSize:       cfg.Download.AudioSearchCacheMaxSize,
 		CacheTTL:           cfg.Download.AudioSearchCacheTTL,
 	}
@@ -505,6 +530,14 @@ func (s *APIServer) Run() int {
 	mux.HandleFunc("GET /api/docs", s.swaggerUIHandler)
 	mux.HandleFunc("GET /api/docs/swagger.json", s.swaggerSpecHandler)
 
+	// Plex sync endpoints
+	mux.HandleFunc("POST /api/plex/sync", s.plexSyncHandler)
+	mux.HandleFunc("GET /api/plex/status", s.plexStatusHandler)
+	mux.HandleFunc("POST /api/plex/stop", s.plexStopHandler)
+
+	// MCP server (embedded, Streamable HTTP transport)
+	mux.Handle("/mcp", s.mcpHandler)
+
 	// CORS middleware wrapper
 	handler := s.corsMiddleware(mux)
 
@@ -512,6 +545,7 @@ func (s *APIServer) Run() int {
 	fmt.Printf("Starting musicdl API server on %s\n", addr)
 	fmt.Printf("  Swagger UI: http://localhost:%d/api/docs\n", s.port)
 	fmt.Printf("  WebSocket:  ws://localhost:%d/api/ws/logs\n", s.port)
+	fmt.Printf("  MCP:        http://localhost:%d/mcp\n", s.port)
 
 	server := &http.Server{
 		Addr:         addr,

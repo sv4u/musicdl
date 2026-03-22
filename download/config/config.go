@@ -38,6 +38,8 @@ type DownloadSettings struct {
 	AudioProviders     []string      `yaml:"audio_providers"`
 	Overwrite          OverwriteMode `yaml:"overwrite"`
 	CookiesFromBrowser string        `yaml:"cookies_from_browser"` // e.g. "chrome", "firefox"
+	Cookies            string        `yaml:"cookies"`              // path to Netscape-format cookies.txt file
+	JSRuntimes         string        `yaml:"js_runtimes"`          // JS runtime for yt-dlp (e.g. "nodejs", "deno", "bun")
 
 	// Cache settings
 	CacheMaxSize              int `yaml:"cache_max_size"`
@@ -267,11 +269,20 @@ func (u *UISettings) SetDefaults(planPath string) {
 	// HistoryPath and LogPath are set by the caller based on planPath
 }
 
+// PlexSettings holds Plex server integration configuration.
+type PlexSettings struct {
+	ServerURL string `yaml:"server_url"` // e.g. "http://192.168.50.42:32400"
+	Token     string `yaml:"token"`      // Plex authentication token
+	SectionID string `yaml:"section_id"` // Music library section ID (empty = auto-detect)
+	MusicPath string `yaml:"music_path"` // Plex-side path to music library (e.g. "/data/Music")
+}
+
 // MusicDLConfig represents the main configuration model.
 type MusicDLConfig struct {
 	Version   string           `yaml:"version"`
 	Download  DownloadSettings `yaml:"download"`
 	UI        UISettings       `yaml:"ui"`
+	Plex      PlexSettings     `yaml:"plex"`
 	Songs     []MusicSource    `yaml:"songs"`
 	Artists   []MusicSource    `yaml:"artists"`
 	Playlists []MusicSource    `yaml:"playlists"`

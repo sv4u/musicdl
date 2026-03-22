@@ -39,7 +39,7 @@ docker run --rm \
 ## For Developers (Local Setup)
 
 ### Prerequisites
-- Go 1.24+
+- Go 1.25+
 - Node.js 18+
 - npm or yarn
 

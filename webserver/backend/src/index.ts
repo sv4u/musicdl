@@ -127,6 +127,11 @@ proxyPost('/api/recovery/circuit-breaker/reset', 'Failed to reset circuit breake
 proxyPost('/api/recovery/resume/clear', 'Failed to clear resume state');
 proxyPost('/api/recovery/resume/retry-failed', 'Failed to retry failed items');
 
+// Plex
+proxyPost('/api/plex/sync', 'Failed to start Plex sync');
+proxyGet('/api/plex/status', 'Failed to fetch Plex sync status');
+proxyPost('/api/plex/stop', 'Failed to stop Plex sync');
+
 // History proxy — uses pathFilter so parameterised sub-routes like
 // /api/history/runs/{runID} are forwarded with the real path intact.
 app.use(
