@@ -23,7 +23,7 @@ type Config struct {
 	// yt-dlp settings
 	CookiesFromBrowser string // e.g. "chrome", "firefox" — passed as --cookies-from-browser
 	Cookies            string // path to Netscape-format cookies.txt — passed as --cookies
-	JSRuntimes         string // JS runtime for yt-dlp — passed as --js-runtimes (e.g. "nodejs")
+	JSRuntimes         string // JS runtime for yt-dlp — passed as --js-runtimes (e.g. "node")
 
 	// Cache settings
 	CacheMaxSize int

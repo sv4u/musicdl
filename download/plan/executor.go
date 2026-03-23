@@ -378,38 +378,28 @@ func (e *Executor) processM3UFiles(plan *DownloadPlan) {
 	}
 }
 
-// createM3UFile creates an M3U playlist file.
+// createM3UFile creates an M3U playlist file at the working directory root.
+// Placing it at the root ensures all track paths are simple relative paths
+// (e.g. "Artist/Album/track.mp3") without "../" traversal, which Plex
+// requires for reliable playlist import via M3U upload.
 func (e *Executor) createM3UFile(playlistName string, tracks []*PlanItem) (string, error) {
-	// Sanitize playlist name for filename
 	playlistNameSafe := SanitizeFilename(playlistName)
-
-	// Get base output directory from first track
 	if len(tracks) == 0 {
 		return "", fmt.Errorf("no tracks provided for M3U file")
 	}
-
-	firstTrackPath := tracks[0].FilePath
-	baseDir := filepath.Dir(firstTrackPath)
-	baseDirAbs, err := filepath.Abs(baseDir)
+	rootAbs, err := filepath.Abs(".")
 	if err != nil {
-		baseDirAbs = baseDir
+		return "", fmt.Errorf("cannot resolve working directory: %w", err)
 	}
-
-	m3uPath := filepath.Join(baseDir, playlistNameSafe+".m3u")
-
-	// Create M3U file (overwrite if it already exists)
+	m3uPath := playlistNameSafe + ".m3u"
 	file, err := os.Create(m3uPath)
 	if err != nil {
 		return "", fmt.Errorf("cannot create M3U file: %w", err)
 	}
 	defer func() { _ = file.Close() }()
-
-	// Write M3U header
 	if _, err := file.WriteString("#EXTM3U\n"); err != nil {
 		return "", fmt.Errorf("cannot write M3U header: %w", err)
 	}
-
-	// Write tracks
 	for _, item := range tracks {
 		title := item.Name
 		if title == "" {
@@ -423,8 +413,6 @@ func (e *Executor) createM3UFile(playlistName string, tracks []*PlanItem) (strin
 				title = "Track"
 			}
 		}
-
-		// Duration in seconds for EXTINF (-1 if unknown)
 		durationSec := -1
 		if item.Metadata != nil {
 			if sec, ok := item.Metadata["duration"].(int); ok && sec >= 0 {
@@ -437,28 +425,21 @@ func (e *Executor) createM3UFile(playlistName string, tracks []*PlanItem) (strin
 				durationSec = ms / 1000
 			}
 		}
-
-		// Get path relative to M3U file for portability (e.g. Plex in Docker)
 		absPath, err := filepath.Abs(item.FilePath)
 		if err != nil {
-			continue // Skip if we can't get absolute path
+			continue
 		}
-		relPath, err := filepath.Rel(baseDirAbs, absPath)
+		relPath, err := filepath.Rel(rootAbs, absPath)
 		if err != nil {
-			relPath = absPath // Fallback to absolute if Rel fails (e.g. different roots)
+			relPath = absPath
 		}
-
-		// Write EXTINF line (duration,title)
 		if _, err := fmt.Fprintf(file, "#EXTINF:%d,%s\n", durationSec, title); err != nil {
 			continue
 		}
-
-		// Write file path (relative for portability)
 		if _, err := file.WriteString(relPath + "\n"); err != nil {
 			continue
 		}
 	}
-
 	return m3uPath, nil
 }
 

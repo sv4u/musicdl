@@ -287,7 +287,15 @@ func TestExecutor_UpdateContainerStatus_NoChildren(t *testing.T) {
 func TestExecutor_CreateM3UFile(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Create test track files
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
 	track1File := filepath.Join(tmpDir, "track1.mp3")
 	track2File := filepath.Join(tmpDir, "track2.mp3")
 	_ = os.WriteFile(track1File, []byte("test1"), 0644)
@@ -316,12 +324,10 @@ func TestExecutor_CreateM3UFile(t *testing.T) {
 		t.Fatalf("createM3UFile() returned error: %v", err)
 	}
 
-	// Check if file exists
 	if _, err := os.Stat(m3uPath); err != nil {
 		t.Fatalf("M3U file not created: %v", err)
 	}
 
-	// Read and verify content
 	content, err := os.ReadFile(m3uPath)
 	if err != nil {
 		t.Fatalf("Failed to read M3U file: %v", err)
@@ -332,7 +338,6 @@ func TestExecutor_CreateM3UFile(t *testing.T) {
 		t.Errorf("M3U file missing header, got: %s", contentStr[:min(20, len(contentStr))])
 	}
 
-	// Check if tracks are included (relative paths for portability)
 	if !contains(contentStr, "track1.mp3") || !contains(contentStr, "track2.mp3") {
 		t.Errorf("M3U file missing track paths, got: %s", contentStr)
 	}
@@ -341,7 +346,16 @@ func TestExecutor_CreateM3UFile(t *testing.T) {
 func TestExecutor_CreateM3UFile_RelativePathsCrossDirectory(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Simulate Artist/Album structure: M3U in Artist1/Album1/, track2 in Artist2/Album2/
+	// M3U is created at the working directory root; chdir so paths resolve cleanly
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
 	dir1 := filepath.Join(tmpDir, "Artist1", "Album1")
 	dir2 := filepath.Join(tmpDir, "Artist2", "Album2")
 	_ = os.MkdirAll(dir1, 0755)
@@ -363,20 +377,28 @@ func TestExecutor_CreateM3UFile_RelativePathsCrossDirectory(t *testing.T) {
 		t.Fatalf("createM3UFile() returned error: %v", err)
 	}
 
+	// M3U should be at the working directory root, not inside an artist/album subdirectory
+	if filepath.Dir(m3uPath) != "." {
+		t.Errorf("M3U should be at working directory root, got dir: %s", filepath.Dir(m3uPath))
+	}
+
 	content, err := os.ReadFile(m3uPath)
 	if err != nil {
 		t.Fatalf("Failed to read M3U file: %v", err)
 	}
 	contentStr := string(content)
 
-	// M3U is in Artist1/Album1/; track2 is in Artist2/Album2/ -> ../../Artist2/Album2/track2.mp3
-	if !contains(contentStr, "track1.mp3") {
-		t.Errorf("M3U missing track1, got: %s", contentStr)
+	// Paths should be simple relative from root: Artist1/Album1/track1.mp3
+	if !contains(contentStr, "Artist1/Album1/track1.mp3") {
+		t.Errorf("M3U missing clean relative path to track1, got: %s", contentStr)
 	}
-	if !contains(contentStr, "Artist2") || !contains(contentStr, "track2.mp3") {
-		t.Errorf("M3U missing relative path to track2, got: %s", contentStr)
+	if !contains(contentStr, "Artist2/Album2/track2.mp3") {
+		t.Errorf("M3U missing clean relative path to track2, got: %s", contentStr)
 	}
-	// Should not contain absolute paths (no leading slash for track paths in same-dir case, but cross-dir uses ..)
+	// Should not contain ../ traversal or absolute paths
+	if contains(contentStr, "../") {
+		t.Errorf("M3U should not contain ../ traversal; got: %s", contentStr)
+	}
 	if contains(contentStr, tmpDir) {
 		t.Errorf("M3U should use relative paths, not absolute; got: %s", contentStr)
 	}

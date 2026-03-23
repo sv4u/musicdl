@@ -145,46 +145,49 @@ func SyncPlaylists(ctx context.Context, cfg SyncConfig, logger SyncLogger) (*Syn
 			logger.Log("info", fmt.Sprintf("Updating playlist: %s", name))
 			if err := client.DeletePlaylist(existing.RatingKey); err != nil {
 				logger.Log("error", fmt.Sprintf("Failed to delete old playlist %s: %v", name, err))
-			result.Action = "failed"
-			result.Error = err.Error()
-			failed++
-			status.Results = append(status.Results, result)
-			status.Progress++
-			logger.OnProgress(status.Progress, status.Total, status.Results)
-			continue
+				result.Action = "failed"
+				result.Error = err.Error()
+				failed++
+				status.Results = append(status.Results, result)
+				status.Progress++
+				logger.OnProgress(status.Progress, status.Total, status.Results)
+				continue
+			}
+			if err := client.UploadPlaylist(sectionID, plexPath); err != nil {
+				logger.Log("error", fmt.Sprintf("Failed to upload playlist %s: %v", name, err))
+				result.Action = "failed"
+				result.Error = err.Error()
+				failed++
+				status.Results = append(status.Results, result)
+				status.Progress++
+				logger.OnProgress(status.Progress, status.Total, status.Results)
+				continue
+			}
+			result.Action = "updated"
+			updated++
+		} else {
+			logger.Log("info", fmt.Sprintf("Creating playlist: %s", name))
+			if err := client.UploadPlaylist(sectionID, plexPath); err != nil {
+				logger.Log("error", fmt.Sprintf("Failed to create playlist %s: %v", name, err))
+				result.Action = "failed"
+				result.Error = err.Error()
+				failed++
+				status.Results = append(status.Results, result)
+				status.Progress++
+				logger.OnProgress(status.Progress, status.Total, status.Results)
+				continue
+			}
+			result.Action = "created"
+			created++
 		}
-		if err := client.UploadPlaylist(sectionID, plexPath); err != nil {
-			logger.Log("error", fmt.Sprintf("Failed to upload playlist %s: %v", name, err))
-			result.Action = "failed"
-			result.Error = err.Error()
-			failed++
-			status.Results = append(status.Results, result)
-			status.Progress++
-			logger.OnProgress(status.Progress, status.Total, status.Results)
-			continue
+		// Fetch the actual track count from the newly created/updated playlist
+		if newPlaylist := client.FindPlaylistByTitle(name); newPlaylist != nil {
+			result.TrackCount = newPlaylist.LeafCount
 		}
-		result.Action = "updated"
-		result.TrackCount = existing.LeafCount
-		updated++
-	} else {
-		logger.Log("info", fmt.Sprintf("Creating playlist: %s", name))
-		if err := client.UploadPlaylist(sectionID, plexPath); err != nil {
-			logger.Log("error", fmt.Sprintf("Failed to create playlist %s: %v", name, err))
-			result.Action = "failed"
-			result.Error = err.Error()
-			failed++
-			status.Results = append(status.Results, result)
-			status.Progress++
-			logger.OnProgress(status.Progress, status.Total, status.Results)
-			continue
-		}
-		result.Action = "created"
-		created++
-	}
-	logger.Log("info", fmt.Sprintf("Playlist %s: %s (tracks: %d)", name, result.Action, result.TrackCount))
-	status.Results = append(status.Results, result)
-	status.Progress++
-	logger.OnProgress(status.Progress, status.Total, status.Results)
+		logger.Log("info", fmt.Sprintf("Playlist %s: %s (tracks: %d)", name, result.Action, result.TrackCount))
+		status.Results = append(status.Results, result)
+		status.Progress++
+		logger.OnProgress(status.Progress, status.Total, status.Results)
 	}
 	status.IsRunning = false
 	status.CompletedAt = time.Now().Unix()

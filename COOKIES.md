@@ -211,7 +211,7 @@ After exporting `cookies.txt`, update your `config.yaml`:
 ```yaml
 download:
   cookies: "/download/cookies.txt"
-  js_runtimes: "nodejs"
+  js_runtimes: "node"
 ```
 
 Place `cookies.txt` in the same directory that is mounted as `/download` in the container.
@@ -242,7 +242,7 @@ Modern versions of yt-dlp require a JavaScript runtime for YouTube extraction. T
 
 ```yaml
 download:
-  js_runtimes: "nodejs"
+  js_runtimes: "node"
 ```
 
 This is already included in the Docker image and only needs to be enabled in the config. For local installations, yt-dlp will auto-detect available runtimes (Node.js, Deno, or Bun).
@@ -253,7 +253,7 @@ This is already included in the Docker image and only needs to be enabled in the
 
 ```bash
 # Test that yt-dlp can use your cookies
-yt-dlp --cookies cookies.txt --js-runtimes nodejs -v "https://www.youtube.com/watch?v=EXAMPLE"
+yt-dlp --cookies cookies.txt --js-runtimes node -v "https://www.youtube.com/watch?v=EXAMPLE"
 ```
 
 ### Test in Docker
@@ -263,14 +263,14 @@ yt-dlp --cookies cookies.txt --js-runtimes nodejs -v "https://www.youtube.com/wa
 docker exec -it <container-name> sh
 
 # Test yt-dlp with cookies
-yt-dlp --cookies /download/cookies.txt --js-runtimes nodejs -v "https://www.youtube.com/watch?v=EXAMPLE"
+yt-dlp --cookies /download/cookies.txt --js-runtimes node -v "https://www.youtube.com/watch?v=EXAMPLE"
 ```
 
 ## Troubleshooting
 
 - **"Sign in to confirm your age"** — The cookies file is missing, expired, or does not contain valid YouTube authentication. Re-export from your browser while logged in.
 
-- **"No supported JavaScript runtime could be found"** — Add `js_runtimes: "nodejs"` to the `download` section of your config. The Docker image includes Node.js; local installs need Node.js, Deno, or Bun on PATH.
+- **"No supported JavaScript runtime could be found"** — Add `js_runtimes: "node"` to the `download` section of your config. The Docker image includes Node.js; local installs need Node.js, Deno, or Bun on PATH.
 
 - **Cookies expire after a few weeks** — YouTube/Google session cookies have a limited lifetime. If downloads start failing with authentication errors, re-export `cookies.txt` from your browser.
 
@@ -290,6 +290,6 @@ yt-dlp --cookies /download/cookies.txt --js-runtimes nodejs -v "https://www.yout
 ## Additional Information
 
 - The `cookies` and `cookies_from_browser` options are mutually exclusive. If both are set, `cookies` (file path) takes precedence.
-- Supported `js_runtimes` values: `nodejs`, `deno`, `bun` (whatever is installed on the system).
+- Supported `js_runtimes` values: `node`, `deno`, `bun`, `quickjs` (whatever is installed on the system).
 - For the full configuration reference, see [README.md](README.md#configuration).
 - For MCP server setup (AI-assisted visibility), see [MCP.md](MCP.md).

@@ -166,8 +166,8 @@ download:
                                     # age-restricted or login-gated content (local only)
   cookies: ""                       # optional: path to Netscape-format cookies.txt file
                                     # for Docker/headless — see COOKIES.md
-  js_runtimes: ""                   # optional: JS runtime for yt-dlp (e.g. "nodejs", "deno")
-                                    # Docker image includes nodejs; set to "nodejs" for Docker
+  js_runtimes: ""                   # optional: JS runtime for yt-dlp (e.g. "node", "deno")
+                                    # Docker image includes node; set to "node" for Docker
 
 plex:
   server_url: ""                    # Plex server URL (e.g. "http://192.168.50.42:32400")
@@ -401,7 +401,7 @@ Working directory in the image is `/download`. Set `MUSICDL_CACHE_DIR` if you wa
   musicdl passes `--age-limit 99` to yt-dlp by default. If content is still blocked, set `cookies_from_browser` in your config (e.g. `cookies_from_browser: "chrome"`) for local use, or export a `cookies.txt` file and set `cookies: "/path/to/cookies.txt"` for Docker/headless deployments. See [COOKIES.md](COOKIES.md) for step-by-step browser instructions.
 
 - **"No supported JavaScript runtime could be found"**  
-  Modern yt-dlp requires a JavaScript runtime for YouTube. Add `js_runtimes: "nodejs"` to the `download` section of your config. The Docker image includes Node.js. For local installations, install Node.js, Deno, or Bun.
+  Modern yt-dlp requires a JavaScript runtime for YouTube. Add `js_runtimes: "node"` to the `download` section of your config. The Docker image includes Node.js. For local installations, install Node.js, Deno, or Bun.
 
 - **YouTube playlist tracks show as "[Private video]"**  
   Private or deleted YouTube videos are automatically skipped (marked as "skipped" rather than "failed") and do not count toward the failure total. These videos were removed or made private by the uploader and cannot be downloaded.
