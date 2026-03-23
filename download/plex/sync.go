@@ -36,24 +36,58 @@ type SyncStatus struct {
 	Results     []SyncResult `json:"results"`
 }
 
-// FindM3UFiles recursively finds all .m3u files under dir, returning sorted absolute paths.
+// FindM3UFiles finds all .m3u files under dir, deduplicates by filename
+// (preferring root-level files over subdirectory files), and returns sorted
+// absolute paths.
+//
+// musicdl creates M3U playlist files at the working directory root. Previous
+// versions placed them inside artist/album subdirectories. This function finds
+// all M3U files recursively but deduplicates so that a root-level file always
+// wins over a subdirectory file with the same base name.
 func FindM3UFiles(dir string) ([]string, error) {
-	var files []string
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, fmt.Errorf("plex: failed to resolve directory %s: %w", dir, err)
+	}
+
+	// Collect all M3U files with their depth relative to dir.
+	type m3uEntry struct {
+		path  string
+		depth int
+	}
+	byName := make(map[string]m3uEntry)
+
+	err = filepath.Walk(absDir, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
-		if !info.IsDir() && strings.EqualFold(filepath.Ext(path), ".m3u") {
-			abs, absErr := filepath.Abs(path)
-			if absErr != nil {
-				return absErr
-			}
-			files = append(files, abs)
+		if info.IsDir() || !strings.EqualFold(filepath.Ext(path), ".m3u") {
+			return nil
+		}
+		abs, absErr := filepath.Abs(path)
+		if absErr != nil {
+			return absErr
+		}
+		rel, relErr := filepath.Rel(absDir, abs)
+		if relErr != nil {
+			rel = abs
+		}
+		depth := strings.Count(rel, string(filepath.Separator))
+		baseName := strings.ToLower(filepath.Base(abs))
+
+		existing, exists := byName[baseName]
+		if !exists || depth < existing.depth {
+			byName[baseName] = m3uEntry{path: abs, depth: depth}
 		}
 		return nil
 	})
 	if err != nil {
 		return nil, fmt.Errorf("plex: failed to walk directory %s: %w", dir, err)
+	}
+
+	files := make([]string, 0, len(byName))
+	for _, entry := range byName {
+		files = append(files, entry.path)
 	}
 	sort.Strings(files)
 	return files, nil
@@ -140,7 +174,8 @@ func SyncPlaylists(ctx context.Context, cfg SyncConfig, logger SyncLogger) (*Syn
 			PlaylistName: name,
 			M3UPath:      m3uPath,
 		}
-		existing, exists := existingByTitle[strings.ToLower(name)]
+		titleKey := strings.ToLower(name)
+		existing, exists := existingByTitle[titleKey]
 		if exists {
 			logger.Log("info", fmt.Sprintf("Updating playlist: %s", name))
 			if err := client.DeletePlaylist(existing.RatingKey); err != nil {
@@ -153,6 +188,7 @@ func SyncPlaylists(ctx context.Context, cfg SyncConfig, logger SyncLogger) (*Syn
 				logger.OnProgress(status.Progress, status.Total, status.Results)
 				continue
 			}
+			delete(existingByTitle, titleKey)
 			if err := client.UploadPlaylist(sectionID, plexPath); err != nil {
 				logger.Log("error", fmt.Sprintf("Failed to upload playlist %s: %v", name, err))
 				result.Action = "failed"
@@ -180,9 +216,9 @@ func SyncPlaylists(ctx context.Context, cfg SyncConfig, logger SyncLogger) (*Syn
 			result.Action = "created"
 			created++
 		}
-		// Fetch the actual track count from the newly created/updated playlist
 		if newPlaylist := client.FindPlaylistByTitle(name); newPlaylist != nil {
 			result.TrackCount = newPlaylist.LeafCount
+			existingByTitle[titleKey] = newPlaylist
 		}
 		logger.Log("info", fmt.Sprintf("Playlist %s: %s (tracks: %d)", name, result.Action, result.TrackCount))
 		status.Results = append(status.Results, result)

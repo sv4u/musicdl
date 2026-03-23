@@ -24,7 +24,8 @@ services:
       dockerfile: musicdl.Dockerfile
       args:
         VERSION: dev
-    command: node /opt/musicdl/backend/dist/index.js
+    working_dir: /opt/musicdl/backend
+    command: node dist/index.js
     container_name: musicdl-web
     ports:
       - "3000:3000"

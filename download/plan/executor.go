@@ -102,20 +102,18 @@ func (e *Executor) Execute(ctx context.Context, plan *DownloadPlan, progressCall
 	e.executionWg = nil
 	e.executionWgMu.Unlock()
 
-	// Process containers and M3U files after tracks complete (if not shutting down)
-	if !e.isShutdownRequested() {
+	// Process containers and M3U files after tracks complete (skip on shutdown
+	// OR context cancellation so a stop request via either path is honoured).
+	if !e.isShutdownRequested() && ctx.Err() == nil {
 		e.processContainers(plan)
 		e.processM3UFiles(plan)
-		// Update containers again after M3U processing
 		e.processContainers(plan)
 	}
 
 	elapsed := time.Since(startTime)
 	stats := e.getExecutionStats(plan)
 
-	if e.isShutdownRequested() {
-		// Save plan progress on shutdown (via progress callback)
-		// The progress callback will handle saving if persistence is enabled
+	if e.isShutdownRequested() || ctx.Err() != nil {
 		return stats, fmt.Errorf("plan execution interrupted after %v: %d completed, %d failed, %d pending",
 			elapsed, stats["completed"], stats["failed"], stats["pending"])
 	}
@@ -299,6 +297,13 @@ func (e *Executor) updateContainerStatus(containerItem *PlanItem, plan *Download
 	// If all items are pending/in_progress, leave status unchanged
 }
 
+// isUnavailableName returns true if the name represents a YouTube video that
+// is private, deleted, or otherwise unavailable and should not produce an M3U.
+func isUnavailableName(name string) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	return lower == "[private video]" || lower == "[deleted video]" || lower == "[unavailable video]"
+}
+
 // processM3UFiles creates M3U files for playlists and albums.
 func (e *Executor) processM3UFiles(plan *DownloadPlan) {
 	m3uItems := plan.GetItemsByType(PlanItemTypeM3U)
@@ -366,6 +371,12 @@ func (e *Executor) processM3UFiles(plan *DownloadPlan) {
 			containerNameStr = containerItem.Name
 		}
 
+		if isUnavailableName(containerNameStr) {
+			m3uItem.MarkSkipped("")
+			e.notifyProgress(m3uItem)
+			continue
+		}
+
 		m3uPath, err := e.createM3UFile(containerNameStr, availableTracks)
 		if err != nil {
 			m3uItem.MarkFailed(err.Error())
@@ -375,7 +386,43 @@ func (e *Executor) processM3UFiles(plan *DownloadPlan) {
 
 		m3uItem.MarkCompleted(m3uPath)
 		e.notifyProgress(m3uItem)
+
+		// Remove stale M3U files with the same name in subdirectories.
+		// Previous versions created M3U files inside artist/album dirs;
+		// now they live at the working directory root.
+		e.cleanupStaleM3U(containerNameStr)
 	}
+}
+
+// cleanupStaleM3U removes M3U files in subdirectories that share the given
+// playlist name. Only files deeper than the working directory root are removed;
+// the root-level file (just created) is preserved.
+func (e *Executor) cleanupStaleM3U(playlistName string) {
+	safeName := SanitizeFilename(playlistName) + ".m3u"
+	rootAbs, err := filepath.Abs(".")
+	if err != nil {
+		return
+	}
+	_ = filepath.Walk(rootAbs, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil || info.IsDir() {
+			return nil
+		}
+		if !strings.EqualFold(filepath.Base(path), safeName) {
+			return nil
+		}
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return nil
+		}
+		rel, err := filepath.Rel(rootAbs, abs)
+		if err != nil {
+			return nil
+		}
+		if strings.Contains(rel, string(filepath.Separator)) {
+			_ = os.Remove(abs)
+		}
+		return nil
+	})
 }
 
 // createM3UFile creates an M3U playlist file at the working directory root.
