@@ -300,9 +300,14 @@ func (d *Downloader) downloadSpotifyTrack(ctx context.Context, item *plan.PlanIt
 		return true, outputPath, nil
 	}
 
-	// Search for audio using audio provider with fallback query variants
 	variants := audio.GenerateSearchVariants(song.Artist, song.Title)
-	audioURL, err := d.audioProvider.SearchWithFallbacks(ctx, variants)
+	criteria := &audio.SearchCriteria{
+		ExpectedTitle:      song.Title,
+		ExpectedArtist:     song.Artist,
+		ExpectedDurationS:  song.Duration,
+		OriginalHasLiveTag: audio.TitleContainsLiveKeyword(song.Title),
+	}
+	audioURL, err := d.audioProvider.SearchWithFallbacks(ctx, variants, criteria)
 	if err != nil {
 		return false, "", fmt.Errorf("no audio found for: %s - %s", song.Artist, song.Title)
 	}

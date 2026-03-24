@@ -141,48 +141,38 @@ func NewProvider(config *Config) (*Provider, error) {
 	}, nil
 }
 
-// Search searches for audio URL matching query (cached).
+// Search searches for audio URL matching query (cached). No criteria-based filtering.
 func (p *Provider) Search(ctx context.Context, query string) (string, error) {
-	// Normalize query for cache key
 	cacheKey := p.normalizeQuery(query)
 
-	// Check cache first
 	if cached := p.searchCache.Get(cacheKey); cached != nil {
-		if url, ok := cached.(string); ok {
+		if url, ok := cached.(string); ok && url != "" {
 			return url, nil
 		}
-		// Cached as "not found" (empty string)
 		if urlStr, ok := cached.(string); ok && urlStr == "" {
 			return "", &SearchError{Message: "No audio found (cached)"}
 		}
 	}
 
-	// Apply general rate limiting if enabled
 	if p.generalRateLimiter != nil {
 		if err := p.generalRateLimiter.WaitForRequest(ctx); err != nil {
 			return "", fmt.Errorf("general rate limit: %w", err)
 		}
 	}
 
-	// Try each provider in order
 	var audioURL string
 	var lastErr error
 
 	for _, provider := range p.config.AudioProviders {
-		// Check context cancellation
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
-
-		// Apply provider-specific rate limiting
 		if limiter, ok := p.rateLimiters[provider]; ok {
 			if err := limiter.WaitIfNeeded(ctx); err != nil {
 				return "", fmt.Errorf("rate limit for %s: %w", provider, err)
 			}
 		}
-
-		// Search using provider
-		url, err := p.searchProvider(ctx, provider, query)
+		url, err := p.searchProviderWithCriteria(ctx, provider, query, nil)
 		if err == nil && url != "" {
 			audioURL = url
 			break
@@ -190,7 +180,6 @@ func (p *Provider) Search(ctx context.Context, query string) (string, error) {
 		lastErr = err
 	}
 
-	// Cache result (even if empty, to avoid repeated failed searches)
 	if audioURL == "" {
 		p.searchCache.Set(cacheKey, "")
 		if lastErr != nil {
@@ -209,27 +198,42 @@ func (p *Provider) normalizeQuery(query string) string {
 	return fmt.Sprintf("audio_search:%s", normalized)
 }
 
-// searchProvider searches using a specific provider.
-func (p *Provider) searchProvider(ctx context.Context, provider, query string) (string, error) {
-	// Audius uses its own REST API for search, not yt-dlp search prefixes
+// searchProviderWithCriteria searches a specific provider, fetching multiple results
+// and applying criteria-based scoring when criteria is non-nil.
+func (p *Provider) searchProviderWithCriteria(ctx context.Context, provider, query string, criteria *SearchCriteria) (string, error) {
 	if provider == "audius" {
 		return p.searchAudius(ctx, query)
 	}
 
-	// All other providers use yt-dlp search prefixes
+	// When criteria are provided, fetch 5 results so we can pick the best match.
+	// Without criteria, fetch 1 result (original behaviour for non-Spotify flows).
+	count := 1
+	if criteria != nil {
+		count = 5
+	}
+
 	var searchQuery string
 	switch provider {
 	case "youtube-music":
-		searchQuery = fmt.Sprintf("ytsearch1:%s", query)
+		searchQuery = fmt.Sprintf("ytsearch%d:%s", count, query)
 	case "youtube":
-		searchQuery = fmt.Sprintf("ytsearch:%s", query)
+		searchQuery = fmt.Sprintf("ytsearch%d:%s", count, query)
 	case "soundcloud":
-		searchQuery = fmt.Sprintf("scsearch:%s", query)
+		searchQuery = fmt.Sprintf("scsearch%d:%s", count, query)
 	default:
-		searchQuery = fmt.Sprintf("ytsearch:%s", query)
+		searchQuery = fmt.Sprintf("ytsearch%d:%s", count, query)
 	}
 
-	return p.runYtDlpSearch(ctx, searchQuery)
+	results, err := p.runYtDlpSearch(ctx, searchQuery)
+	if err != nil {
+		return "", err
+	}
+
+	best, ok := pickBestResult(results, criteria)
+	if !ok {
+		return "", &SearchError{Message: "No suitable audio found after filtering for: " + query}
+	}
+	return extractBestURL(best), nil
 }
 
 // searchAudius searches for a track on Audius via the REST API.

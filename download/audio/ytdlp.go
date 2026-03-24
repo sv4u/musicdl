@@ -16,6 +16,10 @@ type ytDlpSearchResult struct {
 	URL        string              `json:"url,omitempty"`
 	WebpageURL string              `json:"webpage_url,omitempty"`
 	ID         string              `json:"id,omitempty"`
+	Title      string              `json:"title,omitempty"`
+	Duration   float64             `json:"duration,omitempty"`
+	Uploader   string              `json:"uploader,omitempty"`
+	Channel    string              `json:"channel,omitempty"`
 	Entries    []ytDlpSearchResult `json:"entries,omitempty"`
 }
 
@@ -46,9 +50,8 @@ type YouTubePlaylistInfo struct {
 	Entries     []YouTubeVideoMetadata `json:"entries,omitempty"`
 }
 
-// runYtDlpSearch runs yt-dlp to search for audio.
-func (p *Provider) runYtDlpSearch(ctx context.Context, searchQuery string) (string, error) {
-	// Build yt-dlp command for search
+// runYtDlpSearch runs yt-dlp to search for audio and returns all parsed results.
+func (p *Provider) runYtDlpSearch(ctx context.Context, searchQuery string) ([]ytDlpSearchResult, error) {
 	args := []string{
 		"--quiet",
 		"--no-warnings",
@@ -72,72 +75,81 @@ func (p *Provider) runYtDlpSearch(ctx context.Context, searchQuery string) (stri
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		outputStr := string(output)
-		// Check if it's a rate limit error
 		if strings.Contains(outputStr, "429") ||
 			strings.Contains(outputStr, "rate limit") ||
 			strings.Contains(outputStr, "HTTP Error 429") {
-			return "", &SearchError{
+			return nil, &SearchError{
 				Message:  "Rate limited by provider",
 				Original: err,
 			}
 		}
-		// Return error with output for debugging
-		return "", &SearchError{
+		return nil, &SearchError{
 			Message:  fmt.Sprintf("yt-dlp search failed: %v (output: %s)", err, outputStr),
 			Original: err,
 		}
 	}
 
-	// Parse JSON output
-	// yt-dlp may return multiple results (one per line)
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 	if len(lines) == 0 {
-		return "", &SearchError{Message: "No results from yt-dlp"}
+		return nil, &SearchError{Message: "No results from yt-dlp"}
 	}
 
-	// Parse first result
-	var result ytDlpSearchResult
-	if err := json.Unmarshal([]byte(lines[0]), &result); err != nil {
-		return "", &SearchError{
-			Message:  "Failed to parse yt-dlp output",
-			Original: err,
+	var results []ytDlpSearchResult
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
 		}
-	}
-
-	// Extract URL
-	url := result.URL
-	if url == "" {
-		url = result.WebpageURL
-	}
-	if url == "" && result.ID != "" {
-		if strings.HasPrefix(searchQuery, "ytsearch") {
-			url = fmt.Sprintf("https://www.youtube.com/watch?v=%s", result.ID)
-		} else if strings.HasPrefix(searchQuery, "scsearch") {
-			url = fmt.Sprintf("https://soundcloud.com/%s", result.ID)
-		} else {
-			url = result.ID
+		var result ytDlpSearchResult
+		if err := json.Unmarshal([]byte(line), &result); err != nil {
+			continue
 		}
-	}
-
-	// Handle entries (playlist results)
-	if len(result.Entries) > 0 && url == "" {
-		firstEntry := result.Entries[0]
-		url = firstEntry.URL
-		if url == "" {
-			url = firstEntry.WebpageURL
+		p.resolveResultURL(&result, searchQuery)
+		if result.URL != "" || result.WebpageURL != "" {
+			results = append(results, result)
 		}
-		if url == "" && firstEntry.ID != "" {
-			if strings.HasPrefix(searchQuery, "ytsearch") {
-				url = fmt.Sprintf("https://www.youtube.com/watch?v=%s", firstEntry.ID)
+		// Expand inline entries (playlist-style results)
+		for _, entry := range result.Entries {
+			p.resolveResultURL(&entry, searchQuery)
+			if entry.URL != "" || entry.WebpageURL != "" {
+				results = append(results, entry)
 			}
 		}
 	}
 
-	if url == "" {
-		return "", &SearchError{Message: "No URL found in yt-dlp result"}
+	if len(results) == 0 {
+		return nil, &SearchError{Message: "No results from yt-dlp"}
 	}
+	return results, nil
+}
 
-	return url, nil
+// resolveResultURL fills in the URL field from WebpageURL or ID if missing.
+func (p *Provider) resolveResultURL(result *ytDlpSearchResult, searchQuery string) {
+	if result.URL != "" {
+		return
+	}
+	if result.WebpageURL != "" {
+		result.URL = result.WebpageURL
+		return
+	}
+	if result.ID == "" {
+		return
+	}
+	if strings.HasPrefix(searchQuery, "ytsearch") {
+		result.URL = fmt.Sprintf("https://www.youtube.com/watch?v=%s", result.ID)
+	} else if strings.HasPrefix(searchQuery, "scsearch") {
+		result.URL = fmt.Sprintf("https://soundcloud.com/%s", result.ID)
+	} else {
+		result.URL = result.ID
+	}
+}
+
+// extractBestURL returns the download URL from a search result.
+func extractBestURL(result ytDlpSearchResult) string {
+	if result.URL != "" {
+		return result.URL
+	}
+	return result.WebpageURL
 }
 
 // runYtDlpDownload runs yt-dlp to download audio.

@@ -222,7 +222,7 @@ func TestProvider_SearchProvider(t *testing.T) {
 			ctx := context.Background()
 			// This will attempt to call yt-dlp, which may or may not be available
 			// We just verify the function doesn't panic
-			_, err := provider.searchProvider(ctx, tt.provider, tt.query)
+			_, err := provider.searchProviderWithCriteria(ctx, tt.provider, tt.query, nil)
 			// Error is expected if yt-dlp is not available or query is invalid
 			// Success is also valid if yt-dlp is available
 			_ = err // Accept either outcome
@@ -425,7 +425,7 @@ func TestProvider_SearchAudius_ViaSearchProvider(t *testing.T) {
 	provider.audiusClient = audius.NewClient(audius.WithBaseURL(server.URL))
 
 	ctx := context.Background()
-	url, err := provider.searchProvider(ctx, "audius", "Artist One Found Track")
+	url, err := provider.searchProviderWithCriteria(ctx, "audius", "Artist One Found Track", nil)
 	if err != nil {
 		t.Fatalf("searchProvider(audius) error: %v", err)
 	}
