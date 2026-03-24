@@ -326,6 +326,18 @@ func downloadCLICommand(configPath string, noTUI bool) int {
 		return DownloadExitPlanMissing
 	}
 
+	// Graph memory: sync plan and results (non-fatal)
+	workDir := os.Getenv("MUSICDL_WORK_DIR")
+	if workDir == "" {
+		workDir = "."
+	}
+	graphClient := tryConnectGraph(workDir)
+	if graphClient != nil {
+		defer func() { _ = graphClient.Close(ctx) }()
+	}
+	runID := generateRunID()
+	graphSyncPlan(ctx, graphClient, loadedPlan, runID)
+
 	metadataEmbedder := metadata.NewEmbedder()
 	downloader := download.NewDownloader(&cfg.Download, spotifyClient, audioProvider, metadataEmbedder)
 	maxWorkers := cfg.Download.Threads
@@ -346,6 +358,7 @@ func downloadCLICommand(configPath string, noTUI bool) int {
 
 		progressCallback := func(item *plan.PlanItem) { _ = item }
 		stats, err := executor.Execute(ctx, loadedPlan, progressCallback)
+		graphSyncDownloadResults(ctx, graphClient, loadedPlan, runID, stats)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Download failed: %v\n", err)
 			if strings.Contains(err.Error(), "network") || strings.Contains(err.Error(), "rate limit") {
@@ -396,6 +409,7 @@ func downloadCLICommand(configPath string, noTUI bool) int {
 	}()
 
 	stats, execErr := RunDownloadTUI(downloadLogPath, countPendingTracks(loadedPlan), progressCh, errCh, cancel)
+	graphSyncDownloadResults(ctx, graphClient, loadedPlan, runID, stats)
 	if execErr != nil {
 		if errors.Is(execErr, context.Canceled) {
 			return DownloadExitInterrupted

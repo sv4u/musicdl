@@ -1,4 +1,24 @@
 services:
+  neo4j:
+    image: neo4j:5-community
+    container_name: musicdl-neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/musicdl-graph
+      NEO4J_PLUGINS: '[]'
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+    volumes:
+      - neo4j-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   musicdl-api:
     build:
       context: .
@@ -13,9 +33,15 @@ services:
       MUSICDL_WORK_DIR: /download
       MUSICDL_CACHE_DIR: .cache
       MUSICDL_API_PORT: 5000
+      MUSICDL_GRAPH_URI: bolt://neo4j:7687
+      MUSICDL_GRAPH_USER: neo4j
+      MUSICDL_GRAPH_PASSWORD: musicdl-graph
     volumes:
       - ./downloads:/download
       - ./config.yaml:/download/config.yaml:ro
+    depends_on:
+      neo4j:
+        condition: service_healthy
     restart: unless-stopped
 
   musicdl-web:
@@ -39,3 +65,6 @@ services:
     depends_on:
       - musicdl-api
     restart: unless-stopped
+
+volumes:
+  neo4j-data:

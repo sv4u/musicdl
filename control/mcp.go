@@ -3,13 +3,17 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/sv4u/musicdl/download/config"
+	"github.com/sv4u/musicdl/download/graph"
 	mcpserver "github.com/sv4u/musicdl/mcp"
 )
 
@@ -43,12 +47,61 @@ func mcpCommand(args []string) int {
 	}
 
 	provider := mcpserver.NewFileDataProvider(workDir, getCacheDir(), getLogDir())
-	server := mcpserver.NewServer(provider, Version)
+
+	opts := &mcpserver.ServerOptions{WorkDir: workDir}
+	graphClient := tryConnectGraph(workDir)
+	if graphClient != nil {
+		opts.GraphClient = graphClient
+		defer func() { _ = graphClient.Close(context.Background()) }()
+	}
+
+	server := mcpserver.NewServer(provider, Version, opts)
 
 	if sseMode {
 		return runSSE(server, port)
 	}
 	return runStdio(server)
+}
+
+// tryConnectGraph attempts to create a graph client from config + env vars.
+// Returns nil if graph is disabled or connection fails (non-fatal).
+func tryConnectGraph(workDir string) *graph.Client {
+	configPath := filepath.Join(workDir, "config.yaml")
+	cfg, err := config.LoadConfig(configPath)
+	graphCfg := graph.Config{
+		URI:      "bolt://localhost:7687",
+		Username: "neo4j",
+		Database: "neo4j",
+	}
+
+	if err == nil && cfg.Graph.Enabled {
+		if cfg.Graph.URI != "" {
+			graphCfg.URI = cfg.Graph.URI
+		}
+		if cfg.Graph.Username != "" {
+			graphCfg.Username = cfg.Graph.Username
+		}
+		graphCfg.Password = cfg.Graph.Password
+		if cfg.Graph.Database != "" {
+			graphCfg.Database = cfg.Graph.Database
+		}
+	} else if err != nil {
+		// Config load failed; still check env vars
+	}
+
+	graphCfg = graph.ConfigFromEnv(graphCfg)
+
+	// Only connect if explicitly enabled via config or env vars provide credentials
+	if (cfg == nil || !cfg.Graph.Enabled) && graphCfg.Password == "" {
+		return nil
+	}
+
+	client, connErr := graph.NewClient(context.Background(), graphCfg)
+	if connErr != nil {
+		log.Printf("WARN: graph_memory connection failed (non-fatal): %v", connErr)
+		return nil
+	}
+	return client
 }
 
 func runStdio(server *gomcp.Server) int {

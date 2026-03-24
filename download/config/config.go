@@ -277,12 +277,35 @@ type PlexSettings struct {
 	MusicPath string `yaml:"music_path"` // Plex-side path to music library (e.g. "/data/Music")
 }
 
+// GraphSettings holds Neo4j graph memory configuration.
+type GraphSettings struct {
+	Enabled  bool   `yaml:"enabled"`
+	URI      string `yaml:"uri"`      // bolt://localhost:7687
+	Username string `yaml:"username"` // neo4j
+	Password string `yaml:"password"`
+	Database string `yaml:"database"` // neo4j (default)
+}
+
+// SetDefaults sets default values for GraphSettings.
+func (g *GraphSettings) SetDefaults() {
+	if g.URI == "" {
+		g.URI = "bolt://localhost:7687"
+	}
+	if g.Username == "" {
+		g.Username = "neo4j"
+	}
+	if g.Database == "" {
+		g.Database = "neo4j"
+	}
+}
+
 // MusicDLConfig represents the main configuration model.
 type MusicDLConfig struct {
 	Version   string           `yaml:"version"`
 	Download  DownloadSettings `yaml:"download"`
 	UI        UISettings       `yaml:"ui"`
 	Plex      PlexSettings     `yaml:"plex"`
+	Graph     GraphSettings    `yaml:"graph"`
 	Songs     []MusicSource    `yaml:"songs"`
 	Artists   []MusicSource    `yaml:"artists"`
 	Playlists []MusicSource    `yaml:"playlists"`
@@ -300,6 +323,7 @@ func (c *MusicDLConfig) Validate() error {
 
 	// Set defaults and validate download settings
 	c.Download.SetDefaults()
+	c.Graph.SetDefaults()
 	if err := c.Download.Validate(); err != nil {
 		return err
 	}

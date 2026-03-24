@@ -6,10 +6,34 @@
 #   - Config:         /mnt/peace-house-storage-pool/peace-house-storage/Music/config.yaml
 #   - Logs:           /mnt/peace-house-storage-pool/peace-house-storage/Music/.logs
 #   - Cache:          /mnt/peace-house-storage-pool/peace-house-storage/Music/.cache
+#   - Neo4j data:     /mnt/peace-house-storage-pool/peace-house-storage/Music/.neo4j
 #
-# Web UI: http://<host>:3000
+# Web UI:         http://<host>:3000
+# Neo4j Browser:  http://<host>:7474
 # Runs as UID 3000 / GID 3000 (peace-house-admin) so all files/folders are owned correctly
 services:
+  neo4j:
+    image: neo4j:5-community
+    container_name: musicdl-neo4j
+    restart: "no"
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/musicdl-graph
+      NEO4J_PLUGINS: '[]'
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+    volumes:
+      - /mnt/peace-house-storage-pool/peace-house-storage/Music/.neo4j:/data
+    mem_limit: 1g
+    cpus: 1
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   musicdl:
     image: ghcr.io/sv4u/musicdl:latest
     container_name: musicdl
@@ -24,5 +48,11 @@ services:
       MUSICDL_WORK_DIR: /download
       MUSICDL_CACHE_DIR: .cache
       MUSICDL_LOG_DIR: .logs
+      MUSICDL_GRAPH_URI: bolt://neo4j:7687
+      MUSICDL_GRAPH_USER: neo4j
+      MUSICDL_GRAPH_PASSWORD: musicdl-graph
     volumes:
       - /mnt/peace-house-storage-pool/peace-house-storage/Music:/download
+    depends_on:
+      neo4j:
+        condition: service_healthy

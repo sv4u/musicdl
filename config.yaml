@@ -26,6 +26,16 @@ rate_limits:
   youtube_retries: 3
   youtube_bandwidth: 1048576
 
+# Graph memory (Neo4j) for debugging and library querying.
+# Set enabled: true and provide connection details. 
+# Environment variables: MUSICDL_GRAPH_URI, MUSICDL_GRAPH_USER, MUSICDL_GRAPH_PASSWORD
+graph:
+  enabled: false
+  uri: "bolt://localhost:7687"
+  username: "neo4j"
+  password: ""
+  database: "neo4j"
+
 # Music sources: songs, artists, playlists, albums.
 # Supported URL types per source:
 #   Spotify:    tracks, albums, artists, playlists

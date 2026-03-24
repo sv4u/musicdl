@@ -18,6 +18,7 @@ import (
 	"github.com/sv4u/musicdl/download"
 	"github.com/sv4u/musicdl/download/audio"
 	"github.com/sv4u/musicdl/download/config"
+	"github.com/sv4u/musicdl/download/graph"
 	"github.com/sv4u/musicdl/download/history"
 	"github.com/sv4u/musicdl/download/metadata"
 	"github.com/sv4u/musicdl/download/plan"
@@ -74,6 +75,7 @@ type APIServer struct {
 	cancelGen         uint64 // incremented on each run start; used to avoid clearing a newer run's cancel
 	mcpHandler        http.Handler
 	plexTracker       *PlexSyncTracker
+	graphClient       *graph.Client
 }
 
 // RunTracker tracks the current running operation.
@@ -121,7 +123,12 @@ func NewAPIServer(port int) *APIServer {
 
 	mcpProvider := mcpserver.NewFileDataProvider(workDir, cacheDir, logDir)
 	mcpProvider.SetRuntime(&apiRuntimeProvider{server: apiServer})
-	mcpSrv := mcpserver.NewServer(mcpProvider, Version)
+	mcpOpts := &mcpserver.ServerOptions{WorkDir: workDir}
+	if gc := tryConnectGraph(workDir); gc != nil {
+		mcpOpts.GraphClient = gc
+		apiServer.graphClient = gc
+	}
+	mcpSrv := mcpserver.NewServer(mcpProvider, Version, mcpOpts)
 	apiServer.mcpHandler = gomcp.NewStreamableHTTPHandler(func(_ *http.Request) *gomcp.Server {
 		return mcpSrv
 	}, nil)
@@ -372,6 +379,10 @@ func (s *APIServer) executeDownload(ctx context.Context, configPath string, resu
 			s.logBroadcaster.BroadcastString("info", fmt.Sprintf("Resuming: skipping %d previously completed items", skipped), "download")
 		}
 	}
+	// Graph memory: sync plan (non-fatal)
+	graphRunID := generateRunID()
+	graphSyncPlan(ctx, s.graphClient, loadedPlan, graphRunID)
+
 	s.planBroadcaster.SetPlan(loadedPlan, hash)
 	s.planBroadcaster.BroadcastPhaseChange("downloading")
 	totalTracks := countPendingTracks(loadedPlan)
@@ -458,6 +469,8 @@ func (s *APIServer) executeDownload(ctx context.Context, configPath string, resu
 	stats, execErr := executor.Execute(ctx, loadedPlan, progressCallback)
 	// Final flush to persist any remaining batched changes.
 	s.resumeState.Flush()
+	// Graph memory: sync download results (non-fatal)
+	graphSyncDownloadResults(ctx, s.graphClient, loadedPlan, graphRunID, stats)
 	if execErr != nil {
 		return fmt.Errorf("download failed: %w", execErr)
 	}
@@ -562,6 +575,9 @@ func (s *APIServer) Run() int {
 	go func() {
 		<-sigCh
 		fmt.Println("\nShutting down API server...")
+		if s.graphClient != nil {
+			_ = s.graphClient.Close(context.Background())
+		}
 		if s.historyTracker != nil {
 			s.historyTracker.Close()
 		}
