@@ -1,4 +1,4 @@
 # Runtime dependencies for Go subprocess calls
 # These Python packages are used by the Go implementation via subprocess
-yt-dlp>=2025.3.0
+yt-dlp>=2025.12.8
 mutagen>=1.47.0
