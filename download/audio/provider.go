@@ -24,6 +24,7 @@ type Config struct {
 	CookiesFromBrowser string // e.g. "chrome", "firefox" — passed as --cookies-from-browser
 	Cookies            string // path to Netscape-format cookies.txt — passed as --cookies
 	JSRuntimes         string // JS runtime for yt-dlp — passed as --js-runtimes (e.g. "node")
+	RemoteComponents   string // e.g. "ejs:github" — passed as --remote-components (YouTube JS challenges)
 
 	// Cache settings
 	CacheMaxSize int

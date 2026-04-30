@@ -49,6 +49,8 @@ RUN npm ci && npm run build
 WORKDIR /web/frontend
 RUN npm ci && npm run build
 
+# syntax=docker/dockerfile:1
+
 # Stage 3: Runtime image
 FROM alpine:latest
 
@@ -76,6 +78,19 @@ RUN python3 -c "import yt_dlp; print(f'yt-dlp: {yt_dlp.version.__version__}')" |
 RUN python3 -c "import mutagen; print(f'mutagen: {mutagen.version_string}')" || (echo "ERROR: mutagen not found" && exit 1)
 
 RUN mkdir -p /download && chmod 755 /download
+
+# Optional: install YouTube cookies at build time (does not embed the secret in git).
+# Build: DOCKER_BUILDKIT=1 docker build --secret id=youtube_cookies,src=./cookies.txt ...
+# Then set download.cookies: "/etc/musicdl/youtube-cookies.txt" in config (re-build when cookies expire).
+RUN mkdir -p /etc/musicdl \
+	&& chmod 755 /etc/musicdl
+RUN --mount=type=secret,id=youtube_cookies,required=false \
+	sh -c 'if [ -f /run/secrets/youtube_cookies ]; then \
+		install -m 600 /run/secrets/youtube_cookies /etc/musicdl/youtube-cookies.txt; \
+		echo "musicdl: installed /etc/musicdl/youtube-cookies.txt from build secret youtube_cookies"; \
+	else \
+		echo "musicdl: no youtube_cookies build secret (optional); use download.cookies or a volume at runtime"; \
+	fi'
 
 COPY --from=go-builder /usr/local/bin/musicdl /usr/local/bin/musicdl
 COPY --from=web-builder /web/backend/dist /opt/musicdl/backend/dist

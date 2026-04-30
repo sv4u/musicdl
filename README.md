@@ -42,7 +42,6 @@ docker pull ghcr.io/sv4u/musicdl:latest
 ## Quick Start
 
 1. **Get Spotify API credentials** from [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
-
 2. **Create a configuration file** (e.g. `config.yaml`):
 
 ```yaml
@@ -107,6 +106,7 @@ MUSICDL_API_PORT=9000 musicdl api
 ```
 
 The API server provides endpoints for:
+
 - Configuration management (`GET /api/config`, `POST /api/config`)
 - Download plan generation (`POST /api/download/plan`)
 - Download execution (`POST /api/download/run`)
@@ -168,6 +168,9 @@ download:
                                     # for Docker/headless — see COOKIES.md
   js_runtimes: ""                   # optional: JS runtime for yt-dlp (e.g. "node", "deno")
                                     # Docker image includes node; set to "node" for Docker
+  remote_components: ""             # optional: yt-dlp --remote-components (e.g. "ejs:github")
+                                    # fetches YouTube challenge solver scripts; use if you see
+                                    # EJS / "n challenge solving failed" errors
 
 plex:
   server_url: ""                    # Plex server URL (e.g. "http://192.168.50.42:32400")
@@ -215,6 +218,7 @@ download:
   cookies_from_browser: ""
   cookies: ""
   js_runtimes: ""
+  remote_components: ""
 
 plex:
   server_url: ""                    # Plex server URL (e.g. "http://192.168.50.42:32400")
@@ -256,13 +260,13 @@ Songs, artists, playlists, and albums are configured as lists. Extended format (
 
 Multiple source platforms are supported. `yt-dlp` must be on your PATH for YouTube, SoundCloud, Bandcamp, and Audius URL processing.
 
-| Source | Songs | Artists | Playlists | Albums |
-|-----------|-------|---------|-----------|--------|
-| Spotify | tracks | artists (discography) | playlists | albums |
-| YouTube | videos | — | playlists | — |
-| SoundCloud| tracks | user pages | sets | — |
-| Bandcamp | tracks | artist pages (discography) | — | albums |
-| Audius | tracks | — | playlists | — |
+| Source     | Songs  | Artists                    | Playlists | Albums |
+| ---------- | ------ | -------------------------- | --------- | ------ |
+| Spotify    | tracks | artists (discography)      | playlists | albums |
+| YouTube    | videos | —                          | playlists | —      |
+| SoundCloud | tracks | user pages                 | sets      | —      |
+| Bandcamp   | tracks | artist pages (discography) | —         | albums |
+| Audius     | tracks | —                          | playlists | —      |
 
 ```yaml
 songs:
@@ -325,6 +329,7 @@ docker run --rm -p 80:3000 \
 Access the web interface at `http://localhost`
 
 Features:
+
 - Modern Vue 3 UI with real-time progress tracking
 - Built-in configuration editor
 - Log viewer with live updates
@@ -352,7 +357,7 @@ cp truenas-musicdl-compose.yaml /path/to/your/apps/musicdl/docker-compose.yaml
 # Or paste truenas-musicdl-compose.yaml into TrueNAS Apps → Install via YAML → Custom Config
 ```
 
-See [`truenas-musicdl-compose.yaml`](truenas-musicdl-compose.yaml) for the full configuration. It defines:
+See `[truenas-musicdl-compose.yaml](truenas-musicdl-compose.yaml)` for the full configuration. It defines:
 
 - **Volume**: `/mnt/peace-house-storage-pool/peace-house-storage/Music` → `/download`
 - **Config**: `config.yaml` in the Music directory
@@ -377,34 +382,27 @@ Working directory in the image is `/download`. Set `MUSICDL_CACHE_DIR` if you wa
 ## Troubleshooting
 
 - **"Plan file not found. Run 'musicdl plan' first."**  
-  Run `musicdl plan <config-file>` before `musicdl download <config-file>`. The plan is stored under `.cache/` using a hash of your config.
-
+Run `musicdl plan <config-file>` before `musicdl download <config-file>`. The plan is stored under `.cache/` using a hash of your config.
 - **"Plan file does not match configuration. Regenerate plan."**  
-  The config file was changed after the plan was generated. Run `musicdl plan <config-file>` again, then `musicdl download <config-file>`.
-
+The config file was changed after the plan was generated. Run `musicdl plan <config-file>` again, then `musicdl download <config-file>`.
 - **Configuration error (exit 1)**  
-  Check YAML syntax, required fields (`version`, `download.client_id`/`spotify.client_id`, `download.client_secret`/`spotify.client_secret`), and that `download.output` contains `{title}` and `threads` is 1–16.
-
+Check YAML syntax, required fields (`version`, `download.client_id`/`spotify.client_id`, `download.client_secret`/`spotify.client_secret`), and that `download.output` contains `{title}` and `threads` is 1–16.
 - **YouTube playlist has no tracks in plan**  
-  Plan generation for YouTube playlists uses `yt-dlp` with `--flat-playlist --dump-json`. Ensure `yt-dlp` is installed and on your PATH when running `musicdl plan`. If the playlist appears in the plan with zero tracks, check that the playlist URL is correct and that `yt-dlp` can access it (e.g. `yt-dlp --flat-playlist --dump-json "<playlist-url>"`).
-
+Plan generation for YouTube playlists uses `yt-dlp` with `--flat-playlist --dump-json`. Ensure `yt-dlp` is installed and on your PATH when running `musicdl plan`. If the playlist appears in the plan with zero tracks, check that the playlist URL is correct and that `yt-dlp` can access it (e.g. `yt-dlp --flat-playlist --dump-json "<playlist-url>"`).
 - **SoundCloud/Bandcamp/Audius URL not recognized**  
-  Ensure the URL matches the expected format (e.g. `https://soundcloud.com/artist/track`, `https://artist.bandcamp.com/track/song`, `https://audius.co/artist/track`). These sources require `yt-dlp` for metadata extraction and downloading.
-
+Ensure the URL matches the expected format (e.g. `https://soundcloud.com/artist/track`, `https://artist.bandcamp.com/track/song`, `https://audius.co/artist/track`). These sources require `yt-dlp` for metadata extraction and downloading.
 - **Audius search returns no results**  
-  The Audius search provider uses the public discovery API. If tracks aren't found, try adjusting the search query (artist name + track title). Note that Audius has a smaller catalog than Spotify or YouTube.
-
+The Audius search provider uses the public discovery API. If tracks aren't found, try adjusting the search query (artist name + track title). Note that Audius has a smaller catalog than Spotify or YouTube.
 - **"no audio found for: Artist - Title"**  
-  The audio search tried multiple query variants (original, stripped feat, title-only, simplified) across all configured `audio_providers` and found no match. This usually means the track is from a very niche artist not present on YouTube/SoundCloud/Audius. Consider adding the track as a direct URL if you can find it manually.
-
+The audio search tried multiple query variants (original, stripped feat, title-only, simplified) across all configured `audio_providers` and found no match. This usually means the track is from a very niche artist not present on YouTube/SoundCloud/Audius. Consider adding the track as a direct URL if you can find it manually.
 - **"yt-dlp download failed" for age-restricted or explicit content**  
-  musicdl passes `--age-limit 99` to yt-dlp by default. If content is still blocked, set `cookies_from_browser` in your config (e.g. `cookies_from_browser: "chrome"`) for local use, or export a `cookies.txt` file and set `cookies: "/path/to/cookies.txt"` for Docker/headless deployments. See [COOKIES.md](COOKIES.md) for step-by-step browser instructions.
-
+musicdl passes `--age-limit 99` to yt-dlp by default. If content is still blocked, set `cookies_from_browser` in your config (e.g. `cookies_from_browser: "chrome"`) for local use, or export a `cookies.txt` file and set `cookies: "/path/to/cookies.txt"` for Docker/headless deployments. See [COOKIES.md](COOKIES.md) for step-by-step browser instructions.
 - **"No supported JavaScript runtime could be found"**  
-  Modern yt-dlp requires a JavaScript runtime for YouTube. Add `js_runtimes: "node"` to the `download` section of your config. The Docker image includes Node.js. For local installations, install Node.js, Deno, or Bun.
-
+Modern yt-dlp requires a JavaScript runtime for YouTube. Add `js_runtimes: "node"` to the `download` section of your config. The Docker image includes Node.js. For local installations, install Node.js, Deno, or Bun.
+- **YouTube "n challenge solving failed", EJS, or "Remote component challenge solver script was skipped"**  
+Recent yt-dlp builds may need remote challenge scripts. Add `remote_components: "ejs:github"` under `download` (with `js_runtimes: "node"`). See the [yt-dlp EJS wiki](https://github.com/yt-dlp/yt-dlp/wiki/EJS). Keep `yt-dlp` updated (`pip install -U yt-dlp`).
 - **YouTube playlist tracks show as "[Private video]"**  
-  Private or deleted YouTube videos are automatically skipped (marked as "skipped" rather than "failed") and do not count toward the failure total. These videos were removed or made private by the uploader and cannot be downloaded.
+Private or deleted YouTube videos are automatically skipped (marked as "skipped" rather than "failed") and do not count toward the failure total. These videos were removed or made private by the uploader and cannot be downloaded.
 
 ## Plex Integration
 
@@ -415,12 +413,14 @@ python3 scripts/plex-playlist-push.py --server http://PLEX_HOST:32400 --path /pa
 ```
 
 **Arguments:**
+
 - `--server` – Plex server URL (e.g. `http://192.168.50.42:32400`)
 - `--path` – Path to your music library (must exist locally for scanning)
 - `--plex-path` – Optional. If Plex runs in Docker with a different mount path, use this to translate. Example: `--path /mnt/nas/Music --plex-path /data`
-- `--token` – Optional. Plex auth token (or set `PLEX_TOKEN` env). If omitted, the script uses the PIN flow: visit https://app.plex.tv/link and enter the displayed PIN.
+- `--token` – Optional. Plex auth token (or set `PLEX_TOKEN` env). If omitted, the script uses the PIN flow: visit [https://app.plex.tv/link](https://app.plex.tv/link) and enter the displayed PIN.
 
 **Example (Plex in Docker):**
+
 ```bash
 python3 scripts/plex-playlist-push.py \
   --server http://192.168.50.42:32400 \
@@ -439,6 +439,7 @@ Ensure your Plex Music library includes the folder where the M3U files and music
 ```
 
 This starts:
+
 - Go API server on `http://localhost:5000`
 - Express backend on `http://localhost:3000`
 - Vue frontend dev server on `http://localhost:5173`
@@ -446,6 +447,7 @@ This starts:
 ### Manual Setup
 
 **Backend:**
+
 ```bash
 cd webserver/backend
 npm install
@@ -453,6 +455,7 @@ PORT=3000 GO_API_HOST=localhost GO_API_PORT=5000 npm run dev
 ```
 
 **Frontend:**
+
 ```bash
 cd webserver/frontend
 npm install
@@ -460,6 +463,7 @@ npm run dev
 ```
 
 **Go API Server:**
+
 ```bash
 go build -o musicdl ./control
 ./musicdl api

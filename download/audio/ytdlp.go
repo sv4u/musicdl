@@ -50,6 +50,23 @@ type YouTubePlaylistInfo struct {
 	Entries     []YouTubeVideoMetadata `json:"entries,omitempty"`
 }
 
+// appendYtDlpYouTubeOpts appends cookie, JS runtime, and remote-components flags for YouTube extraction.
+func (p *Provider) appendYtDlpYouTubeOpts(args []string) []string {
+	if p.config.CookiesFromBrowser != "" {
+		args = append(args, "--cookies-from-browser", p.config.CookiesFromBrowser)
+	}
+	if p.config.Cookies != "" {
+		args = append(args, "--cookies", p.config.Cookies)
+	}
+	if p.config.JSRuntimes != "" {
+		args = append(args, "--js-runtimes", p.config.JSRuntimes)
+	}
+	if p.config.RemoteComponents != "" {
+		args = append(args, "--remote-components", p.config.RemoteComponents)
+	}
+	return args
+}
+
 // runYtDlpSearch runs yt-dlp to search for audio and returns all parsed results.
 func (p *Provider) runYtDlpSearch(ctx context.Context, searchQuery string) ([]ytDlpSearchResult, error) {
 	args := []string{
@@ -60,15 +77,7 @@ func (p *Provider) runYtDlpSearch(ctx context.Context, searchQuery string) ([]yt
 		"--age-limit", "99",
 		"--dump-json",
 	}
-	if p.config.CookiesFromBrowser != "" {
-		args = append(args, "--cookies-from-browser", p.config.CookiesFromBrowser)
-	}
-	if p.config.Cookies != "" {
-		args = append(args, "--cookies", p.config.Cookies)
-	}
-	if p.config.JSRuntimes != "" {
-		args = append(args, "--js-runtimes", p.config.JSRuntimes)
-	}
+	args = p.appendYtDlpYouTubeOpts(args)
 	args = append(args, searchQuery)
 
 	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
@@ -191,15 +200,7 @@ func (p *Provider) runYtDlpDownload(ctx context.Context, url, outputPath string)
 		"--age-limit", "99",
 		"--output", outputTemplate,
 	}
-	if p.config.CookiesFromBrowser != "" {
-		args = append(args, "--cookies-from-browser", p.config.CookiesFromBrowser)
-	}
-	if p.config.Cookies != "" {
-		args = append(args, "--cookies", p.config.Cookies)
-	}
-	if p.config.JSRuntimes != "" {
-		args = append(args, "--js-runtimes", p.config.JSRuntimes)
-	}
+	args = p.appendYtDlpYouTubeOpts(args)
 	args = append(args, url)
 
 	// Add audio extraction postprocessor for format conversion.
@@ -294,8 +295,10 @@ func (p *Provider) GetVideoMetadata(ctx context.Context, videoURL string) (*YouT
 		"--no-warnings",
 		"--dump-json",
 		"--no-playlist", // Only get video, not playlist if URL contains playlist param
-		videoURL,
+		"--age-limit", "99",
 	}
+	args = p.appendYtDlpYouTubeOpts(args)
+	args = append(args, videoURL)
 
 	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
 	output, err := cmd.CombinedOutput()
@@ -411,8 +414,10 @@ func (p *Provider) GetPlaylistInfo(ctx context.Context, playlistURL string) (*Yo
 		"--no-warnings",
 		"--dump-json",
 		"--flat-playlist",
-		playlistURL,
+		"--age-limit", "99",
 	}
+	args = p.appendYtDlpYouTubeOpts(args)
+	args = append(args, playlistURL)
 
 	cmd := exec.CommandContext(ctx, "yt-dlp", args...)
 	output, err := cmd.CombinedOutput()

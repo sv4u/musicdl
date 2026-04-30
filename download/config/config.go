@@ -40,6 +40,7 @@ type DownloadSettings struct {
 	CookiesFromBrowser string        `yaml:"cookies_from_browser"` // e.g. "chrome", "firefox"
 	Cookies            string        `yaml:"cookies"`              // path to Netscape-format cookies.txt file
 	JSRuntimes         string        `yaml:"js_runtimes"`          // JS runtime for yt-dlp (e.g. "node", "deno", "bun")
+	RemoteComponents   string        `yaml:"remote_components"`    // e.g. "ejs:github" for yt-dlp YouTube challenge scripts
 
 	// Cache settings
 	CacheMaxSize              int `yaml:"cache_max_size"`

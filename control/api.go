@@ -229,6 +229,7 @@ func (s *APIServer) initClientsFromConfig(cfg *config.MusicDLConfig) (*spotify.S
 		CookiesFromBrowser: cfg.Download.CookiesFromBrowser,
 		Cookies:            cfg.Download.Cookies,
 		JSRuntimes:         cfg.Download.JSRuntimes,
+		RemoteComponents:   cfg.Download.RemoteComponents,
 		CacheMaxSize:       cfg.Download.AudioSearchCacheMaxSize,
 		CacheTTL:           cfg.Download.AudioSearchCacheTTL,
 	}

@@ -50,6 +50,37 @@ download:
   cookies: "/download/cookies.txt"
 ```
 
+### CLI export from Vivaldi (recommended when yt-dlp is installed locally)
+
+Run this **on the machine where Vivaldi is logged into Google**, from the `musicdl` repository root:
+
+```bash
+chmod +x scripts/export-vivaldi-cookies.sh
+./scripts/export-vivaldi-cookies.sh /path/to/youtube-cookies.txt
+```
+
+It wraps `yt-dlp`: `--cookies FILE` both reads and **writes** the Netscape cookie jar when combined with `--cookies-from-browser`, so the file is suitable for mounting into Docker. Override the probe URL with `YOUTUBE_PROBE_URL` if needed.
+
+### Optional: copy cookies into the image at build time
+
+If you prefer not to mount `cookies.txt` at runtime, you can pass it as a **Docker BuildKit secret** when building `musicdl.Dockerfile`. The Dockerfile copies an optional secret `youtube_cookies` to `/etc/musicdl/youtube-cookies.txt` when present. Point your config at that path:
+
+```yaml
+download:
+  cookies: "/etc/musicdl/youtube-cookies.txt"
+  js_runtimes: "node"
+```
+
+Build (from the `musicdl` directory, with BuildKit enabled):
+
+```bash
+DOCKER_BUILDKIT=1 docker build -f musicdl.Dockerfile \
+  --secret id=youtube_cookies,src=./cookies.txt \
+  -t musicdl:local .
+```
+
+**Security notes:** The resulting image layer contains that cookie file—anyone with the image can extract it. Treat the image like a credential. Cookies expire; rebuild when YouTube starts failing with sign-in errors. Do not commit `cookies.txt` to git.
+
 The rest of this guide covers how to export `cookies.txt` from each supported browser.
 
 ## Exporting Cookies by Browser

@@ -192,6 +192,7 @@ func planCommand(configPath string, noTUI bool) int {
 		CookiesFromBrowser: cfg.Download.CookiesFromBrowser,
 		Cookies:            cfg.Download.Cookies,
 		JSRuntimes:         cfg.Download.JSRuntimes,
+		RemoteComponents:   cfg.Download.RemoteComponents,
 		CacheMaxSize:       cfg.Download.AudioSearchCacheMaxSize,
 		CacheTTL:           cfg.Download.AudioSearchCacheTTL,
 	}
@@ -280,6 +281,7 @@ func downloadCLICommand(configPath string, noTUI bool) int {
 		CookiesFromBrowser: cfg.Download.CookiesFromBrowser,
 		Cookies:            cfg.Download.Cookies,
 		JSRuntimes:         cfg.Download.JSRuntimes,
+		RemoteComponents:   cfg.Download.RemoteComponents,
 		CacheMaxSize:       cfg.Download.AudioSearchCacheMaxSize,
 		CacheTTL:           cfg.Download.AudioSearchCacheTTL,
 	}
