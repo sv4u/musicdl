@@ -8,9 +8,9 @@ import (
 	"strings"
 )
 
-// DefaultYouTubeCookieProbeURL is a short public video used when no YOUTUBE_PROBE_URL is set.
+// DefaultYouTubeCookieProbeURL is used when no YOUTUBE_PROBE_URL is set (cookie export script and API Tier B probe).
 // Matches scripts/export-vivaldi-cookies.sh default.
-const DefaultYouTubeCookieProbeURL = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+const DefaultYouTubeCookieProbeURL = "https://www.youtube.com/watch?v=p4n8uCxhBTk"
 
 // ProbeYouTubeCookieAuth runs yt-dlp with --skip-download using the same cookie and JS flags
 // as normal downloads. It returns ok=true when yt-dlp exits zero (session can extract the probe video).

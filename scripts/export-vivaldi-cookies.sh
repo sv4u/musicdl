@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-readonly DEFAULT_URL="${YOUTUBE_PROBE_URL:-https://www.youtube.com/watch?v=jNQXAC9IVRw}"
+readonly DEFAULT_URL="${YOUTUBE_PROBE_URL:-https://www.youtube.com/watch?v=p4n8uCxhBTk}"
 readonly BROWSER="${MUSICDL_BROWSER:-vivaldi}"
 
 out_path="${1:-${MUSICDL_COOKIES_OUT:-./youtube-cookies.txt}}"

@@ -59,7 +59,7 @@ chmod +x scripts/export-vivaldi-cookies.sh
 ./scripts/export-vivaldi-cookies.sh /path/to/youtube-cookies.txt
 ```
 
-It wraps `yt-dlp`: `--cookies FILE` both reads and **writes** the Netscape cookie jar when combined with `--cookies-from-browser`, so the file is suitable for mounting into Docker. Override the probe URL with `YOUTUBE_PROBE_URL` if needed.
+It wraps `yt-dlp`: `--cookies FILE` both reads and **writes** the Netscape cookie jar when combined with `--cookies-from-browser`, so the file is suitable for mounting into Docker. The default probe URL is `https://www.youtube.com/watch?v=p4n8uCxhBTk` unless you override it with `YOUTUBE_PROBE_URL` (same default as the dashboard cookie Tier B probe).
 
 ### Optional: copy cookies into the image at build time
 
