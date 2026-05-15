@@ -9,8 +9,10 @@ import (
 )
 
 // DefaultYouTubeCookieProbeURL is used when no YOUTUBE_PROBE_URL is set (cookie export script and API Tier B probe).
+// It must be viewable without signing in—age-restricted URLs cause yt-dlp to fail before the cookie jar is written.
+// Cookies still come from your logged-in browser; that session is what enables age-restricted downloads later.
 // Matches scripts/export-vivaldi-cookies.sh default.
-const DefaultYouTubeCookieProbeURL = "https://www.youtube.com/watch?v=p4n8uCxhBTk"
+const DefaultYouTubeCookieProbeURL = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
 
 // ProbeYouTubeCookieAuth runs yt-dlp with --skip-download using the same cookie and JS flags
 // as normal downloads. It returns ok=true when yt-dlp exits zero (session can extract the probe video).

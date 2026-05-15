@@ -8,13 +8,14 @@
 # Env:
 #   MUSICDL_COOKIES_OUT  default output path if no argument (default: ./youtube-cookies.txt)
 #   MUSICDL_BROWSER      browser key for yt-dlp (default: vivaldi)
-#   YOUTUBE_PROBE_URL    URL used to trigger cookie dump (default: a short public YouTube video)
+#   YOUTUBE_PROBE_URL    URL used to trigger cookie dump (default: a short public video that is NOT age-restricted;
+#                        age-gated URLs fail here before the jar is written—use logged-in export + non-gated probe)
 #
 # On macOS you may see "Extracting cookies from vivaldi" while Keychain Access allows decryption.
 
 set -euo pipefail
 
-readonly DEFAULT_URL="${YOUTUBE_PROBE_URL:-https://www.youtube.com/watch?v=p4n8uCxhBTk}"
+readonly DEFAULT_URL="${YOUTUBE_PROBE_URL:-https://www.youtube.com/watch?v=jNQXAC9IVRw}"
 readonly BROWSER="${MUSICDL_BROWSER:-vivaldi}"
 
 out_path="${1:-${MUSICDL_COOKIES_OUT:-./youtube-cookies.txt}}"
@@ -37,6 +38,7 @@ yt-dlp \
 	--cookies "${target}" \
 	--skip-download \
 	--no-warnings \
+	--age-limit 99 \
 	"${DEFAULT_URL}"
 
 chmod 600 "${target}"

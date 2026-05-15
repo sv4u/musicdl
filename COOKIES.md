@@ -59,7 +59,7 @@ chmod +x scripts/export-vivaldi-cookies.sh
 ./scripts/export-vivaldi-cookies.sh /path/to/youtube-cookies.txt
 ```
 
-It wraps `yt-dlp`: `--cookies FILE` both reads and **writes** the Netscape cookie jar when combined with `--cookies-from-browser`, so the file is suitable for mounting into Docker. The default probe URL is `https://www.youtube.com/watch?v=p4n8uCxhBTk` unless you override it with `YOUTUBE_PROBE_URL` (same default as the dashboard cookie Tier B probe).
+It wraps `yt-dlp`: `--cookies FILE` both reads and **writes** the Netscape cookie jar when combined with `--cookies-from-browser`, so the file is suitable for mounting into Docker. The default probe URL is a short **non-age-restricted** video (`https://www.youtube.com/watch?v=jNQXAC9IVRw`) so the command can finish; if you set `YOUTUBE_PROBE_URL` to an age-gated video, export will fail with “Sign in to confirm your age” even though you are exporting cookies for that purpose—use a public probe for export, then use the jar for age-restricted playback in musicdl. The dashboard cookie Tier B probe uses the same default unless `YOUTUBE_PROBE_URL` is set.
 
 ### Optional: copy cookies into the image at build time
 
@@ -286,6 +286,16 @@ This is already included in the Docker image and only needs to be enabled in the
 # Test that yt-dlp can use your cookies
 yt-dlp --cookies cookies.txt --js-runtimes node -v "https://www.youtube.com/watch?v=EXAMPLE"
 ```
+
+### Confirm age-restricted playback
+
+The export script uses a **public** probe so it can finish. To confirm your exported jar actually carries your signed-in session (including age verification), run a **known age-restricted** URL with `--cookies` only (no `--cookies-from-browser`):
+
+```bash
+yt-dlp --cookies cookies.txt --skip-download --js-runtimes node "https://www.youtube.com/watch?v=p4n8uCxhBTk"
+```
+
+Exit code 0 means yt-dlp accepted the jar for that video; if you see “Sign in to confirm your age”, re-export while logged into YouTube in the browser, or verify you used the correct Google account.
 
 ### Test in Docker
 
