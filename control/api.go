@@ -76,6 +76,10 @@ type APIServer struct {
 	mcpHandler        http.Handler
 	plexTracker       *PlexSyncTracker
 	graphClient       *graph.Client
+
+	cookiesStatusMu        sync.Mutex
+	cookiesStatusCachedAt  time.Time
+	cookiesStatusCacheJSON []byte
 }
 
 // RunTracker tracks the current running operation.
@@ -501,6 +505,7 @@ func (s *APIServer) Run() int {
 	// Health check
 	mux.HandleFunc("GET /api/health", s.healthHandler)
 	mux.HandleFunc("GET /api/version", s.versionHandler)
+	mux.HandleFunc("GET /api/cookies-status", s.cookiesStatusHandler)
 
 	// Config endpoints
 	mux.HandleFunc("GET /api/config", s.getConfigHandler)

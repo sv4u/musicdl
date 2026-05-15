@@ -51,20 +51,24 @@ type YouTubePlaylistInfo struct {
 }
 
 // appendYtDlpYouTubeOpts appends cookie, JS runtime, and remote-components flags for YouTube extraction.
-func (p *Provider) appendYtDlpYouTubeOpts(args []string) []string {
-	if p.config.CookiesFromBrowser != "" {
-		args = append(args, "--cookies-from-browser", p.config.CookiesFromBrowser)
+func appendYtDlpYouTubeOpts(cfg *Config, args []string) []string {
+	if cfg.CookiesFromBrowser != "" {
+		args = append(args, "--cookies-from-browser", cfg.CookiesFromBrowser)
 	}
-	if p.config.Cookies != "" {
-		args = append(args, "--cookies", p.config.Cookies)
+	if cfg.Cookies != "" {
+		args = append(args, "--cookies", cfg.Cookies)
 	}
-	if p.config.JSRuntimes != "" {
-		args = append(args, "--js-runtimes", p.config.JSRuntimes)
+	if cfg.JSRuntimes != "" {
+		args = append(args, "--js-runtimes", cfg.JSRuntimes)
 	}
-	if p.config.RemoteComponents != "" {
-		args = append(args, "--remote-components", p.config.RemoteComponents)
+	if cfg.RemoteComponents != "" {
+		args = append(args, "--remote-components", cfg.RemoteComponents)
 	}
 	return args
+}
+
+func (p *Provider) appendYtDlpYouTubeOpts(args []string) []string {
+	return appendYtDlpYouTubeOpts(p.config, args)
 }
 
 // runYtDlpSearch runs yt-dlp to search for audio and returns all parsed results.

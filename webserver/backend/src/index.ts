@@ -101,6 +101,7 @@ function proxyPost(path: string, errorMsg: string) {
 // System
 proxyGet('/api/health', 'Go API server is not available');
 proxyGet('/api/version', 'Failed to fetch version');
+proxyGet('/api/cookies-status', 'Failed to fetch cookies status');
 
 // Config
 proxyGet('/api/config', 'Failed to fetch config');

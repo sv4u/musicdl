@@ -54,6 +54,8 @@
         </div>
       </div>
 
+      <CookiesStatus class="mb-8" />
+
       <!-- Tabs -->
       <div class="bg-slate-800 rounded-lg border border-slate-700 shadow-lg">
         <div class="flex border-b border-slate-700 overflow-x-auto scrollbar-hide" role="tablist" aria-label="Dashboard navigation">
@@ -119,6 +121,7 @@ import LogViewer from './components/LogViewer.vue';
 import RateLimitAlert from './components/RateLimitAlert.vue';
 import InfoTooltip from './components/InfoTooltip.vue';
 import PlexSync from './components/PlexSync.vue';
+import CookiesStatus from './components/CookiesStatus.vue';
 
 const tabIcons: Record<string, string> = {
   Overview: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6',

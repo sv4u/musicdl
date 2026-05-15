@@ -115,6 +115,25 @@ func generateOpenAPISpec(port int) string {
         }
       }
     },
+    "/api/cookies-status": {
+      "get": {
+        "tags": ["system"],
+        "summary": "YouTube cookie status",
+        "description": "Tier A: config and cookie file heuristics. Tier B: yt-dlp skip-download probe (cached 5m; use ?force=1 to refresh).",
+        "parameters": [
+          {
+            "name": "force",
+            "in": "query",
+            "schema": {"type": "string", "enum": ["1", "true"]},
+            "description": "Bypass server-side probe cache"
+          }
+        ],
+        "responses": {
+          "200": {"description": "Cookie status JSON"},
+          "404": {"description": "config.yaml not found"}
+        }
+      }
+    },
     "/api/config": {
       "get": {
         "tags": ["config"],
