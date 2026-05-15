@@ -81,6 +81,14 @@ func (p *Provider) runYtDlpSearch(ctx context.Context, searchQuery string) ([]yt
 		"--age-limit", "99",
 		"--dump-json",
 	}
+	var err error
+	args, err = prependYtDlpWritableCache(args)
+	if err != nil {
+		return nil, &SearchError{
+			Message:  fmt.Sprintf("yt-dlp cache directory: %v", err),
+			Original: err,
+		}
+	}
 	args = p.appendYtDlpYouTubeOpts(args)
 	args = append(args, searchQuery)
 
@@ -204,6 +212,14 @@ func (p *Provider) runYtDlpDownload(ctx context.Context, url, outputPath string)
 		"--age-limit", "99",
 		"--output", outputTemplate,
 	}
+	var err error
+	args, err = prependYtDlpWritableCache(args)
+	if err != nil {
+		return "", "", &DownloadError{
+			Message:  fmt.Sprintf("yt-dlp cache directory: %v", err),
+			Original: err,
+		}
+	}
 	args = p.appendYtDlpYouTubeOpts(args)
 	args = append(args, url)
 
@@ -222,7 +238,7 @@ func (p *Provider) runYtDlpDownload(ctx context.Context, url, outputPath string)
 	cmd.Stdout = &combinedBuf
 	cmd.Stderr = &combinedBuf
 
-	err := cmd.Run()
+	err = cmd.Run()
 	rawOutput := combinedBuf.String()
 
 	if err != nil {
@@ -300,6 +316,14 @@ func (p *Provider) GetVideoMetadata(ctx context.Context, videoURL string) (*YouT
 		"--dump-json",
 		"--no-playlist", // Only get video, not playlist if URL contains playlist param
 		"--age-limit", "99",
+	}
+	var err error
+	args, err = prependYtDlpWritableCache(args)
+	if err != nil {
+		return nil, &SearchError{
+			Message:  fmt.Sprintf("yt-dlp cache directory: %v", err),
+			Original: err,
+		}
 	}
 	args = p.appendYtDlpYouTubeOpts(args)
 	args = append(args, videoURL)
@@ -419,6 +443,14 @@ func (p *Provider) GetPlaylistInfo(ctx context.Context, playlistURL string) (*Yo
 		"--dump-json",
 		"--flat-playlist",
 		"--age-limit", "99",
+	}
+	var err error
+	args, err = prependYtDlpWritableCache(args)
+	if err != nil {
+		return nil, &SearchError{
+			Message:  fmt.Sprintf("yt-dlp cache directory: %v", err),
+			Original: err,
+		}
 	}
 	args = p.appendYtDlpYouTubeOpts(args)
 	args = append(args, playlistURL)

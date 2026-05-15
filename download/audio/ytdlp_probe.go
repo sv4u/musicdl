@@ -2,6 +2,7 @@ package audio
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -22,6 +23,11 @@ func ProbeYouTubeCookieAuth(ctx context.Context, cfg *Config, probeURL string) (
 		"--no-warnings",
 		"--quiet",
 		"--age-limit", "99",
+	}
+	var err error
+	args, err = prependYtDlpWritableCache(args)
+	if err != nil {
+		return false, fmt.Sprintf("yt-dlp cache directory: %v", err)
 	}
 	args = appendYtDlpYouTubeOpts(cfg, args)
 	args = append(args, probeURL)
